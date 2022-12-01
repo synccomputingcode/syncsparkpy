@@ -1,0 +1,60 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sync_sdk"
+authors = [{"name" = "Sync Computing"}]
+readme = "README.md"
+requires-python = ">=3.10.3"
+classifiers = [
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+]
+dependencies = [
+"boto3==1.26.6",
+"pydantic==1.10.2",
+"requests==2.28.1",
+]
+dynamic = ["version", "description"]
+
+[project.optional-dependencies]
+test = [
+  "black==22.10.0",
+  "flake8==5.0.4",
+  "isort==5.10.1",
+  "pytest==7.2.0",
+  "Sphinx==5.3.0",
+]
+
+[tool.hatch.version]
+path = "sync/__init__.py"
+
+[project.scripts]
+sync-cli = "sync.cli:main"
+
+[project.urls]
+Home = "https://github.com/synccomputingcode/sync_sdk"
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "."
+]
+filterwarnings = [
+    "ignore::UserWarning"
+]

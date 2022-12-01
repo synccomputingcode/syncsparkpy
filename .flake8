@@ -1,0 +1,3 @@
+[flake8]
+max-complexity = 10
+extend-ignore = E501, W503, E203

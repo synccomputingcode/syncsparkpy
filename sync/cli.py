@@ -1,0 +1,94 @@
+"""
+Basic Sync CLI
+"""
+
+import json
+import sys
+from argparse import ArgumentParser
+from getpass import getpass
+
+from .api import get_history, get_prediction
+from .config import configure
+from .emr import run_job_flow
+from .models import APIKey, Preference
+
+
+def main():
+    # May want to move to [click](https://click.palletsprojects.com/en/8.1.x/) at some point
+    parser = ArgumentParser("Sync")
+    sub_parsers = parser.add_subparsers(dest="cmd")
+
+    config_parser = sub_parsers.add_parser("configure")
+    config_parser.add_argument("--state", "-s", help="URL of state file")
+    config_parser.add_argument(
+        "--preference",
+        "-p",
+        default=Preference.BALANCED,
+        type=Preference,
+        choices=[p for p in Preference],
+        dest="prediction_preference",
+        help="default prediction preference",
+    )
+
+    autotuner_parser = sub_parsers.add_parser("autotuner")
+    autotuner_parsers = autotuner_parser.add_subparsers(dest="autotuner_cmd")
+    history_parser = autotuner_parsers.add_parser("history")
+    history_parser.add_argument("--brief", default=False, action="store_true")
+
+    prediction_parser = autotuner_parsers.add_parser("prediction")
+    prediction_parser.add_argument("prediction_id", metavar="PREDICTION_ID")
+    prediction_parser.add_argument(
+        "--preference",
+        "-p",
+        default=Preference.BALANCED,
+        type=Preference,
+        choices=[p for p in Preference],
+        dest="prediction_preference",
+        help="default prediction preference",
+    )
+
+    emr_parser = sub_parsers.add_parser("emr")
+    emr_parsers = emr_parser.add_subparsers(dest="emr_cmd")
+    jobflow_parser = emr_parsers.add_parser("job")
+    jobflow_parser.add_argument("conf", metavar="JOB_FLOW_CONF")
+
+    args = parser.parse_args()
+
+    match args.cmd:
+        case "configure":
+            api_key = get_api_key_from_user()
+            configure(args.prediction_preference, args.state, api_key)
+        case "autotuner":
+            match args.autotuner_cmd:
+                case "history":
+                    history = get_history()
+                    if args.brief:
+                        for prediction in history:
+                            print(
+                                f"{prediction['prediction_id']} {prediction['application_name']:>32} {prediction['created_at']}"
+                            )
+                    else:
+                        json.dump(history, sys.stdout, indent=2)
+                case "prediction":
+                    json.dump(
+                        get_prediction(args.prediction_id, args.prediction_preference),
+                        sys.stdout,
+                        indent=2,
+                    )
+        case "emr":
+            match args.emr_cmd:
+                case "job":
+                    with open(args.conf) as job_flow_in:
+                        job_flow = json.load(job_flow_in)
+                    json.dump(run_job_flow(job_flow), sys.stdout, indent=2)
+
+
+def get_api_key_from_user():
+    """
+    Prompts user for API key
+    """
+
+    api_key_id = input("API key ID: ")
+    api_key_secret = getpass("API key secret: ")
+
+    return APIKey(api_key_id=api_key_id, api_key_secret=api_key_secret)

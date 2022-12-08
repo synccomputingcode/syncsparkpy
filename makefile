@@ -11,7 +11,7 @@ lint:
 
 .PHONY: format
 format:
-ifneq ("$(FILES)"," ")
+ifneq ("$(FILES)","")
 	black $(FILES)
 	isort $(FILES)
 endif

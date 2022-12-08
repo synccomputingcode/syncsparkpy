@@ -8,7 +8,7 @@ On-boarding
 -----------
 
 To on-board a Spark application it must be run with a configuration that includes Sync metadata and an event log destination.
-2 functions are provided for this purpose.
+2 functions are provided for this purpose:
 
 .. autofunction:: sync.project.init_emr
   :noindex:
@@ -31,7 +31,7 @@ and applied yielding a new log & configuration.
 .. image:: /_static/orchestration.png
 
 Each run has its own location in S3 under the project location for event logs and configuration.
-It is keyed by timestamp to make browsing in the console easier, and run ID to gaurantee uniqueness:
+It is keyed by timestamp to make browsing in the console easier, and run ID to guarantee uniqueness:
 
 .. code-block:: text
 
@@ -41,4 +41,4 @@ Example:
 
 .. code-block:: text
 
-  s3://megacorp-jobs/sync/54129c79-ee4a-47cf-8bf3-3e2326443fbc/2022-11-15T13:51:29Z/01953ba2-ee4a-47cf-8bf3-80sbj2lapcn8
+  s3://megacorp-jobs/sync-projects/54129c79-ee4a-47cf-8bf3-3e2326443fbc/2022-11-15T13:51:29Z/01953ba2-ee4a-47cf-8bf3-80sbj2lapcn8

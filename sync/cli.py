@@ -10,7 +10,7 @@ from getpass import getpass
 from .api import get_history, get_prediction
 from .config import configure
 from .emr import run_job_flow
-from .models import APIKey, Preference
+from .models import APIKey, Configuration, Preference
 
 
 def main():
@@ -56,8 +56,9 @@ def main():
 
     match args.cmd:
         case "configure":
-            api_key = get_api_key_from_user()
-            configure(args.prediction_preference, args.state, api_key)
+            api_key = _prompt_for_api_key()
+            config = _prompt_for_configuration()
+            configure(api_key, config)
         case "autotuner":
             match args.autotuner_cmd:
                 case "history":
@@ -83,7 +84,7 @@ def main():
                     json.dump(run_job_flow(job_flow), sys.stdout, indent=2)
 
 
-def get_api_key_from_user():
+def _prompt_for_api_key():
     """
     Prompts user for API key
     """
@@ -92,3 +93,18 @@ def get_api_key_from_user():
     api_key_secret = getpass("API key secret: ")
 
     return APIKey(api_key_id=api_key_id, api_key_secret=api_key_secret)
+
+
+def _prompt_for_configuration():
+    """
+    Prompts user for configuration
+    """
+
+    # TODO default to existing configuration
+    project_url = input("Default project URL: ")
+    prediction_preference = getpass("Default prediction preference: ")
+
+    return Configuration(
+        default_project_url=project_url or None,
+        default_prediction_preference=prediction_preference or None,
+    )

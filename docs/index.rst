@@ -10,13 +10,16 @@ Welcome to Sync SDK's documentation!
    :maxdepth: 2
    :caption: User Guide
 
+   guide/start
    guide/project
+   guide/glossary
 
 .. toctree::
    :maxdepth: 2
    :caption: Reference
 
    reference/project
+   reference/api
 
 
 

@@ -4,6 +4,7 @@ Models used throughout this SDK
 
 from enum import Enum
 from typing import Generic, TypeVar
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, validator
 from pydantic.generics import GenericModel
@@ -21,8 +22,19 @@ class APIKey(BaseModel):
 
 
 class Configuration(BaseModel):
-    state_url: str = Field(..., description="s3 or file URL for state information")
-    prediction_preference: Preference
+    default_project_url: str = Field(None, description="default location for Sync project data")
+    default_prediction_preference: Preference | None
+
+    @validator("default_project_url")
+    def validate_url(url):
+        # There are valid S3 URLs (e.g. with spaces) not supported by Pydantic URL types: https://docs.pydantic.dev/usage/types/#urls
+        # Hence the manual validation here
+        parsed_url = urlparse(url)
+
+        if parsed_url.scheme != "s3":
+            raise ValueError("Only S3 URLs please!")
+
+        return url
 
 
 class Error(BaseModel):

@@ -15,7 +15,7 @@ Welcome to Sync SDK's documentation!
    guide/glossary
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Reference
 
    reference/project

@@ -31,7 +31,7 @@ Only add what we know we'll need - no speculative development. Contributions sho
 ### Documentation
 Documentation for consumers of the SDK is build using [Sphinx](https://www.sphinx-doc.org/en/master/). Pages are defined in [reStructuredText](https://docutils.sourceforge.io/rst.html) which may pull in reStructuredText from docstrings in the code. The VS Code extension, autoDocstring, provides a convenient way to initialize function docstrings. For compatibility, set the docstring format in the extension's settings to "sphinx". Information is meaningless without context so sprinkle documentation liberally with refs: [Cross-referencing with Sphinx](https://docs.readthedocs.io/en/stable/guides/cross-referencing-with-sphinx.html), [Cross-referencing Python objects](https://www.sphinx-doc.org/en/master/usage/restructuredtext/domains.html#cross-referencing-python-objects).
 
-When code is merged to `main` a Github action automatically deploys the documentation to Github Pages. Click "View deployment" in the (github-pages)[/synccomputingcode/sync_sdk/deployments/activity_log?environment=github-pages] environment to navigate to the latest documentation.
+When code is merged to `main` a Github action automatically deploys the documentation to Github Pages. Click "View deployment" in the [github-pages](/deployments/activity_log?environment=github-pages) environment to navigate to the latest documentation.
 
 ## CLI
 The CLI in this repo is only here to support development of the SDK as an example consumer. It is not the primary concern of this repo and may be split out into a different repo at a later point in time.

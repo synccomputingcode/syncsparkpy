@@ -8,9 +8,9 @@ from argparse import ArgumentParser
 from getpass import getpass
 
 from .api import get_history, get_prediction
-from .config import configure
+from .config import API_KEY, CONFIG, APIKey, Configuration, configure
 from .emr import run_job_flow
-from .models import APIKey, Configuration, Preference
+from .models import Preference
 
 
 def main():
@@ -89,9 +89,16 @@ def _prompt_for_api_key():
     Prompts user for API key
     """
 
-    api_key_id = input("API key ID: ")
-    api_key_secret = getpass("API key secret: ")
+    if API_KEY:
+        api_key_id = input(f"API key ID [{API_KEY.id}]: ")
+        api_key_secret = getpass("API key secret [*****]: ")
 
+        if api_key_id and api_key_secret:
+            return APIKey(api_key_id=api_key_id, api_key_secret=api_key_secret)
+        return API_KEY
+
+    api_key_id = input(f"API key ID: ")
+    api_key_secret = getpass("API key secret: ")
     return APIKey(api_key_id=api_key_id, api_key_secret=api_key_secret)
 
 
@@ -101,10 +108,12 @@ def _prompt_for_configuration():
     """
 
     # TODO default to existing configuration
-    project_url = input("Default project URL: ")
-    prediction_preference = getpass("Default prediction preference: ")
+    project_url = input(f"Default project URL [{CONFIG.default_project_url}]: ")
+    prediction_preference = getpass(
+        f"Default prediction preference [{CONFIG.default_prediction_preference}]: "
+    )
 
     return Configuration(
-        default_project_url=project_url or None,
-        default_prediction_preference=prediction_preference or None,
+        default_project_url=project_url or CONFIG.default_project_url,
+        default_prediction_preference=prediction_preference or CONFIG.default_prediction_preference,
     )

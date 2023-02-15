@@ -40,19 +40,22 @@ class SyncAuth(httpx.Auth):
         if response.status_code == httpx.codes.OK:
             auth = response.json()
             self._access_token = auth["result"]["access_token"]
-        else:
+        elif response.headers.get("Content-Type", "").startswith("application/json"):
             if error := response.json().get("error"):
                 logger.error(f"{error['code']}: {error['message']}")
             else:
                 logger.error(f"{response.status_code}: Failed to authenticate")
+        else:
+            logger.error(f"{response.status_code}: Failed to authenticate")
 
 
-class Sync:
+class SyncClient:
     def __init__(self, api_url, api_key):
         self._client = httpx.Client(
             base_url=api_url,
             headers={"User-Agent": f"Sync SDK v{__version__}"},
             auth=SyncAuth(api_url, api_key),
+            timeout=60.0,
         )
 
     def create_prediction(self, prediction: dict) -> dict:
@@ -63,14 +66,16 @@ class Sync:
             )
         )
 
-    def get_prediction(self, prediction_id) -> dict:
+    def get_prediction(self, prediction_id, params: dict = None) -> dict:
         return self._send(
-            self._client.build_request("GET", f"/v1/autotuner/predictions/{prediction_id}")
+            self._client.build_request(
+                "GET", f"/v1/autotuner/predictions/{prediction_id}", params=params
+            )
         )
 
     def get_predictions(self, params: dict = None) -> dict:
         return self._send(
-            self._client.build_request("GET", "/v1/autotuner/predictions"), params=params
+            self._client.build_request("GET", "/v1/autotuner/predictions", params=params)
         )
 
     def get_prediction_status(self, prediction_id) -> dict:
@@ -104,25 +109,91 @@ class Sync:
     def _send(self, request: httpx.Request) -> dict:
         response = self._client.send(request)
 
-        if response.status_code == httpx.codes.OK:
+        if response.status_code >= 200 and response.status_code < 300:
             return response.json()
 
-        if error := response.json().get("error"):
-            logger.error(f"{error['code']}: {error['message']}")
+        if response.headers.get("Content-Type", "").startswith("application/json"):
+            if "error" in response.json():
+                return response.json()
+
+        logger.error(f"Unknown error - {response.status_code}: {response.text}")
+        return {"error": {"code": "Sync API Error", "message": "Transaction failure"}}
+
+
+class ASyncClient:
+    def __init__(self, api_url, api_key):
+        self._client = httpx.AsyncClient(
+            base_url=api_url,
+            headers={"User-Agent": f"Sync SDK v{__version__}"},
+            auth=SyncAuth(api_url, api_key),
+            timeout=60.0,
+        )
+
+    async def create_prediction(self, prediction: dict) -> dict:
+        headers, content = encode_json(prediction)
+        return await self._send(
+            self._client.build_request(
+                "POST", "/v1/autotuner/predictions", headers=headers, content=content
+            )
+        )
+
+    async def get_prediction(self, prediction_id) -> dict:
+        return await self._send(
+            self._client.build_request("GET", f"/v1/autotuner/predictions/{prediction_id}")
+        )
+
+    async def get_predictions(self, params: dict = None) -> dict:
+        return await self._send(
+            self._client.build_request("GET", "/v1/autotuner/predictions", params=params)
+        )
+
+    async def get_prediction_status(self, prediction_id) -> dict:
+        return await self._send(
+            self._client.build_request("GET", f"/v1/autotuner/predictions/{prediction_id}/status")
+        )
+
+    async def create_project(self, project: dict) -> dict:
+        headers, content = encode_json(project)
+        return await self._send(
+            self._client.build_request("POST", "/v1/projects", headers=headers, content=content)
+        )
+
+    async def update_project(self, project_id: str, project: dict) -> dict:
+        headers, content = encode_json(project)
+        return await self._send(
+            self._client.build_request(
+                "PUT", f"/v1/projects/{project_id}", headers=headers, content=content
+            )
+        )
+
+    async def get_project(self, project_id: str) -> dict:
+        return await self._send(self._client.build_request("GET", f"/v1/projects/{project_id}"))
+
+    async def get_projects(self, params: dict = None) -> dict:
+        return await self._send(self._client.build_request("GET", "/v1/projects", params=params))
+
+    async def delete_project(self, project_id: str) -> dict:
+        return await self._send(self._client.build_request("DELETE", f"/v1/projects/{project_id}"))
+
+    async def _send(self, request: httpx.Request) -> dict:
+        response = await self._client.send(request)
+
+        if response.status_code >= 200 and response.status_code < 300:
             return response.json()
 
-        logger.error(f"{response.status_code}: Transaction failed")
-        return {"error": {"code": "Unknown error", "message": "Transaction failed."}}
+        if response.headers.get("Content-Type", "").startswith("application/json"):
+            if "error" in response.json():
+                return response.json()
+
+        logger.error(f"Unknown error - {response.status_code}: {response.text}")
+        return {"error": {"code": "Sync API Error", "message": "Transaction failure"}}
 
 
 def encode_json(obj: dict) -> tuple[dict, str]:
     # "%Y-%m-%dT%H:%M:%SZ"
     options = orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS | orjson.OPT_NAIVE_UTC
 
-    # Drop null values - some endpoints will fail when validating null values
-    nonone_obj = dict((key, value) for key, value in obj.items() if value)
-
-    json = orjson.dumps(nonone_obj, option=options).decode()
+    json = orjson.dumps(obj, option=options).decode()
 
     return {
         "Content-Length": str(len(json)),
@@ -130,12 +201,21 @@ def encode_json(obj: dict) -> tuple[dict, str]:
     }, json
 
 
-_sync_client: Sync
-_sync_client = None
+_sync_client: SyncClient = None
 
 
-def get_default_client() -> Sync:
+def get_default_client() -> SyncClient:
     global _sync_client
     if not _sync_client:
-        _sync_client = Sync(CONFIG.api_url, API_KEY)
+        _sync_client = SyncClient(CONFIG.api_url, API_KEY)
     return _sync_client
+
+
+_async_sync_client: ASyncClient = None
+
+
+def get_default_async_client() -> ASyncClient:
+    global _async_sync_client
+    if not _async_sync_client:
+        _async_sync_client = ASyncClient(CONFIG.api_url, API_KEY)
+    return _async_sync_client

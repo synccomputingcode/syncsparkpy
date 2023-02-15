@@ -21,7 +21,6 @@ classifiers = [
 dependencies = [
 "boto3==1.26.6",
 "pydantic==1.10.2",
-"requests==2.28.1",
 "httpx==0.23.3",
 "orjson==3.8.5",
 ]

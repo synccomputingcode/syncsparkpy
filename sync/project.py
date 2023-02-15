@@ -1,8 +1,12 @@
 """Project functions
 """
 
+import logging
+
 from .client import get_default_client
 from .models import Error, Preference, Project, Response
+
+logger = logging.getLogger()
 
 
 def start_next_with_prediction(

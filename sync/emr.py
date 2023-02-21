@@ -14,17 +14,17 @@ import boto3 as boto
 import orjson
 from dateutil.parser import parse as dateparse
 
-from . import project
+from .api.predictions import generate_prediction, generate_presigned_url, initiate_prediction
+from .api.projects import get_project
 from .client import get_default_client
 from .models import Error, Response
-from .prediction import generate_prediction, generate_presigned_url, initiate_prediction
 
 logger = logging.getLogger(__name__)
 
 
 def get_project_job_flow(job_flow: dict, project_id: str) -> Response[dict]:
     result_job_flow = deepcopy(job_flow)
-    project_response = project.get_project(project_id)
+    project_response = get_project(project_id)
     if _project := project_response.result:
         # Add project ID tag
         run_id = str(uuid4())

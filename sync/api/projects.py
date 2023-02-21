@@ -3,8 +3,8 @@
 
 import logging
 
-from .client import get_default_client
-from .models import Error, Preference, Project, Response
+from ..client import get_default_client
+from ..models import Error, Preference, Project, Response
 
 logger = logging.getLogger()
 

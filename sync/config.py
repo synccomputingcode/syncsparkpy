@@ -17,8 +17,11 @@ CONFIG_FILE = "config"
 
 def json_config_settings_source(path: str) -> Callable[[BaseSettings], dict[str, Any]]:
     def source(settings: BaseSettings) -> dict[str, Any]:
-        with open(_get_config_dir().joinpath(path)) as fobj:
-            return json.load(fobj)
+        config_path = _get_config_dir().joinpath(path)
+        if config_path.exists():
+            with open(config_path) as fobj:
+                return json.load(fobj)
+        return {}
 
     return source
 
@@ -30,7 +33,7 @@ class APIKey(BaseSettings):
     class Config:
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return (init_settings, json_config_settings_source(CREDENTIALS_FILE))
+            return (init_settings, env_settings, json_config_settings_source(CREDENTIALS_FILE))
 
 
 class Configuration(BaseSettings):
@@ -40,22 +43,23 @@ class Configuration(BaseSettings):
 
     @validator("default_project_url")
     def validate_url(cls, url):
-        # There are valid S3 URLs (e.g. with spaces) not supported by Pydantic URL types: https://docs.pydantic.dev/usage/types/#urls
-        # Hence the manual validation here
-        parsed_url = urlparse(url)
+        if url:
+            # There are valid S3 URLs (e.g. with spaces) not supported by Pydantic URL types: https://docs.pydantic.dev/usage/types/#urls
+            # Hence the manual validation here
+            parsed_url = urlparse(url)
 
-        if parsed_url.scheme != "s3":
-            raise ValueError("Only S3 URLs please!")
+            if parsed_url.scheme != "s3":
+                raise ValueError("Only S3 URLs please!")
 
-        return url
+            return url
 
     class Config:
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return (init_settings, json_config_settings_source(CONFIG_FILE))
+            return (init_settings, env_settings, json_config_settings_source(CONFIG_FILE))
 
 
-def configure(api_key: APIKey, config: Configuration):
+def init(api_key: APIKey, config: Configuration):
     """Initializes configuration files. Currently only Linux-based systems are supported.
 
     :param api_key: API key

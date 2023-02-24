@@ -4,16 +4,16 @@ from urllib.parse import urlparse
 
 import boto3 as boto
 
-from ..client import get_default_client
-from ..models import Error, Response
+from ..clients.sync import get_default_client
+from ..models import Error, Platform, Response
 
 logger = logging.getLogger(__name__)
 
 
 def generate_prediction(
-    cluster_config: dict, eventlog_url: str, preference: str = None
+    platform: Platform, cluster_config: dict, eventlog_url: str, preference: str = None
 ) -> Response[dict]:
-    response = initiate_prediction(cluster_config, eventlog_url)
+    response = initiate_prediction(platform, cluster_config, eventlog_url)
 
     if prediction_id := response.result:
         return wait_for_prediction(prediction_id, preference)
@@ -49,10 +49,12 @@ def get_status(prediction_id: str) -> Response[str]:
     response = get_default_client().get_prediction_status(prediction_id)
 
     if result := response.get("result"):
-        return Response(result=result['status'])
+        return Response(result=result["status"])
 
     logger.error(f"{response['error']['code']}: {response['error']['message']}")
-    return Response(error=Error(code="Prediction Error", message="Failure getting prediction status"))
+    return Response(
+        error=Error(code="Prediction Error", message="Failure getting prediction status")
+    )
 
 
 def get_predictions(product: str = None, project_id: str = None) -> Response[dict]:
@@ -87,7 +89,9 @@ def wait_for_final_prediction_status(prediction_id: str) -> Response[str]:
     return Response(error=Error(code="Prediction Error", message="Failed to get pediction status"))
 
 
-def initiate_prediction(cluster_config: dict, eventlog_url: str) -> Response[str]:
+def initiate_prediction(
+    platform: Platform, cluster_config: dict, eventlog_url: str, project_id: str = None
+) -> Response[str]:
     parsed_eventlog_url = urlparse(eventlog_url)
     if parsed_eventlog_url.scheme == "s3":
         response = generate_presigned_url(eventlog_url)
@@ -97,16 +101,16 @@ def initiate_prediction(cluster_config: dict, eventlog_url: str) -> Response[str
     else:
         eventlog_http_url = eventlog_url
 
-    project_id = None
-    for tag in cluster_config["Cluster"]["Tags"]:
-        if tag["Key"] == "sync:project-id":
-            project_id = tag["Value"]
-            break
+    if not project_id:
+        for tag in cluster_config["Cluster"]["Tags"]:
+            if tag["Key"] == "sync:project-id":
+                project_id = tag["Value"]
+                break
 
     response = get_default_client().create_prediction(
         {
             "project_id": project_id,
-            "product_code": "aws-emr",
+            "product_code": platform.api_name,
             "eventlog_url": eventlog_http_url,
             "configs": cluster_config,
         }

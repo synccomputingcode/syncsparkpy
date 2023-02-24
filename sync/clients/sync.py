@@ -2,10 +2,9 @@ import logging
 from typing import Generator
 
 import httpx
-import orjson
 
-from . import __version__
-from .config import API_KEY, CONFIG, APIKey
+from . import encode_json, USER_AGENT
+from ..config import API_KEY, CONFIG, APIKey
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +52,7 @@ class SyncClient:
     def __init__(self, api_url, api_key):
         self._client = httpx.Client(
             base_url=api_url,
-            headers={"User-Agent": f"Sync SDK v{__version__}"},
+            headers={"User-Agent": USER_AGENT},
             auth=SyncAuth(api_url, api_key),
             timeout=60.0,
         )
@@ -124,7 +123,7 @@ class ASyncClient:
     def __init__(self, api_url, api_key):
         self._client = httpx.AsyncClient(
             base_url=api_url,
-            headers={"User-Agent": f"Sync SDK v{__version__}"},
+            headers={"User-Agent": USER_AGENT},
             auth=SyncAuth(api_url, api_key),
             timeout=60.0,
         )
@@ -187,18 +186,6 @@ class ASyncClient:
 
         logger.error(f"Unknown error - {response.status_code}: {response.text}")
         return {"error": {"code": "Sync API Error", "message": "Transaction failure"}}
-
-
-def encode_json(obj: dict) -> tuple[dict, str]:
-    # "%Y-%m-%dT%H:%M:%SZ"
-    options = orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS | orjson.OPT_NAIVE_UTC
-
-    json = orjson.dumps(obj, option=options).decode()
-
-    return {
-        "Content-Length": str(len(json)),
-        "Content-Type": "application/json",
-    }, json
 
 
 _sync_client: SyncClient = None

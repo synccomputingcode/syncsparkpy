@@ -16,8 +16,8 @@ from dateutil.parser import parse as dateparse
 
 from .api.predictions import generate_prediction, generate_presigned_url, initiate_prediction
 from .api.projects import get_project
-from .client import get_default_client
-from .models import Error, Response
+from .clients.sync import get_default_client
+from .models import Error, Platform, Response
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ def run_and_wait_for_job_flow(job_flow: dict, project_id: str = None) -> Respons
     return record_run(cluster_id, project_id)
 
 
-def record_run(cluster_id: str, project_id: str = None) -> Response[str]:
+def record_run(cluster_id: str, project_id: str) -> Response[str]:
     config_response = get_cluster_config(cluster_id)
     if config_response.error:
         return config_response
@@ -132,16 +132,15 @@ def record_run(cluster_id: str, project_id: str = None) -> Response[str]:
 
     # Save configuration
     if eventlog_url := get_eventlog_url_from_cluster_config(config).result:
-        if project_id:
-            parsed_eventlog_url = urlparse(eventlog_url)
-            if upload_object(
-                config,
-                f"s3://{parsed_eventlog_url.netloc}/{parsed_eventlog_url.path[:parsed_eventlog_url.path.rindex('/')].strip('/')}/config.json",
-            ).error:
-                logger.warning("Failed to save configuration")
+        parsed_eventlog_url = urlparse(eventlog_url)
+        if upload_object(
+            config,
+            f"s3://{parsed_eventlog_url.netloc}/{parsed_eventlog_url.path[:parsed_eventlog_url.path.rindex('/')].strip('/')}/config.json",
+        ).error:
+            logger.warning("Failed to save configuration")
 
     # Start prediction
-    return initiate_prediction(config, eventlog_url)
+    return initiate_prediction(Platform.EMR, config, eventlog_url, project_id)
 
 
 def upload_object(obj: dict, s3_url: str) -> Response[str]:
@@ -176,7 +175,7 @@ def initiate_prediction_with_cluster_id(cluster_id: str) -> Response[str]:
         eventlog_http_url_response = generate_presigned_url(eventlog_response.result)
 
         if eventlog_http_url := eventlog_http_url_response.result:
-            return initiate_prediction(cluster_config, eventlog_http_url)
+            return initiate_prediction(Platform.EMR, cluster_config, eventlog_http_url)
         return eventlog_http_url_response
     return cluster_response
 

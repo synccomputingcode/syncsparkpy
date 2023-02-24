@@ -1,8 +1,9 @@
 import click
 import orjson
 
-from .. import emr
+from .. import databricks, emr
 from ..api.predictions import get_prediction, get_predictions, get_status
+from ..config import CONFIG
 from ..models import Platform, Preference
 
 
@@ -37,8 +38,36 @@ def get(prediction_id: str, preference: str = None):
 
 
 @predictions.command
+@click.argument("prediction-id")
+@click.option("-p", "--preference", type=click.Choice([p.value for p in Preference]))
+def apply(prediction_id: str, preference: str = None):
+    response = get_prediction(prediction_id, preference)
+
+    if result := response.result:
+        config = result["solutions"][preference or CONFIG.default_prediction_preference][
+            "configuration"
+        ]
+
+        match Platform.from_api_name(result["product_code"]):
+            case Platform.EMR:
+                cluster_response = emr.run_job_flow(config, result.get("project_id"))
+                if result := cluster_response.result:
+                    click.echo(f"EMR cluster ID: {result}")
+                else:
+                    click.echo(f"{response.error.code}: {response.error.message}", err=True)
+            case Platform.DATABRICKS:
+                cluster_response = databricks.create_cluster(config)
+                if result := cluster_response.result:
+                    click.echo(f"Databricks cluster ID: {result}")
+                else:
+                    click.echo(f"{response.error.code}: {response.error.message}", err=True)
+    else:
+        click.echo(f"{response.error.code}: {response.error.message}", err=True)
+
+
+@predictions.command
 @click.option("--platform", type=click.Choice(Platform))
-@click.option("--project", "project_id")
+@click.option("--project", "project_id", metavar="PROJECT_ID")
 def list(platform: Platform, project_id: str = None):
     response = get_predictions(
         product=platform.api_name if platform else None, project_id=project_id

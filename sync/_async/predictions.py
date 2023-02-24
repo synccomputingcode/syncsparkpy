@@ -2,9 +2,9 @@ import logging
 from asyncio import sleep
 from urllib.parse import urlparse
 
-from ..client import get_default_async_client
-from ..models import Error, Response
 from ..api.predictions import generate_presigned_url
+from ..clients.sync import get_default_async_client
+from ..models import Error, Response
 
 logger = logging.getLogger(__name__)
 

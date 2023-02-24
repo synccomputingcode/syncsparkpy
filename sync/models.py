@@ -32,6 +32,12 @@ class Platform(str, Enum):
     def api_name(self) -> str:
         return self.__api_name
 
+    @staticmethod
+    def from_api_name(name: str) -> "Platform":
+        for platform in Platform:
+            if platform.api_name == name:
+                return platform
+
 
 class Project(BaseModel):
     id: UUID4 = Field(..., description="project UUID")

@@ -4,7 +4,7 @@
 import logging
 
 from ..clients.sync import get_default_client
-from ..models import Error, Preference, Project, Response
+from ..models import Preference, Response
 
 logger = logging.getLogger()
 
@@ -247,6 +247,9 @@ def get_prediction(app_id: str, preference: Preference = None) -> Response[dict]
     :return: prediction
     :rtype: Response[dict]
     """
+    projects_response = get_projects(app_id)
+    if projects := projects_response.result:
+        get_default_client().get_predictions({"project_id": projects[0]["id"]})
 
 
 def create_project(
@@ -254,7 +257,7 @@ def create_project(
     description: str = None,
     s3_url: str = None,
     prediction_preference: Preference = Preference.BALANCED,
-) -> Response[Project]:
+) -> Response[dict]:
     """Creates a Sync project for tracking and optimizing Apache Spark applications
 
     :param app_name: Apache Spark application name
@@ -280,7 +283,7 @@ def create_project(
     )
 
 
-def get_project(project_id: str) -> Response[Project]:
+def get_project(project_id: str) -> Response[dict]:
     """Retrieves a project
 
     :param project_id: porject ID
@@ -296,7 +299,7 @@ def update_project(
     description: str = None,
     s3_url: str = None,
     prediction_preference: Preference = None,
-) -> Response[Project]:
+) -> Response[dict]:
     """Updates a projects mutable properties
 
     :param project_id: project ID
@@ -310,21 +313,25 @@ def update_project(
     :return: updated project
     :rtype: Response[Project]
     """
+    project_update = {}
+    if description:
+        project_update["description"] = description
+    if s3_url:
+        project_update["s3_url"] = s3_url
+    if prediction_preference:
+        project_update["prediction_preference"] = prediction_preference
+
     return Response(
         **get_default_client().update_project(
             project_id,
-            {
-                "description": description,
-                "s3_url": s3_url,
-                "prediction_preference": prediction_preference,
-            },
+            project_update,
         )
     )
 
 
 def get_project_by_app_id(
     app_id: str,
-) -> Response[Project]:
+) -> Response[dict]:
     """Retrieves a project by app ID
 
     :param app_id: app ID
@@ -336,16 +343,16 @@ def get_project_by_app_id(
     if result := response.get("result"):
         return Response(result=result[0])
 
-    return Response(error=Error(code="Not found", message=f"Project not found for '{app_id}'"))
+    return Response(**response)
 
 
-def get_projects() -> Response[list[Project]]:
+def get_projects(app_id: str = None) -> Response[list[dict]]:
     """Returns all projects authorized by the API key
 
     :return: projects
     :rtype: Response[list[Project]]
     """
-    return Response(**get_default_client().get_projects())
+    return Response(**get_default_client().get_projects(params={"app_id": app_id}))
 
 
 def delete_project(project_id: str) -> Response[str]:

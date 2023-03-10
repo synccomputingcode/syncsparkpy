@@ -1,8 +1,10 @@
+import io
 import logging
 from time import sleep
 from urllib.parse import urlparse
 
 import boto3 as boto
+import httpx
 
 from ..clients.sync import get_default_client
 from ..models import Error, Platform, Response
@@ -10,10 +12,15 @@ from ..models import Error, Platform, Response
 logger = logging.getLogger(__name__)
 
 
+def get_products() -> Response[list[str]]:
+    response = get_default_client().get_products()
+    return Response(**response)
+
+
 def generate_prediction(
     platform: Platform, cluster_config: dict, eventlog_url: str, preference: str = None
 ) -> Response[dict]:
-    response = initiate_prediction(platform, cluster_config, eventlog_url)
+    response = create_prediction(platform, cluster_config, eventlog_url)
 
     if prediction_id := response.result:
         return wait_for_prediction(prediction_id, preference)
@@ -89,23 +96,57 @@ def wait_for_final_prediction_status(prediction_id: str) -> Response[str]:
     return Response(error=Error(code="Prediction Error", message="Failed to get pediction status"))
 
 
-def initiate_prediction(
+def create_prediction_with_eventlog_bytes(
+    platform: Platform,
+    cluster_config: dict,
+    eventlog_name: str,
+    eventlog_bytes: bytes,
+    project_id: str = None,
+) -> Response[str]:
+    response = get_default_client().create_prediction(
+        {
+            "project_id": project_id,
+            "product_code": platform.api_name,
+            "configs": cluster_config,
+        }
+    )
+
+    if response.get("error"):
+        logger.error(f"{response['error']['code']}: {response['error']['message']}")
+        return Response(error=Error(code="Prediction Error", message="Failure creating prediction"))
+
+    upload_details = response["result"]["upload_details"]
+    log_response = httpx.post(
+        upload_details["url"],
+        data={
+            **upload_details["fields"],
+            "key": upload_details["fields"]["key"].replace("${filename}", eventlog_name),
+        },
+        files={"file": io.BytesIO(eventlog_bytes)},
+    )
+    if not log_response.status_code == httpx.codes.NO_CONTENT:
+        return Response(error=Error(code="Prediction Error", message="Failed to upload event log"))
+
+    return Response(result=response["result"]["prediction_id"])
+
+
+def create_prediction(
     platform: Platform, cluster_config: dict, eventlog_url: str, project_id: str = None
 ) -> Response[str]:
+    eventlog_http_url = None
     parsed_eventlog_url = urlparse(eventlog_url)
-    if parsed_eventlog_url.scheme == "s3":
-        response = generate_presigned_url(eventlog_url)
-        if response.error:
-            return response
-        eventlog_http_url = response.result
-    else:
-        eventlog_http_url = eventlog_url
-
-    if not project_id:
-        for tag in cluster_config["Cluster"]["Tags"]:
-            if tag["Key"] == "sync:project-id":
-                project_id = tag["Value"]
-                break
+    match parsed_eventlog_url.scheme:
+        case "s3":
+            response = generate_presigned_url(eventlog_url)
+            if response.error:
+                return response
+            eventlog_http_url = response.result
+        case "http" | "https":
+            eventlog_http_url = eventlog_url
+        case _:
+            return Response(
+                error=Error(code="Prediction Error", message="Unsupported event log URL scheme")
+            )
 
     response = get_default_client().create_prediction(
         {
@@ -116,11 +157,11 @@ def initiate_prediction(
         }
     )
 
-    if result := response.get("result"):
-        return Response(result=result["prediction_id"])
+    if response.get("error"):
+        logger.error(f"{response['error']['code']}: {response['error']['message']}")
+        return Response(error=Error(code="Prediction Error", message="Failure creating prediction"))
 
-    logger.error(f"{response['error']['code']}: {response['error']['message']}")
-    return Response(error=Error(code="Prediction Error", message="Falure creating prediction"))
+    return Response(result=response["result"]["prediction_id"])
 
 
 def generate_presigned_url(s3_url: str, expires_in_secs: int = 3600) -> Response[str]:

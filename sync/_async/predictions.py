@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 async def generate_prediction(cluster_config: dict, eventlog_url: str) -> Response[dict]:
-    response = await initiate_prediction(cluster_config, eventlog_url)
+    response = await create_prediction(cluster_config, eventlog_url)
 
     if prediction_id := response.result:
         return await wait_for_prediction(prediction_id)
@@ -72,7 +72,7 @@ async def wait_for_final_prediction_status(prediction_id: str) -> Response[str]:
     return Response(error=Error(code="Prediction Error", message="Failed to get pediction status"))
 
 
-async def initiate_prediction(cluster_config: dict, eventlog_url: str) -> Response[str]:
+async def create_prediction(cluster_config: dict, eventlog_url: str) -> Response[str]:
     parsed_eventlog_url = urlparse(eventlog_url)
     if parsed_eventlog_url.scheme == "s3":
         response = generate_presigned_url(eventlog_url)

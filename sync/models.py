@@ -41,7 +41,6 @@ class Platform(str, Enum):
 
 class Project(BaseModel):
     id: UUID4 = Field(..., description="project UUID")
-    user_id: UUID4
     app_id: str = Field(
         ...,
         description="a string that uniquely identifies an application to the owner of that application",
@@ -58,6 +57,9 @@ class Project(BaseModel):
 class Error(BaseModel):
     code: str
     message: str
+
+    def __str__(self):
+        return f"{self.code}: {self.message}"
 
 
 DataType = TypeVar("DataType")

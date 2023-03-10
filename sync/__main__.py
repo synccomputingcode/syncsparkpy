@@ -6,7 +6,7 @@ import logging
 
 import click
 
-from .cli import predictions, projects
+from .cli import databricks, emr, predictions, projects
 from .config import API_KEY, CONFIG, DB_CONFIG, APIKey, Configuration, DatabricksConf, init
 from .models import Preference
 
@@ -23,6 +23,8 @@ def main():
 
 main.add_command(predictions.predictions)
 main.add_command(projects.projects)
+main.add_command(emr.emr)
+main.add_command(databricks.databricks)
 
 
 @main.command

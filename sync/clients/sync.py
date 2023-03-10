@@ -3,8 +3,8 @@ from typing import Generator
 
 import httpx
 
-from . import encode_json, USER_AGENT
 from ..config import API_KEY, CONFIG, APIKey
+from . import USER_AGENT, encode_json
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,9 @@ class SyncClient:
             auth=SyncAuth(api_url, api_key),
             timeout=60.0,
         )
+
+    def get_products(self) -> dict:
+        return self._send(self._client.build_request("GET", "/v1/autotuner/products"))
 
     def create_prediction(self, prediction: dict) -> dict:
         headers, content = encode_json(prediction)

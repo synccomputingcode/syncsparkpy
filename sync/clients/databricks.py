@@ -45,6 +45,24 @@ class DatabricksClient:
             self._client.build_request("GET", "/api/2.1/jobs/get", params={"job_id": job_id})
         )
 
+    def create_run(self, run: dict) -> dict:
+        # https://docs.databricks.com/dev-tools/api/latest/jobs.html#operation/JobsRunsSubmit
+        headers, content = encode_json(run)
+        return self._send(
+            self._client.build_request(
+                "POST", "/api/2.1/jobs/runs/submit", headers=headers, content=content
+            )
+        )
+
+    def create_job_run(self, run: dict) -> dict:
+        # https://docs.databricks.com/dev-tools/api/latest/jobs.html#operation/JobsRunNow
+        headers, content = encode_json(run)
+        return self._send(
+            self._client.build_request(
+                "POST", "/api/2.1/jobs/run-now", headers=headers, content=content
+            )
+        )
+
     def get_run(self, run_id: str) -> dict:
         return self._send(
             self._client.build_request("GET", "/api/2.1/jobs/runs/get", params={"run_id": run_id})

@@ -25,7 +25,7 @@ def run_prediction(job_id: str, prediction_id: str, preference: str = None):
     if run_id := run.result:
         click.echo(f"Run ID: {run_id}")
     else:
-        click.echo(run.error, err=True)
+        click.echo(str(run.error), err=True)
 
 
 @databricks.command
@@ -40,13 +40,11 @@ def run_prediction(job_id: str, prediction_id: str, preference: str = None):
 )
 @click.option("-p", "--project", callback=validate_project)
 def run_job(job_id: str, plan: str, compute: str, project: dict = None):
-    run_response = sync_databricks.run_and_record_job(
-        job_id, plan, compute, project["id"] if project else None
-    )
+    run_response = sync_databricks.run_and_record_job(job_id, plan, compute, project["id"])
     if prediction_id := run_response.result:
         click.echo(f"Predction ID: {prediction_id}")
     else:
-        click.echo(run_response.error, err=True)
+        click.echo(str(run_response.error), err=True)
 
 
 @databricks.command
@@ -59,10 +57,10 @@ def run_job(job_id: str, plan: str, compute: str, project: dict = None):
     type=click.Choice(["All-Purpose Compute", "Jobs Compute", "Jobs Light Compute"]),
     default="Jobs Compute",
 )
-@click.option("-p", "--project-id")
-def create_prediction(run_id: str, plan: str, compute: str, project_id: str = None):
+@click.option("-p", "--project", callback=validate_project)
+def create_prediction(run_id: str, plan: str, compute: str, project: str = None):
     prediction_response = sync_databricks.create_prediction_for_run(
-        run_id, plan, compute, project_id
+        run_id, plan, compute, project["id"]
     )
     if prediction := prediction_response.result:
         click.echo(f"Prediction ID: {prediction}")

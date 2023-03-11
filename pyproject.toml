@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "sync_sdk"
 authors = [{"name" = "Sync Computing"}]
 readme = "README.md"
-requires-python = ">=3.10.3"
+requires-python = ">=3.10"
 classifiers = [
     "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",

@@ -6,11 +6,17 @@ import boto3 as boto
 import click
 import orjson
 
-from sync.api.predictions import create_prediction, create_prediction_with_eventlog_bytes
+from sync.api.predictions import (
+    create_prediction,
+    create_prediction_with_eventlog_bytes,
+    get_prediction,
+    get_predictions,
+    get_products,
+    get_status,
+)
 from sync.cli import validate_project
-
-from ..api.predictions import get_prediction, get_predictions, get_products, get_status
-from ..models import Platform, Preference
+from sync.config import CONFIG
+from sync.models import Platform, Preference
 
 
 @click.group
@@ -78,9 +84,14 @@ def status(prediction_id: str):
 
 @predictions.command
 @click.argument("prediction-id")
-@click.option("-p", "--preference", type=click.Choice([p.value for p in Preference]))
-def get(prediction_id: str, preference: str = None):
-    response = get_prediction(prediction_id, preference)
+@click.option(
+    "-p",
+    "--preference",
+    type=click.Choice(Preference),
+    default=CONFIG.default_prediction_preference,
+)
+def get(prediction_id: str, preference: Preference):
+    response = get_prediction(prediction_id, preference.value)
     click.echo(
         orjson.dumps(
             response.result,

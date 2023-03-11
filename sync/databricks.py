@@ -101,10 +101,10 @@ def get_project_job(job_id: str, project_id: str, region: str = None) -> Respons
             if tasks := job_settings.get("tasks", []):
                 cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
                 if cluster := cluster_response.result:
-                    if project.s3_url:
+                    if s3_url := project.get("s3_url"):
                         cluster["cluster_log_conf"] = {
                             "s3": {
-                                "destination": project.s3_url,
+                                "destination": f"{s3_url}/{project_id}",
                                 "enable_encryption": True,
                                 "region": region or boto.client("s3").meta.region_name,
                                 "canned_acl": "bucket-owner-full-control",
@@ -130,6 +130,8 @@ def run_job_object(job: dict) -> Response[str]:
             tasks[0]["new_cluster"] = cluster
             del tasks[0]["job_cluster_key"]
         else:
+            # Create an all-purpose compute cluster
+            cluster["cluster_name"] = cluster["cluster_name"] or job["settings"]["name"]
             cluster["autotermination_minutes"] = 10  # 10 minutes is the minimum
             if cluster_result := get_default_client().create_cluster(cluster):
                 for task in tasks:
@@ -295,27 +297,6 @@ def _get_eventlog(task: dict, cluster: dict) -> Response[bytes]:
 
             return Response(result=eventlog_zip.getvalue())
 
-        return Response(error=Error(code="Databricks Error", message="No eventlog found"))
-
-
-def _get_eventlog_url(task: dict, cluster: dict) -> Response[str]:
-    log_url = cluster.get("cluster_log_conf", {}).get("s3", {}).get("destination")
-    if log_url:
-        parsed_log_url = urlparse(log_url)
-
-        s3 = boto.client("s3")
-        contents = s3.list_objects_v2(
-            Bucket=parsed_log_url.netloc,
-            Prefix=f"{parsed_log_url.path.strip('/')}/{task.get('cluster_instance', {}).get('cluster_id')}/eventlog/{task.get('cluster_instance').get('cluster_id')}",
-        ).get("Contents")
-
-        if contents:
-            if len(contents) > 1:
-                return Response(
-                    error=Error(code="Databricks Error", message="More than 1 eventlog found")
-                )
-
-            return Response(result=f"s3://{parsed_log_url.netloc}/{contents[0]['Key']}")
         return Response(error=Error(code="Databricks Error", message="No eventlog found"))
 
 

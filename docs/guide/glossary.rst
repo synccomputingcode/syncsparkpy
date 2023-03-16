@@ -4,10 +4,10 @@ Glossary
 .. glossary::
 
   Site
-    Instance of SDK installation
+    Instance of Sync library installation
 
   Tenant
-    A Sync account (user for now, maybe org later)
+    A Sync account
 
   Project
-    An Apache Spark application for which there may be iterative predictions
+    A collection of data and predictions for an Apache Spark application

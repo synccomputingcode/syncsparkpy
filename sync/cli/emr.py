@@ -5,7 +5,7 @@ import orjson
 
 from sync import emr as sync_emr
 from sync.api.predictions import get_prediction
-from sync.cli import validate_project
+from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import Platform, Preference
 
@@ -22,7 +22,7 @@ def emr():
 def run_job_flow(job_flow: TextIOWrapper, project: dict = None, region: str = None):
     job_flow_obj = orjson.loads(job_flow.read())
 
-    run_response = sync_emr.run_and_wait_for_job_flow(
+    run_response = sync_emr.run_and_record_job_flow(
         job_flow_obj, project["id"] if project else None
     )
     if prediction_id := run_response.result:
@@ -62,6 +62,17 @@ def run_prediction(prediction_id: str, preference: Preference):
 @click.option("-p", "--project", callback=validate_project)
 def create_prediction(cluster_id: str, project: str = None):
     prediction_response = sync_emr.create_prediction_for_cluster(cluster_id, project["id"])
+    if prediction := prediction_response.result:
+        click.echo(f"Prediction ID: {prediction}")
+    else:
+        click.echo(f"Failed to create prediction. {prediction_response.error}", err=True)
+
+
+@emr.command
+@click.argument("project", callback=validate_project)
+@click.option("-r", "--run-id")
+def create_project_prediction(project: dict[str, str], run_id: str = None):
+    prediction_response = sync_emr.create_project_prediction(project["id"], run_id)
     if prediction := prediction_response.result:
         click.echo(f"Prediction ID: {prediction}")
     else:

@@ -14,7 +14,7 @@ from sync.api.predictions import (
     get_products,
     get_status,
 )
-from sync.cli import validate_project
+from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import Platform, Preference
 
@@ -35,8 +35,8 @@ def platforms():
 
 @predictions.command
 @click.argument("platform", type=click.Choice(Platform))
-@click.option("-e", "--event-log", required=True)
-@click.option("-c", "--config", required=True)
+@click.option("-e", "--event-log", metavar="URL/PATH", required=True)
+@click.option("-c", "--config", metavar="URL/PATH", required=True)
 @click.option("-p", "--project", callback=validate_project)
 def create(platform: Platform, event_log: str, config: str, project: str):
     parsed_config = urlparse(config)
@@ -48,6 +48,7 @@ def create(platform: Platform, event_log: str, config: str, project: str):
             s3 = boto.client("s3")
             config_io = io.BytesIO()
             s3.download_fileobj(parsed_config.netloc, parsed_config.path.lstrip("/"), config_io)
+            config = orjson.loads(config_io.getvalue())
         case _:
             click.echo("Unsupported config argument", err=True)
 

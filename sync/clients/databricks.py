@@ -40,6 +40,14 @@ class DatabricksClient:
             )
         )
 
+    def delete_cluster(self, cluster_id: str) -> dict:
+        headers, content = encode_json({"cluster_id": cluster_id})
+        return self._send(
+            self._client.build_request(
+                "POST", "/api/2.0/clusters/delete", headers=headers, content=content
+            )
+        )
+
     def get_job(self, job_id: str) -> dict:
         return self._send(
             self._client.build_request("GET", "/api/2.1/jobs/get", params={"job_id": job_id})
@@ -74,7 +82,16 @@ class DatabricksClient:
         if response.status_code >= 200 and response.status_code < 300:
             return response.json()
 
+        if response.headers.get("Content-Type", "").startswith("application/json"):
+            response_json = response.json()
+            if "error_code" in response_json:
+                # Though not in the documentation, the cluster API can return and "error_code" too
+                # return {"error": {"code": "Databricks API Error", "message": f"{response_json['error_code']}: {response_json.get('message')}"}}
+                return response_json
+
+        # return {"error": {"code": "Databricks API Error", "message": "Transaction failure"}}
         logger.error(f"Unknown error - {response.status_code}: {response.text}")
+        return {"error_code": "UNKNOWN_ERROR", "message": "Transaction failure"}
 
 
 _sync_client: DatabricksClient = None

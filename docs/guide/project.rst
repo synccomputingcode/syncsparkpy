@@ -2,34 +2,28 @@ Projects
 ========
 
 Projects are Sync-enabled Apache Spark applications. Once a project is created around an
-application the performance and cost of that application can be continuously tuned to strike the right balance.
+application the performance and cost of that application can be continuously tracked to provide analysis and configuration updates for cost and performance improvements.
 
 On-boarding
 -----------
 
-To on-board a Spark application it must be run with a configuration that includes Sync metadata and an event log destination.
-2 functions are provided for this purpose:
+There are varying degrees to which an Apache Spark application can be on-boarded. First however, a Sync project must be created:
 
-.. autofunction:: sync.project.init_emr
+.. autofunction:: sync.api.projects.create_project
   :noindex:
 
-.. autofunction:: sync.project.init_databricks
+For a more robust experience add an S3 location under which to store event logs and application configurations. If the application has an event log configuration based on
+that location only a project reference is needed to track it in a Sync project. This library function provides a full EMR configuration for the project:
+
+.. autofunction:: sync.emr.get_project_job_flow
   :noindex:
 
-On successful completion the event log is at the S3 location for the first run based on the provided URL
-alongside the configuration applied to either the EMR or Databricks cluster API. :py:func:`~sync.project.record_run`
-should then be called to save the configuration required for a prediction. For convenience, the methods :py:func:`~sync.project.init_emr_and_wait` and :py:func:`~sync.project.init_databricks_and_wait`
-provide a complete on-boarding transaction that returns after calling :py:func:`~sync.project.record_run` on completion of the run.
+At any point after at least 1 run of the project-configured application the latest prediction can be generated with :py:func:`~sync.emr.create_project_prediction`.
 
-The above is just 1 avenue for on-boarding a Spark application to a Sync project. Other ways may be easier or otherwise better suited to a customer.
-The only things that all onboarding solutions must have in common are,
+To get the most out of your project each application run should be recorded. This way Sync can provide the best recommendations. The library function to call is,
 
-1. A Sync project is created for the Apache Spark application
-2. The project S3 location in the customer's account contains valid data from 1 run:
-
-   1. Event log
-   2. Applied cluster configuration
-   3. Post cluster data (i.e. prediction configuration)
+.. autofunction:: sync.emr.record_run
+  :noindex:
 
 Continuous Tuning
 -----------------
@@ -60,7 +54,7 @@ Example:
 Iterative Tracking and Notification
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Rather than applying a prediction every time customers may be more likely to prefer a more discretionary approach.
+Rather than applying a prediction every time discretionary approach may be preferable.
 In this approach cluster configurations are applied by orchestration with Sync tracking tags and event log configuration.
 After each iteration event logs & cluster data are sent to Sync for optimizing predictions.
 If a prediction is compelling it is applied such that the orchestration will use it in subsequent iterations.
@@ -74,7 +68,7 @@ Setup:
 Orchestration:
 
 1. before an app is run the orchestrator updates the cluster configuration with the following
-   either manually, or by calling :py:func:`~sync.project.prepare_job_flow`
+   either manually, or by calling :py:func:`~sync.emr.get_project_job_flow`
 
    1. event log location (format: {project S3 URL}/{project ID}/{timestamp}/{run ID})
    2. Sync tags: `sync:tenant-id`, `sync:project-id`, `sync:run-id`

@@ -1,7 +1,7 @@
 import click
 
 from sync import databricks as sync_databricks
-from sync.cli import validate_project
+from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import Preference
 
@@ -42,7 +42,7 @@ def run_prediction(job_id: str, prediction_id: str, preference: str = None):
 def run_job(job_id: str, plan: str, compute: str, project: dict = None):
     run_response = sync_databricks.run_and_record_job(job_id, plan, compute, project["id"])
     if prediction_id := run_response.result:
-        click.echo(f"Predction ID: {prediction_id}")
+        click.echo(f"Prediction ID: {prediction_id}")
     else:
         click.echo(str(run_response.error), err=True)
 

@@ -5,7 +5,7 @@ Models used throughout this SDK
 from enum import Enum
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, root_validator, validator
 from pydantic.generics import GenericModel
 from pydantic.types import UUID4
 
@@ -45,13 +45,9 @@ class Project(BaseModel):
         ...,
         description="a string that uniquely identifies an application to the owner of that application",
     )
-    description: str | None = Field(
-        None, description="Additional information on the app, or project"
-    )
-    s3_url: str | None = Field(None, description="location of data from runs of the application")
-    prediction_preference: Preference | None = Field(
-        None, description="preferred prediction to apply"
-    )
+    description: str | None = Field(description="Additional information on the app, or project")
+    s3_url: str | None = Field(description="location of data from runs of the application")
+    prediction_preference: Preference | None = Field(description="preferred prediction to apply")
 
 
 class Error(BaseModel):
@@ -60,6 +56,32 @@ class Error(BaseModel):
 
     def __str__(self):
         return f"{self.code}: {self.message}"
+
+
+class PredictionError(Error):
+    code: str = Field("Prediction Error", const=True)
+
+
+class ProjectError(Error):
+    code: str = Field("Project Error", const=True)
+
+
+class EMRError(Error):
+    code: str = Field("EMR Error", const=True)
+
+
+class DatabricksError(Error):
+    code: str = Field("Databricks Error", const=True)
+
+
+class DatabricksAPIError(Error):
+    @root_validator(pre=True)
+    def validate_error(cls, values):
+        values["code"] = "Databricks API Error"
+        if values.get("error_code"):
+            values["message"] = f"{values['error_code']}: {values.get('message')}"
+
+        return values
 
 
 DataType = TypeVar("DataType")

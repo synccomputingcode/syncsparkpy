@@ -75,7 +75,7 @@ class SyncClient:
             )
         )
 
-    def get_predictions(self, params: dict = None) -> dict:
+    def get_predictions(self, params: dict = None) -> list[dict]:
         return self._send(
             self._client.build_request("GET", "/v1/autotuner/predictions", params=params)
         )
@@ -115,8 +115,12 @@ class SyncClient:
             return response.json()
 
         if response.headers.get("Content-Type", "").startswith("application/json"):
-            if "error" in response.json():
-                return response.json()
+            response_json = response.json()
+            if "error" in response_json:
+                logger.error(
+                    f"{response_json['error']['code']}: {response_json['error']['message']} Detail: {response_json['error'].get('detail')}"
+                )
+                return response_json
 
         logger.error(f"Unknown error - {response.status_code}: {response.text}")
         return {"error": {"code": "Sync API Error", "message": "Transaction failure"}}

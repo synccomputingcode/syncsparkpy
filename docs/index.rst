@@ -18,9 +18,8 @@ Welcome to Sync SDK's documentation!
    :maxdepth: 2
    :caption: Reference
 
-   reference/project
    reference/api
-
+   reference/emr
 
 
 Indices and tables

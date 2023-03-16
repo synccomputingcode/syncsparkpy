@@ -69,24 +69,26 @@ async def wait_for_final_prediction_status(prediction_id: str) -> Response[str]:
         logger.info("Waiting for prediction")
         await sleep(10)
 
-    return Response(error=Error(code="Prediction Error", message="Failed to get pediction status"))
+    return Response(error=Error(code="Prediction Error", message="Failed to get prediction status"))
 
 
-async def create_prediction(cluster_config: dict, eventlog_url: str) -> Response[str]:
+async def create_prediction(
+    cluster_config: dict, eventlog_url: str, project_id: str = None
+) -> Response[str]:
+    eventlog_http_url = None
     parsed_eventlog_url = urlparse(eventlog_url)
-    if parsed_eventlog_url.scheme == "s3":
-        response = generate_presigned_url(eventlog_url)
-        if response.error:
-            return response
-        eventlog_http_url = response.result
-    else:
-        eventlog_http_url = eventlog_url
-
-    project_id = None
-    for tag in cluster_config["Cluster"]["Tags"]:
-        if tag["Key"] == "sync:project-id":
-            project_id = tag["Value"]
-            break
+    match parsed_eventlog_url.scheme:
+        case "s3":
+            response = generate_presigned_url(eventlog_url)
+            if response.error:
+                return response
+            eventlog_http_url = response.result
+        case "http" | "https":
+            eventlog_http_url = eventlog_url
+        case _:
+            return Response(
+                error=Error(code="Prediction Error", message="Unsupported event log URL scheme")
+            )
 
     response = await get_default_async_client().create_prediction(
         {
@@ -97,8 +99,7 @@ async def create_prediction(cluster_config: dict, eventlog_url: str) -> Response
         }
     )
 
-    if result := response.get("result"):
-        return Response(result=result["prediction_id"])
+    if response.get("error"):
+        return Response(**response)
 
-    logger.error(f"{response['error']['code']}: {response['error']['message']}")
-    return Response(error=Error(code="Prediction Error", message="Falure creating prediction"))
+    return Response(result=response["result"]["prediction_id"])

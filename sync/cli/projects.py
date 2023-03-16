@@ -3,6 +3,7 @@ import orjson
 
 from sync.api.predictions import get_predictions
 from sync.api.projects import create_project, get_project, get_projects, update_project
+from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import Preference
 
@@ -22,9 +23,9 @@ def list():
 
 
 @projects.command
-@click.argument("project-id")
-def get(project_id: str):
-    response = get_project(project_id)
+@click.argument("project", callback=validate_project)
+def get(project: dict):
+    response = get_project(project["id"])
     if project := response.result:
         click.echo(
             orjson.dumps(
@@ -73,28 +74,26 @@ def update(project_id: str, description: str = None, location: str = None, prefe
 
 
 @projects.command("get-prediction")
-@click.argument("app-id")
+@click.argument("project", callback=validate_project)
 @click.option(
     "-p",
     "--preference",
     type=click.Choice([p.value for p in Preference]),
     default=CONFIG.default_prediction_preference,
 )
-def get_latest_prediction(app_id: str, preference: Preference):
-    projects_response = get_projects(app_id)
-    if projects := projects_response.result:
-        predictions_response = get_predictions(project_id=projects[0]["id"])
-        if predictions := predictions_response.result:
-            click.echo(
-                orjson.dumps(
-                    predictions[0]["solutions"][preference],
-                    option=orjson.OPT_INDENT_2
-                    | orjson.OPT_UTC_Z
-                    | orjson.OPT_NAIVE_UTC
-                    | orjson.OPT_OMIT_MICROSECONDS,
-                )
+def get_latest_prediction(project: dict, preference: Preference):
+    predictions_response = get_predictions(project_id=project["id"])
+    if predictions_response.error:
+        click.echo(str(predictions_response.error), err=True)
+    elif predictions := predictions_response.result:
+        click.echo(
+            orjson.dumps(
+                predictions[0]["solutions"][preference],
+                option=orjson.OPT_INDENT_2
+                | orjson.OPT_UTC_Z
+                | orjson.OPT_NAIVE_UTC
+                | orjson.OPT_OMIT_MICROSECONDS,
             )
-        else:
-            click.echo(f"No predictions found for project {projects[0].id}", err=True)
+        )
     else:
-        click.echo(f"No project exists for '{app_id}'", err=True)
+        click.echo(f"No predictions found for project {project['id']}", err=True)

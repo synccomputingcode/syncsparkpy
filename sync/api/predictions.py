@@ -1,3 +1,6 @@
+"""Prediction functions
+"""
+
 import io
 import logging
 from time import sleep
@@ -27,7 +30,7 @@ def generate_prediction(
 ) -> Response[dict]:
     """Create and return prediction
 
-    :param platform: e.g. aws-emr
+    :param platform: e.g. "aws-emr"
     :type platform: Platform
     :param cluster_config: cluster record
     :type cluster_config: dict

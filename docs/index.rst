@@ -1,10 +1,10 @@
-.. Sync SDK documentation master file, created by
+.. Sync Library documentation master file, created by
    sphinx-quickstart on Wed Nov 30 15:36:57 2022.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to Sync SDK's documentation!
-====================================
+Welcome to the Sync Library documentation!
+==========================================
 
 .. toctree::
    :maxdepth: 2

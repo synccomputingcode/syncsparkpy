@@ -6,7 +6,7 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "Sync SDK"
+project = "Sync Library"
 copyright = "2022, Sync Computing"
 author = "Sync Computing"
 release = "0.0.1"

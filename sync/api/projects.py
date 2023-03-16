@@ -4,7 +4,7 @@
 import logging
 
 from sync.clients.sync import get_default_client
-from sync.models import Preference, Response
+from sync.models import Preference, ProjectError, Response
 
 logger = logging.getLogger()
 
@@ -110,10 +110,13 @@ def get_project_by_app_id(app_id: str) -> Response[dict]:
     :rtype: Response[dict]
     """
     response = get_default_client().get_projects({"app_id": app_id})
-    if result := response.get("result"):
-        return Response(result=result[0])
+    if response.get("error"):
+        return Response(**response)
 
-    return Response(**response)
+    if projects := response.get("result"):
+        return Response(result=projects[0])
+
+    return Response(error=ProjectError(f"No project found for '{app_id}'"))
 
 
 def get_projects(app_id: str = None) -> Response[list[dict]]:

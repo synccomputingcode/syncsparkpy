@@ -39,7 +39,7 @@ class APIKey(BaseSettings):
 
 class Configuration(BaseSettings):
     default_project_url: str | None = Field(description="default location for Sync project data")
-    default_prediction_preference: Preference | None
+    default_prediction_preference: Preference | None = Preference.BALANCED
     api_url: str = Field("https://api.synccomputing.com", env="SYNC_API_URL")
 
     @validator("default_project_url")

@@ -170,7 +170,7 @@ def run_and_record_job_flow(
     :type job_flow: dict
     :param project_id: project ID
     :type project_id: str
-    :param region_name: region name, defaults to None
+    :param region_name: region name, defaults to AWS configuration
     :type region_name: str, optional
     :return: prediction ID
     :rtype: Response[str]

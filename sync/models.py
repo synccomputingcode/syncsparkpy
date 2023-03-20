@@ -17,26 +17,8 @@ class Preference(str, Enum):
 
 
 class Platform(str, Enum):
-    EMR = ("emr", "aws-emr")
-    DATABRICKS = ("databricks", "aws-databricks")
-
-    def __new__(cls, name: str, api_name: str):
-        obj = str.__new__(cls, name)
-        obj._value_ = name
-
-        obj.__api_name = api_name
-
-        return obj
-
-    @property
-    def api_name(self) -> str:
-        return self.__api_name
-
-    @staticmethod
-    def from_api_name(name: str) -> "Platform":
-        for platform in Platform:
-            if platform.api_name == name:
-                return platform
+    AWS_EMR = "aws-emr"
+    AWS_DATABRICKS = "aws-databricks"
 
 
 class Project(BaseModel):

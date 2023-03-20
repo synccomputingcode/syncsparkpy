@@ -87,6 +87,8 @@ def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = Non
     :type api_key: APIKey
     :param config: configuration
     :type config: Configuration
+    :param db_config: Databricks configuration, defaults to None
+    :type db_config: DatabricksConf, optional
     """
     config_dir = _get_config_dir()
     config_dir.mkdir(exist_ok=True)

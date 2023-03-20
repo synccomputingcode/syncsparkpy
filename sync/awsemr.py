@@ -202,7 +202,7 @@ def record_run(cluster_id: str, project_id: str, region_name: str = None) -> Res
     :return: prediction ID
     :rtype: Response[str]
     """
-    config_response = get_cluster_config(cluster_id, region_name)
+    config_response = get_cluster_record(cluster_id, region_name)
     if config_response.error:
         return config_response
 
@@ -224,12 +224,12 @@ def record_run(cluster_id: str, project_id: str, region_name: str = None) -> Res
         if run_dir := _get_existing_run_dir_from_cluster_config(config, project_id).result:
             if _upload_object(
                 config,
-                f"{run_dir}/emr-config.json",
+                f"{run_dir}/emr-cluster-record.json",
             ).error:
                 logger.warning("Failed to save configuration")
 
         # Start prediction
-        return create_prediction(Platform.EMR, config, eventlog_url, project_id)
+        return create_prediction(Platform.AWS_EMR, config, eventlog_url, project_id)
 
     return Response(error=EMRError(message="Failed to find event log"))
 
@@ -248,7 +248,7 @@ def create_prediction_for_cluster(
     :return: prediction ID
     :rtype: Response[str]
     """
-    cluster_response = get_cluster_config(cluster_id, region_name)
+    cluster_response = get_cluster_record(cluster_id, region_name)
     if cluster_config := cluster_response.result:
         eventlog_response = _get_eventlog_url_from_cluster_config(cluster_config)
         if eventlog_response.error:
@@ -257,12 +257,14 @@ def create_prediction_for_cluster(
         eventlog_http_url_response = generate_presigned_url(eventlog_response.result)
 
         if eventlog_http_url := eventlog_http_url_response.result:
-            return create_prediction(Platform.EMR, cluster_config, eventlog_http_url, project_id)
+            return create_prediction(
+                Platform.AWS_EMR, cluster_config, eventlog_http_url, project_id
+            )
         return eventlog_http_url_response
     return cluster_response
 
 
-def get_cluster_config(cluster_id: str, region: str = None) -> Response[dict]:
+def get_cluster_record(cluster_id: str, region: str = None) -> Response[dict]:
     """Get the cluster configuration required for Sync prediction
 
     :param cluster_id: cluster ID
@@ -293,7 +295,7 @@ def get_cluster_config(cluster_id: str, region: str = None) -> Response[dict]:
     )
 
 
-def get_latest_config(  # noqa: C901
+def get_latest_record(  # noqa: C901
     project_id: str, run_id: str = None, region_name: str = None
 ) -> Response[tuple[dict, str]]:
     """Get the latest configuration for a cluster in the project, or the configuration for a cluster tagged with the run ID if provided
@@ -331,7 +333,7 @@ def get_latest_config(  # noqa: C901
                 event_logs.sort(key=lambda x: x[0]["LastModified"], reverse=True)
                 for log_content, log_match in event_logs:
                     log_key = log_content["Key"]
-                    config_key = f"{log_key[:log_key.rindex('/eventlog/')]}/emr-config.json"
+                    config_key = f"{log_key[:log_key.rindex('/eventlog/')]}/emr-cluster-record.json"
                     if config_key in [content["Key"] for content in contents]:
                         config = io.BytesIO()
                         s3.download_fileobj(parsed_project_url.netloc, config_key, config)
@@ -349,7 +351,7 @@ def get_latest_config(  # noqa: C901
                         region_name=region_name,
                     )
                     if cluster := response.result:
-                        response = get_cluster_config(cluster["Id"], region_name)
+                        response = get_cluster_record(cluster["Id"], region_name)
                         if config := response.result:
                             if error := _upload_object(
                                 config, f"s3://{parsed_project_url.netloc}/{config_key}"
@@ -371,7 +373,7 @@ def get_latest_config(  # noqa: C901
 def create_project_prediction(
     project_id: str, run_id: str = None, preference: str = None, region_name: str = None
 ) -> Response[str]:
-    """Finds the latest run in a project or one with the ID if provided (see :py:func:`~get_latest_config`)
+    """Finds the latest run in a project or one with the ID if provided (see :py:func:`~get_latest_record`)
     and creates a prediction based on it returning the ID.
 
     :param project_id: project ID
@@ -385,18 +387,18 @@ def create_project_prediction(
     :return: Sync prediction ID
     :rtype: Response[str]
     """
-    response = get_latest_config(project_id, run_id, region_name)
+    response = get_latest_record(project_id, run_id, region_name)
     if response.error:
         return response
 
     config, eventlog_url = response.result
-    return create_prediction(Platform.EMR, config, eventlog_url, project_id)
+    return create_prediction(Platform.AWS_EMR, config, eventlog_url, project_id)
 
 
 def get_project_prediction(
     project_id: str, run_id: str = None, preference: str = None, region_name: str = None
 ) -> Response[dict]:
-    """Finds the latest run in a project or one with the ID if provided (see :py:func:`~get_latest_config`) and returns a prediction based on it.
+    """Finds the latest run in a project or one with the ID if provided (see :py:func:`~get_latest_record`) and returns a prediction based on it.
 
     :param project_id: project ID
     :type project_id: str

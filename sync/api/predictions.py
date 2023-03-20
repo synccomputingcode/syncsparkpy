@@ -175,7 +175,7 @@ def create_prediction_with_eventlog_bytes(
     response = get_default_client().create_prediction(
         {
             "project_id": project_id,
-            "product_code": platform.api_name,
+            "product_code": platform,
             "configs": cluster_config,
         }
     )
@@ -230,7 +230,7 @@ def create_prediction(
     response = get_default_client().create_prediction(
         {
             "project_id": project_id,
-            "product_code": platform.api_name,
+            "product_code": platform,
             "eventlog_url": eventlog_http_url,
             "configs": cluster_config,
         }

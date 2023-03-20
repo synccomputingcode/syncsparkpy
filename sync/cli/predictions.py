@@ -109,7 +109,7 @@ def get(prediction_id: str, preference: Preference):
 @click.option("--project", callback=validate_project)
 def list(platform: Platform, project: dict = None):
     response = get_predictions(
-        product=platform.api_name if platform else None, project_id=project["id"]
+        product=platform.value if platform else None, project_id=project["id"]
     )
     if predictions := response.result:
         click.echo_via_pager(

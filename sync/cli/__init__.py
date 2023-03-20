@@ -5,7 +5,7 @@ import logging
 
 import click
 
-from sync.cli import databricks, emr, predictions, projects
+from sync.cli import awsdatabricks, awsemr, predictions, projects
 from sync.clients.sync import get_default_client
 from sync.config import API_KEY, CONFIG, DB_CONFIG, APIKey, Configuration, DatabricksConf, init
 from sync.models import Preference
@@ -26,8 +26,8 @@ def main(debug: bool):
 
 main.add_command(predictions.predictions)
 main.add_command(projects.projects)
-main.add_command(emr.emr)
-main.add_command(databricks.databricks)
+main.add_command(awsemr.aws_emr)
+main.add_command(awsdatabricks.aws_databricks)
 
 
 @main.command
@@ -44,7 +44,7 @@ def configure():
         "Default project S3 URL", default=CONFIG.default_project_url or OPTIONAL_DEFAULT
     )
     prediction_preference = click.prompt(
-        "Default predicion preference",
+        "Default prediction preference",
         type=click.Choice([p.value for p in Preference]),
         default=(CONFIG.default_prediction_preference or Preference.BALANCED).value,
     )

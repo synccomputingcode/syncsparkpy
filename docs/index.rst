@@ -19,7 +19,7 @@ Welcome to the Sync Library documentation!
    :caption: Reference
 
    reference/api
-   reference/emr
+   reference/awsemr
 
 
 Indices and tables

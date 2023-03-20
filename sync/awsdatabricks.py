@@ -36,7 +36,7 @@ def create_prediction(
     :rtype: Response[str]
     """
     return create_prediction_with_eventlog_bytes(
-        Platform.DATABRICKS,
+        Platform.AWS_DATABRICKS,
         {"plan_type": plan_type, "compute_type": compute_type},
         "eventlog.zip",
         eventlog,

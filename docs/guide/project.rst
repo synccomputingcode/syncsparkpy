@@ -15,14 +15,14 @@ There are varying degrees to which an Apache Spark application can be on-boarded
 For a more robust experience add an S3 location under which to store event logs and application configurations. If the application has an event log configuration based on
 that location only a project reference is needed to track it in a Sync project. This library function provides a full EMR configuration for the project:
 
-.. autofunction:: sync.emr.get_project_job_flow
+.. autofunction:: sync.awsemr.get_project_job_flow
   :noindex:
 
-At any point after at least 1 run of the project-configured application the latest prediction can be generated with :py:func:`~sync.emr.create_project_prediction`.
+At any point after at least 1 run of the project-configured application the latest prediction can be generated with :py:func:`~sync.awsemr.create_project_prediction`.
 
 To get the most out of your project each application run should be recorded. This way Sync can provide the best recommendations. The library function to call is,
 
-.. autofunction:: sync.emr.record_run
+.. autofunction:: sync.awsemr.record_run
   :noindex:
 
 Continuous Tuning
@@ -68,7 +68,7 @@ Setup:
 Orchestration:
 
 1. before an app is run the orchestrator updates the cluster configuration with the following
-   either manually, or by calling :py:func:`~sync.emr.get_project_job_flow`
+   either manually, or by calling :py:func:`~sync.awsemr.get_project_job_flow`
 
    1. event log location (format: {project S3 URL}/{project ID}/{timestamp}/{run ID})
    2. Sync tags: `sync:tenant-id`, `sync:project-id`, `sync:run-id`

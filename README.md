@@ -33,7 +33,7 @@ Only add what provides clear benefit - no speculative development. Contributions
 ### Documentation
 Documentation for consumers of the library is built using [Sphinx](https://www.sphinx-doc.org/en/master/). Pages are defined in [reStructuredText](https://docutils.sourceforge.io/rst.html) which may pull in reStructuredText from docstrings in the code. The VS Code extension, autoDocstring, provides a convenient way to initialize function docstrings. For compatibility, set the docstring format in the extension's settings to "sphinx". Information is meaningless without context so sprinkle documentation liberally with refs: [Cross-referencing with Sphinx](https://docs.readthedocs.io/en/stable/guides/cross-referencing-with-sphinx.html), [Cross-referencing Python objects](https://www.sphinx-doc.org/en/master/usage/restructuredtext/domains.html#cross-referencing-python-objects).
 
-When code is merged to `main` a Github action automatically builds and deploys the documentation to Github Pages. That documentation is available here: https://synccomputingcode.github.io/syncsparkpy/index.html
+When code is merged to `main` a Github action automatically builds and deploys the documentation to Github Pages. That documentation is available here: https://synccomputingcode.github.io/syncsparkpy/
 
 ## CLI
 The CLI is provided mainly for demonstration of what's possible when you integrate with Sync's API using this library. Explore available commands for EMR clusters with `sync-cli emr --help`. You can also use it to interact directly with API resources: `sync-cli predictions --help`.

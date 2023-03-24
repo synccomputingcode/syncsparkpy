@@ -1,0 +1,354 @@
+{
+  "Cluster": {
+    "Id": "j-14QV64S2PV1Y2",
+    "Name": "indexdataetl1gb",
+    "Status": {
+      "State": "TERMINATED",
+      "StateChangeReason": {
+        "Code": "ALL_STEPS_COMPLETED",
+        "Message": "Steps completed"
+      },
+      "Timeline": {
+        "CreationDateTime": "2023-03-06T20:14:30.160000-08:00",
+        "ReadyDateTime": "2023-03-06T20:22:10.554000-08:00",
+        "EndDateTime": "2023-03-06T20:27:03.197000-08:00"
+      }
+    },
+    "Ec2InstanceAttributes": {
+      "Ec2KeyName": "global-key",
+      "Ec2SubnetId": "subnet-08xlshei29a9202dc",
+      "RequestedEc2SubnetIds": [
+        "subnet-0blasve89vw96b8c5",
+        "subnet-97svllkja9346a8c4",
+        "subnet-08dd4lkjser09872f",
+        "subnet-slv80valk3avnj797",
+        "subnet-098xxlkqhklwf3lkj",
+        "subnet-lakjf989h39kajdg7"
+      ],
+      "Ec2AvailabilityZone": "us-east-1c",
+      "RequestedEc2AvailabilityZones": [],
+      "IamInstanceProfile": "EMR_EC2_DefaultRole",
+      "EmrManagedMasterSecurityGroup": "sg-alsvewf29837437e5",
+      "EmrManagedSlaveSecurityGroup": "sg-alsdfj93870342bdf"
+    },
+    "InstanceCollectionType": "INSTANCE_FLEET",
+    "LogUri": "s3n://my-emr-job-logs/indexdataetl1gb/",
+    "ReleaseLabel": "emr-6.2.0",
+    "AutoTerminate": true,
+    "TerminationProtected": false,
+    "VisibleToAllUsers": true,
+    "Applications": [
+      {
+        "Name": "Spark",
+        "Version": "3.0.1"
+      }
+    ],
+    "Tags": [
+      {
+        "Key": "sync:run-id",
+        "Value": "f84639ed-7a6a-4496-81e1-b5ba8fa8b6ce"
+      },
+      {
+        "Key": "Owner",
+        "Value": "Scott"
+      },
+      {
+        "Key": "sync:project-id",
+        "Value": "29f4dded-70be-4344-b9b5-396c8c0481cf"
+      }
+    ],
+    "ServiceRole": "EMR_DefaultRole",
+    "NormalizedInstanceHours": 76,
+    "MasterPublicDnsName": "ec2-52-21-192-83.compute-1.amazonaws.com",
+    "Configurations": [
+      {
+        "Classification": "spark-defaults",
+        "Properties": {
+          "spark.dynamicAllocation.enabled": "false",
+          "spark.eventLog.dir": "s3a://my-emr-projects/29f4dded-70be-4344-b9b5-396c8c0481cf/2023-03-07T04:14:28Z/f84639ed-7a6a-4496-81e1-b5ba8fa8b6ce/eventlog/",
+          "spark.eventLog.enabled": "true",
+          "spark.executor.cores": "4",
+          "spark.executor.instances": "8",
+          "spark.executor.memory": "4656M",
+          "spark.executor.processTreeMetrics.enabled": "true"
+        }
+      }
+    ],
+    "ScaleDownBehavior": "TERMINATE_AT_TASK_COMPLETION",
+    "ClusterArn": "arn:aws:elasticmapreduce:us-east-1:111122223333:cluster/j-14QB7SA9801Y2",
+    "StepConcurrencyLevel": 1,
+    "PlacementGroups": [],
+    "BootstrapActions": [
+      {
+        "Name": "Packages setup",
+        "ScriptPath": "s3://my-emr-job-scripts/dummy.sh",
+        "Args": []
+      }
+    ],
+    "InstanceFleets": [
+      {
+        "Id": "if-DR8F73EAI88V",
+        "Name": "Core - 2",
+        "Status": {
+          "State": "TERMINATED",
+          "StateChangeReason": {
+            "Code": "CLUSTER_TERMINATED",
+            "Message": "Job flow terminated"
+          },
+          "Timeline": {
+            "CreationDateTime": "2023-03-06T20:14:30.234000-08:00",
+            "ReadyDateTime": "2023-03-06T20:22:08.788000-08:00",
+            "EndDateTime": "2023-03-06T20:27:03.126000-08:00"
+          }
+        },
+        "InstanceFleetType": "CORE",
+        "TargetOnDemandCapacity": 1,
+        "TargetSpotCapacity": 0,
+        "ProvisionedOnDemandCapacity": 0,
+        "ProvisionedSpotCapacity": 0,
+        "InstanceTypeSpecifications": [
+          {
+            "InstanceType": "c5a.8xlarge",
+            "WeightedCapacity": 1,
+            "BidPriceAsPercentageOfOnDemandPrice": 100.0,
+            "EbsBlockDevices": [
+              {
+                "VolumeSpecification": {
+                  "VolumeType": "gp2",
+                  "SizeInGB": 64
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "Id": "if-SB7S98AJEMP7",
+        "Name": "Task - 1",
+        "Status": {
+          "State": "TERMINATED",
+          "StateChangeReason": {
+            "Code": "CLUSTER_TERMINATED",
+            "Message": "Job flow terminated"
+          },
+          "Timeline": {
+            "CreationDateTime": "2023-03-06T20:14:30.238000-08:00",
+            "ReadyDateTime": "2023-03-06T20:22:10.574000-08:00",
+            "EndDateTime": "2023-03-06T20:27:03.126000-08:00"
+          }
+        },
+        "InstanceFleetType": "TASK",
+        "TargetOnDemandCapacity": 0,
+        "TargetSpotCapacity": 1,
+        "ProvisionedOnDemandCapacity": 0,
+        "ProvisionedSpotCapacity": 0,
+        "InstanceTypeSpecifications": [
+          {
+            "InstanceType": "m4.large",
+            "WeightedCapacity": 1,
+            "BidPriceAsPercentageOfOnDemandPrice": 100.0,
+            "EbsBlockDevices": [
+              {
+                "VolumeSpecification": {
+                  "VolumeType": "gp2",
+                  "SizeInGB": 32
+                }
+              }
+            ]
+          }
+        ],
+        "LaunchSpecifications": {
+          "SpotSpecification": {
+            "TimeoutDurationMinutes": 120,
+            "TimeoutAction": "TERMINATE_CLUSTER"
+          }
+        }
+      },
+      {
+        "Id": "if-1HD2lk5lfl23H",
+        "Name": "Master node",
+        "Status": {
+          "State": "TERMINATED",
+          "StateChangeReason": {
+            "Code": "CLUSTER_TERMINATED",
+            "Message": "Job flow terminated"
+          },
+          "Timeline": {
+            "CreationDateTime": "2023-03-06T20:14:30.230000-08:00",
+            "ReadyDateTime": "2023-03-06T20:21:51.635000-08:00",
+            "EndDateTime": "2023-03-06T20:27:03.126000-08:00"
+          }
+        },
+        "InstanceFleetType": "MASTER",
+        "TargetOnDemandCapacity": 1,
+        "TargetSpotCapacity": 0,
+        "ProvisionedOnDemandCapacity": 0,
+        "ProvisionedSpotCapacity": 0,
+        "InstanceTypeSpecifications": [
+          {
+            "InstanceType": "m4.xlarge",
+            "WeightedCapacity": 1,
+            "BidPriceAsPercentageOfOnDemandPrice": 100.0,
+            "EbsBlockDevices": [
+              {
+                "VolumeSpecification": {
+                  "VolumeType": "gp2",
+                  "SizeInGB": 32
+                }
+              },
+              {
+                "VolumeSpecification": {
+                  "VolumeType": "gp2",
+                  "SizeInGB": 32
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "Instances": [
+    {
+      "Id": "ci-08367242A7KTF0W6Z17L",
+      "Ec2InstanceId": "i-09a090c99e87741fe",
+      "PublicDnsName": "ec2-54-166-68-104.compute-1.amazonaws.com",
+      "PublicIpAddress": "54.166.68.104",
+      "PrivateDnsName": "ip-172-31-102-249.ec2.internal",
+      "PrivateIpAddress": "172.31.102.249",
+      "Status": {
+        "State": "TERMINATED",
+        "StateChangeReason": {
+          "Code": "INSTANCE_FAILURE",
+          "Message": "Instance was terminated."
+        },
+        "Timeline": {
+          "CreationDateTime": "2023-03-06T20:14:56.729000-08:00",
+          "ReadyDateTime": "2023-03-06T20:21:34.856000-08:00",
+          "EndDateTime": "2023-03-06T20:27:03.039000-08:00"
+        }
+      },
+      "InstanceFleetId": "if-DR8F73EAI88V",
+      "Market": "ON_DEMAND",
+      "InstanceType": "c5a.8xlarge",
+      "EbsVolumes": [
+        {
+          "Device": "/dev/sdb",
+          "VolumeId": "vol-0a02a3db57625ec28"
+        }
+      ]
+    },
+    {
+      "Id": "ci-05794553JWMGGZCM3VPB",
+      "Ec2InstanceId": "i-0f806b0efc34e4850",
+      "PublicDnsName": "ec2-52-23-195-73.compute-1.amazonaws.com",
+      "PublicIpAddress": "52.23.195.73",
+      "PrivateDnsName": "ip-172-31-102-115.ec2.internal",
+      "PrivateIpAddress": "172.31.102.115",
+      "Status": {
+        "State": "TERMINATED",
+        "StateChangeReason": {
+          "Code": "INSTANCE_FAILURE",
+          "Message": "Instance was terminated."
+        },
+        "Timeline": {
+          "CreationDateTime": "2023-03-06T20:15:33.349000-08:00",
+          "ReadyDateTime": "2023-03-06T20:21:51.635000-08:00",
+          "EndDateTime": "2023-03-06T20:27:03.039000-08:00"
+        }
+      },
+      "InstanceFleetId": "if-1HD2lk5lfl23H",
+      "Market": "ON_DEMAND",
+      "InstanceType": "m4.xlarge",
+      "EbsVolumes": [
+        {
+          "Device": "/dev/sdc",
+          "VolumeId": "vol-017761545cdfb7e7b"
+        },
+        {
+          "Device": "/dev/sdb",
+          "VolumeId": "vol-0f489afef8b46dba1"
+        }
+      ]
+    },
+    {
+      "Id": "ci-0317762Z528GJIFRW14",
+      "Ec2InstanceId": "i-01bcf3fa4aacd6711",
+      "PublicDnsName": "ec2-54-162-122-114.compute-1.amazonaws.com",
+      "PublicIpAddress": "54.162.122.114",
+      "PrivateDnsName": "ip-172-31-102-191.ec2.internal",
+      "PrivateIpAddress": "172.31.102.191",
+      "Status": {
+        "State": "TERMINATED",
+        "StateChangeReason": {
+          "Code": "INSTANCE_FAILURE",
+          "Message": "Instance was terminated."
+        },
+        "Timeline": {
+          "CreationDateTime": "2023-03-06T20:15:33.349000-08:00",
+          "ReadyDateTime": "2023-03-06T20:21:34.856000-08:00",
+          "EndDateTime": "2023-03-06T20:27:03.039000-08:00"
+        }
+      },
+      "InstanceFleetId": "if-SB7S98AJEMP7",
+      "Market": "SPOT",
+      "InstanceType": "m4.large",
+      "EbsVolumes": [
+        {
+          "Device": "/dev/sdb",
+          "VolumeId": "vol-0a14ef44daa3bf876"
+        }
+      ]
+    }
+  ],
+  "Steps": [
+    {
+      "Id": "s-1EF238MZKOWWR",
+      "Name": "Execute job script",
+      "Config": {
+        "Jar": "command-runner.jar",
+        "Properties": {},
+        "Args": [
+          "spark-submit",
+          "/home/hadoop/index_data_etl_1GB.py"
+        ]
+      },
+      "ActionOnFailure": "CANCEL_AND_WAIT",
+      "Status": {
+        "State": "COMPLETED",
+        "StateChangeReason": {},
+        "Timeline": {
+          "CreationDateTime": "2023-03-06T20:14:30.255000-08:00",
+          "StartDateTime": "2023-03-06T20:22:22.473000-08:00",
+          "EndDateTime": "2023-03-06T20:23:18.602000-08:00"
+        }
+      }
+    },
+    {
+      "Id": "s-3CRVCEKJYF4ZG",
+      "Name": "Setup and copy files to cluster",
+      "Config": {
+        "Jar": "command-runner.jar",
+        "Properties": {},
+        "Args": [
+          "aws",
+          "s3",
+          "cp",
+          "s3://my-emr-data/etl-jobs/scripts/index_data_etl/index_data_etl_1GB.py",
+          "/home/hadoop/"
+        ]
+      },
+      "ActionOnFailure": "CANCEL_AND_WAIT",
+      "Status": {
+        "State": "COMPLETED",
+        "StateChangeReason": {},
+        "Timeline": {
+          "CreationDateTime": "2023-03-06T20:14:30.255000-08:00",
+          "StartDateTime": "2023-03-06T20:22:15.097000-08:00",
+          "EndDateTime": "2023-03-06T20:22:17.466000-08:00"
+        }
+      }
+    }
+  ],
+  "Region": "us-east-1"
+}

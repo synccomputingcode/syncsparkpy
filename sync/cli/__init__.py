@@ -5,7 +5,7 @@ import logging
 
 import click
 
-from sync.cli import awsdatabricks, awsemr, predictions, projects
+from sync.cli import awsemr, predictions, projects
 from sync.clients.sync import get_default_client
 from sync.config import API_KEY, CONFIG, DB_CONFIG, APIKey, Configuration, DatabricksConf, init
 from sync.models import Preference
@@ -27,11 +27,11 @@ def main(debug: bool):
 main.add_command(predictions.predictions)
 main.add_command(projects.projects)
 main.add_command(awsemr.aws_emr)
-main.add_command(awsdatabricks.aws_databricks)
 
 
 @main.command
 def configure():
+    """Configure Sync Library"""
     api_key_id = click.prompt("API key ID", default=API_KEY.id if API_KEY else None)
     api_key_secret = click.prompt(
         "API key secret",
@@ -74,6 +74,7 @@ def configure():
 
 @main.command
 def token():
+    """Get an API access token"""
     sync_client = get_default_client()
     response = sync_client.get_products()
     if "result" in response:

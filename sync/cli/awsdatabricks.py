@@ -8,6 +8,7 @@ from sync.models import Preference
 
 @click.group
 def aws_databricks():
+    """Databricks on AWS commands"""
     pass
 
 

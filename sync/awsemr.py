@@ -17,7 +17,6 @@ from dateutil.parser import parse as dateparse
 from sync import TIME_FORMAT
 from sync.api.predictions import create_prediction, wait_for_prediction
 from sync.api.projects import get_project
-from sync.clients.sync import get_default_client
 from sync.models import EMRError, Platform, ProjectError, Response
 
 logger = logging.getLogger(__name__)
@@ -76,123 +75,68 @@ def get_project_job_flow(job_flow: dict, project_id: str) -> Response[dict]:
     return project_response
 
 
-def run_job_flow(job_flow: dict, project_id: str = None, region_name: str = None) -> Response[str]:
-    """Creates an EMR cluster from the provided RunJobFlow request object. If a project ID
-    is supplied that project's configuration is first applied. See :py:func:`~get_project_job_flow`
+def get_project_prediction(
+    project_id: str, run_id: str = None, preference: str = None, region_name: str = None
+) -> Response[dict]:
+    """Finds the latest run in a project or one with the ID if provided (see :py:func:`~get_project_cluster_record`) and returns a prediction based on it.
 
-    If the job flow is configured to save the event log in S3 that S3 directory is created as required by Apache Spark.
+    The project must be configured with an S3 URL.
 
-    If a project with an S3 location is specified the job flow is saved at a location with the following format before the cluster is created.
+    :param project_id: project ID
+    :type project_id: str
+    :param run_id: run ID, defaults to None
+    :type run_id: str, optional
+    :param preference: preferred solution defaults to None
+    :type preference: str, optional
+    :param region_name: AWS region name, defaults to AWS configuration
+    :type region_name: str, optional
+    :return: Sync prediction
+    :rtype: Response[dict]
+    """
+    prediction_response = create_project_prediction(project_id, run_id, preference, region_name)
+    if prediction_response.error:
+        return prediction_response
 
-      {``s3_project_url``}/{project ID}/{timestamp}/{run ID}/job-flow.json
+    return wait_for_prediction(prediction_response.result, preference)
 
-    :param job_flow: RunJobFlow request object
-    :type job_flow: dict
-    :param project_id: project ID, defaults to None
-    :type project_id: str, optional
-    :param region_name: region name, defaults to AWS configuration
+
+def run_project_prediction(
+    project_id: str, run_id: str = None, preference: str = None, region_name: str = None
+) -> Response[str]:
+    """Applies the latest prediction for a project, or one based on the run ID if provided (see :py:func:`~get_project_prediction`).
+    Returns the ID of the newly created cluster.
+
+    :param project_id: project ID
+    :type project_id: str
+    :param run_id: project run ID, defaults to None
+    :type run_id: str, optional
+    :param preference: preferred prediction solution, defaults to None
+    :type preference: str, optional
+    :param region_name: AWS region name, defaults to AWS configuration
     :type region_name: str, optional
     :return: cluster ID
     :rtype: Response[str]
     """
-    if project_id:
-        job_flow_response = get_project_job_flow(job_flow, project_id)
-        if job_flow_response.error:
-            return job_flow_response
-        job_flow = job_flow_response.result
-        run_id = [tag["Value"] for tag in job_flow["Tags"] if tag["Key"] == "sync:run-id"][0]
-
-    event_log_response = create_s3_event_log_dir(job_flow)
-
-    if project_id:
-        project_response = get_project(project_id)
-        if project_response.error:
-            return project_response
-        project = project_response.result
-        if project.get("s3_url"):
-            if match := re.match(
-                RUN_DIR_PATTERN_TEMPLATE.format(
-                    project_prefix=project["s3_url"], project_id=project_id, run_id=run_id
-                ),
-                event_log_response.result or "",
-            ):
-                run_dir = match.group()
-            else:
-                run_dir = f"{project['s3_url']}/{project['id']}/{datetime.datetime.utcnow().strftime(TIME_FORMAT)}/{run_id}"
-
-            if run_dir:
-                if error := _upload_object(
-                    job_flow,
-                    f"{run_dir}/job-flow.json",
-                ).error:
-                    logger.warning(f"Failed to save job flow: {error.message}")
-
-    emr = boto.client("emr", region_name=region_name)
-    return Response(result=emr.run_job_flow(**job_flow)["JobFlowId"])
-
-
-def create_s3_event_log_dir(job_flow: dict) -> Response[str]:
-    """Creates the event log "directory" in S3 if the incoming RunJobFlow request object is configured with one.
-
-    :param job_flow: RunJobFlow request object
-    :type job_flow: dict
-    :return: S3 event log directory URL
-    :rtype: Response[str]
-    """
-    for config in job_flow["Configurations"]:
-        if config["Classification"] == "spark-defaults":
-            if (eventlog_dir := config["Properties"].get("spark.eventLog.dir")) and config[
-                "Properties"
-            ].get("spark.eventLog.enabled", "false").lower() == "true":
-                parsed_eventlog_dir = urlparse(eventlog_dir)
-                if parsed_eventlog_dir.scheme == "s3a":
-                    try:
-                        s3 = boto.client("s3")
-                        s3.put_object(
-                            Bucket=parsed_eventlog_dir.netloc,
-                            Key=parsed_eventlog_dir.path.lstrip("/"),
-                        )
-                        return Response(
-                            result=f"s3://{parsed_eventlog_dir.netloc}/{parsed_eventlog_dir.path.lstrip('/')}"
-                        )
-                    except Exception as exc:
-                        return Response(error=EMRError(message=str(exc)))
-
-    return Response(error=EMRError(message="No S3 event log dir configured"))
-
-
-def run_and_record_job_flow(
-    job_flow: dict, project_id: str = None, region_name: str = None
-) -> Response[str]:
-    """Creates an EMR cluster with the incoming RunJobFlow request object and project configuration (see :py:func:`~run_job_flow`),
-    waits for the cluster to complete and records the run.
-
-    :param job_flow: RunJobFlow request object
-    :type job_flow: dict
-    :param project_id: project ID
-    :type project_id: str
-    :param region_name: region name, defaults to AWS configuration
-    :type region_name: str, optional
-    :return: prediction ID
-    :rtype: Response[str]
-    """
-    job_flow_response = run_job_flow(job_flow, project_id)
-    if job_flow_response.error:
-        return job_flow_response
-
-    cluster_id = job_flow_response.result
-
-    emr = boto.client("emr", region_name=region_name)
-    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/emr.html#EMR.Waiter.ClusterTerminated
-    # 30 seconds between polls, no more than 120 polls
-    waiter = emr.get_waiter("cluster_terminated")
-    waiter.wait(ClusterId=cluster_id, WaiterConfig={"Delay": 30, "MaxAttempts": 120})
-
-    return record_run(cluster_id, project_id, region_name)
+    project_response = get_project(project_id)
+    if project := project_response.result:
+        response = get_project_prediction(
+            project_id,
+            run_id,
+            preference or project.get("prediction_preference", "balanced"),
+            region_name,
+        )
+        if response.result:
+            return run_job_flow(
+                response.result["solutions"][
+                    preference or project.get("prediction_preference", "balanced")
+                ]["configuration"]
+            )
+    return project_response
 
 
 def record_run(cluster_id: str, project_id: str, region_name: str = None) -> Response[str]:
-    """Creates a prediction based on the specified successfully terminated cluster.
+    """Adds a record of the cluster to the project's S3 location if it has one, and
+    creates a prediction based on such returning the ID.
 
     :param cluster_id: EMR cluster ID
     :type cluster_id: str
@@ -203,101 +147,57 @@ def record_run(cluster_id: str, project_id: str, region_name: str = None) -> Res
     :return: prediction ID
     :rtype: Response[str]
     """
-    config_response = get_cluster_record(cluster_id, region_name)
-    if config_response.error:
-        return config_response
+    record_response = get_cluster_record(cluster_id, region_name)
+    if record_response.error:
+        return record_response
 
-    config = config_response.result
+    cluster_record = record_response.result
 
-    # Check state
-    status = config["Cluster"]["Status"]
-    if (
-        status["State"] != "TERMINATED"
-        or status["StateChangeReason"].get("Code") != "ALL_STEPS_COMPLETED"
-    ):
-        return Response(
-            error=EMRError(
-                message=f"Unexpected cluster termination state - {status['State']}: {status['StateChangeReason'].get('Code')}",
-            )
-        )
-
-    if eventlog_url := _get_eventlog_url_from_cluster_config(config).result:
-        if run_dir := _get_existing_run_dir_from_cluster_config(config, project_id).result:
+    if eventlog_url := _get_eventlog_url_from_cluster_record(cluster_record).result:
+        if run_dir := _get_existing_run_dir_from_cluster_config(cluster_record, project_id).result:
             if _upload_object(
-                config,
+                cluster_record,
                 f"{run_dir}/emr-cluster-record.json",
             ).error:
                 logger.warning("Failed to save configuration")
 
         # Start prediction
-        return create_prediction(Platform.AWS_EMR, config, eventlog_url, project_id)
+        return create_prediction(Platform.AWS_EMR, cluster_record, eventlog_url, project_id)
 
     return Response(error=EMRError(message="Failed to find event log"))
 
 
-def create_prediction_for_cluster(
-    cluster_id: str, project_id: str = None, region_name: str = None
+def create_project_prediction(
+    project_id: str, run_id: str = None, region_name: str = None
 ) -> Response[str]:
-    """If the cluster terminated successfully with an event log available in S3 a prediction based on such is created and its ID returned.
+    """Finds the latest run in a project or one with the ID if provided (see :py:func:`~get_project_cluster_record`)
+    and creates a prediction based on it returning the ID.
 
-    :param cluster_id: EMR cluster ID
-    :type cluster_id: str
-    :param project_id: Sync project ID, defaults to None
-    :type project_id: str, optional
-    :param region_name: AWS region name, defaults to None
+    The project must be configured with an S3 URL.
+
+    :param project_id: project ID
+    :type project_id: str
+    :param run_id: run ID, defaults to None
+    :type run_id: str, optional
+    :param region_name: AWS region name, defaults to AWS configuration
     :type region_name: str, optional
-    :return: prediction ID
+    :return: Sync prediction ID
     :rtype: Response[str]
     """
-    cluster_response = get_cluster_record(cluster_id, region_name)
-    if cluster_config := cluster_response.result:
-        eventlog_response = _get_eventlog_url_from_cluster_config(cluster_config)
-        if eventlog_response.error:
-            return eventlog_response
+    response = get_project_cluster_record(project_id, run_id, region_name)
+    if response.error:
+        return response
 
-        if eventlog_http_url := eventlog_response.result:
-            return create_prediction(
-                Platform.AWS_EMR, cluster_config, eventlog_http_url, project_id
-            )
-        return eventlog_response
-    return cluster_response
+    config, eventlog_url = response.result
+    return create_prediction(Platform.AWS_EMR, config, eventlog_url, project_id)
 
 
-def get_cluster_record(cluster_id: str, region: str = None) -> Response[dict]:
-    """Get the cluster configuration required for Sync prediction
-
-    :param cluster_id: cluster ID
-    :type cluster_id: str
-    :param region: AWS region name, defaults to AWS configuration
-    :type region: str, optional
-    :return: cluster configuration
-    :rtype: Response[dict]
-    """
-    emr = boto.client("emr", region_name=region)
-
-    cluster = emr.describe_cluster(ClusterId=cluster_id)["Cluster"]
-    cluster["BootstrapActions"] = emr.list_bootstrap_actions(ClusterId=cluster_id)[
-        "BootstrapActions"
-    ]
-    if cluster["InstanceCollectionType"] == "INSTANCE_FLEET":
-        cluster["InstanceFleets"] = emr.list_instance_fleets(ClusterId=cluster_id)["InstanceFleets"]
-    else:
-        cluster["InstanceGroups"] = emr.list_instance_groups(ClusterId=cluster_id)["InstanceGroups"]
-
-    return Response(
-        result={
-            "Cluster": cluster,
-            "Instances": emr.list_instances(ClusterId=cluster_id)["Instances"],
-            "Steps": emr.list_steps(ClusterId=cluster_id)["Steps"],
-            "Region": region or emr.meta.region_name,
-        }
-    )
-
-
-def get_latest_record(  # noqa: C901
+def get_project_cluster_record(  # noqa: C901
     project_id: str, run_id: str = None, region_name: str = None
 ) -> Response[tuple[dict, str]]:
-    """Get the latest configuration for a cluster in the project, or the configuration for a cluster tagged with the run ID if provided
+    """Gets the record and event log URL for the latest cluster in the project or the one identified by the `run_id` if provided.
+
+    The project must be configured with an S3 URL.
 
     :param project_id: project ID
     :type project_id: str
@@ -308,9 +208,9 @@ def get_latest_record(  # noqa: C901
     :return: a tuple containing the cluster configuration and an event log URL
     :rtype: Response[tuple[dict, str]]
     """
-    response = get_default_client().get_project(project_id)
+    project_response = get_project(project_id)
 
-    if project := response.get("result"):
+    if project := project_response.result:
         if project_url := project.get("s3_url"):
             parsed_project_url = urlparse(f"{project_url}/{project['id']}")
             project_prefix = parsed_project_url.path.strip("/")
@@ -366,91 +266,193 @@ def get_latest_record(  # noqa: C901
         else:
             return Response(error=ProjectError(message="S3 URL not configured for project"))
     else:
-        return Response(**response)
+        return project_response
 
 
-def create_project_prediction(
-    project_id: str, run_id: str = None, preference: str = None, region_name: str = None
-) -> Response[str]:
-    """Finds the latest run in a project or one with the ID if provided (see :py:func:`~get_latest_record`)
-    and creates a prediction based on it returning the ID.
+def run_job_flow(job_flow: dict, project_id: str = None, region_name: str = None) -> Response[str]:
+    """Creates an EMR cluster from the provided RunJobFlow request object. If a project ID
+    is supplied that project's configuration is first applied. See :py:func:`~get_project_job_flow`
 
-    :param project_id: project ID
-    :type project_id: str
-    :param run_id: run ID, defaults to None
-    :type run_id: str, optional
-    :param preference: preferred solution defaults to None
-    :type preference: str, optional
-    :param region_name: AWS region name, defaults to AWS configuration
-    :type region_name: str, optional
-    :return: Sync prediction ID
-    :rtype: Response[str]
-    """
-    response = get_latest_record(project_id, run_id, region_name)
-    if response.error:
-        return response
+    If the job flow is configured to save the event log in S3 that S3 directory is created as required by Apache Spark.
 
-    config, eventlog_url = response.result
-    return create_prediction(Platform.AWS_EMR, config, eventlog_url, project_id)
+    If a project with an S3 location is specified the job flow is saved at a location with the following format before the cluster is created.
 
+      {``s3_project_url``}/{project ID}/{timestamp}/{run ID}/job-flow.json
 
-def get_project_prediction(
-    project_id: str, run_id: str = None, preference: str = None, region_name: str = None
-) -> Response[dict]:
-    """Finds the latest run in a project or one with the ID if provided (see :py:func:`~get_latest_record`) and returns a prediction based on it.
-
-    :param project_id: project ID
-    :type project_id: str
-    :param run_id: run ID, defaults to None
-    :type run_id: str, optional
-    :param preference: preferred solution defaults to None
-    :type preference: str, optional
-    :param region_name: AWS region name, defaults to AWS configuration
-    :type region_name: str, optional
-    :return: Sync prediction
-    :rtype: Response[dict]
-    """
-    prediction_response = create_project_prediction(project_id, run_id, preference, region_name)
-    if prediction_response.error:
-        return prediction_response
-
-    return wait_for_prediction(prediction_response.result, preference)
-
-
-def run_project_prediction(
-    project_id: str, run_id: str = None, preference: str = None, region_name: str = None
-) -> Response[str]:
-    """Applies the latest prediction for a project, or one based on the run ID if provided (see :py:func:`~get_project_prediction`).
-    Returns the ID of the newly created cluster.
-
-    :param project_id: project ID
-    :type project_id: str
-    :param run_id: project run ID, defaults to None
-    :type run_id: str, optional
-    :param preference: preferred prediction solution, defaults to None
-    :type preference: str, optional
-    :param region_name: AWS region name, defaults to AWS configuration
+    :param job_flow: RunJobFlow request object
+    :type job_flow: dict
+    :param project_id: project ID, defaults to None
+    :type project_id: str, optional
+    :param region_name: region name, defaults to AWS configuration
     :type region_name: str, optional
     :return: cluster ID
     :rtype: Response[str]
     """
-    response = get_default_client().get_project(project_id)
-    if project := response.get("result"):
-        response = get_project_prediction(
-            project_id,
-            run_id,
-            preference or project.get("prediction_preference", "balanced"),
-            region_name,
-        )
-        if response.result:
-            return run_job_flow(
-                response.result["solutions"][
-                    preference or project.get("prediction_preference", "balanced")
-                ]["configuration"]
+    if project_id:
+        job_flow_response = get_project_job_flow(job_flow, project_id)
+        if job_flow_response.error:
+            return job_flow_response
+        job_flow = job_flow_response.result
+        run_id = [tag["Value"] for tag in job_flow["Tags"] if tag["Key"] == "sync:run-id"][0]
+
+    event_log_response = create_s3_event_log_dir(job_flow)
+
+    if project_id:
+        project_response = get_project(project_id)
+        if project_response.error:
+            return project_response
+        project = project_response.result
+        if project.get("s3_url"):
+            if match := re.match(
+                RUN_DIR_PATTERN_TEMPLATE.format(
+                    project_prefix=project["s3_url"], project_id=project_id, run_id=run_id
+                ),
+                event_log_response.result or "",
+            ):
+                run_dir = match.group()
+            else:
+                run_dir = f"{project['s3_url']}/{project['id']}/{datetime.datetime.utcnow().strftime(TIME_FORMAT)}/{run_id}"
+
+            if error := _upload_object(
+                job_flow,
+                f"{run_dir}/job-flow.json",
+            ).error:
+                logger.warning(f"Failed to save job flow: {error.message}")
+
+    emr = boto.client("emr", region_name=region_name)
+    return Response(result=emr.run_job_flow(**job_flow)["JobFlowId"])
+
+
+def run_and_record_job_flow(
+    job_flow: dict, project_id: str = None, region_name: str = None
+) -> Response[str]:
+    """Creates an EMR cluster with the incoming RunJobFlow request object and project configuration (see :py:func:`~run_job_flow`),
+    waits for the cluster to complete and records the run.
+
+    :param job_flow: RunJobFlow request object
+    :type job_flow: dict
+    :param project_id: project ID
+    :type project_id: str
+    :param region_name: region name, defaults to AWS configuration
+    :type region_name: str, optional
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    job_flow_response = run_job_flow(job_flow, project_id)
+    if job_flow_response.error:
+        return job_flow_response
+
+    cluster_id = job_flow_response.result
+
+    emr = boto.client("emr", region_name=region_name)
+    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/emr.html#EMR.Waiter.ClusterTerminated
+    # 30 seconds between polls, no more than 120 polls
+    waiter = emr.get_waiter("cluster_terminated")
+    waiter.wait(ClusterId=cluster_id, WaiterConfig={"Delay": 30, "MaxAttempts": 120})
+
+    return record_run(cluster_id, project_id, region_name)
+
+
+def create_prediction_for_cluster(cluster_id: str, region_name: str = None) -> Response[str]:
+    """If the cluster terminated successfully with an event log available in S3 a prediction based
+    on such is created and its ID returned.
+
+    :param cluster_id: EMR cluster ID
+    :type cluster_id: str
+    :param region_name: AWS region name, defaults to None
+    :type region_name: str, optional
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    record_response = get_cluster_record(cluster_id, region_name)
+    if cluster_record := record_response.result:
+        eventlog_response = _get_eventlog_url_from_cluster_record(cluster_record)
+        if eventlog_response.error:
+            return eventlog_response
+
+        if eventlog_http_url := eventlog_response.result:
+            return create_prediction(Platform.AWS_EMR, cluster_record, eventlog_http_url)
+
+        return eventlog_response
+
+    return cluster_record
+
+
+def get_cluster_record(cluster_id: str, region: str = None) -> Response[dict]:
+    """Get the cluster configuration required for Sync prediction
+
+    :param cluster_id: cluster ID
+    :type cluster_id: str
+    :param region: AWS region name, defaults to AWS configuration
+    :type region: str, optional
+    :return: cluster configuration
+    :rtype: Response[dict]
+    """
+    emr = boto.client("emr", region_name=region)
+
+    cluster = emr.describe_cluster(ClusterId=cluster_id)["Cluster"]
+
+    # Check status
+    status = cluster["Status"]
+    if (
+        status["State"] != "TERMINATED"
+        or status["StateChangeReason"].get("Code") != "ALL_STEPS_COMPLETED"
+    ):
+        return Response(
+            error=EMRError(
+                message=f"Unexpected cluster termination state - {status['State']}: {status['StateChangeReason'].get('Code')}"
             )
+        )
+
+    cluster["BootstrapActions"] = emr.list_bootstrap_actions(ClusterId=cluster_id)[
+        "BootstrapActions"
+    ]
+    if cluster["InstanceCollectionType"] == "INSTANCE_FLEET":
+        cluster["InstanceFleets"] = emr.list_instance_fleets(ClusterId=cluster_id)["InstanceFleets"]
+    else:
+        cluster["InstanceGroups"] = emr.list_instance_groups(ClusterId=cluster_id)["InstanceGroups"]
+
+    return Response(
+        result={
+            "Cluster": cluster,
+            "Instances": emr.list_instances(ClusterId=cluster_id)["Instances"],
+            "Steps": emr.list_steps(ClusterId=cluster_id)["Steps"],
+            "Region": region or emr.meta.region_name,
+        }
+    )
 
 
-def _get_eventlog_url_from_cluster_config(cluster_config: dict) -> Response[str]:
+def create_s3_event_log_dir(job_flow: dict) -> Response[str]:
+    """Creates the event log "directory" in S3 if the incoming RunJobFlow request object is configured with one.
+
+    :param job_flow: RunJobFlow request object
+    :type job_flow: dict
+    :return: S3 event log directory URL
+    :rtype: Response[str]
+    """
+    for config in job_flow["Configurations"]:
+        if config["Classification"] == "spark-defaults":
+            if (eventlog_dir := config["Properties"].get("spark.eventLog.dir")) and config[
+                "Properties"
+            ].get("spark.eventLog.enabled", "false").lower() == "true":
+                parsed_eventlog_dir = urlparse(eventlog_dir)
+                if parsed_eventlog_dir.scheme == "s3a":
+                    try:
+                        s3 = boto.client("s3")
+                        s3.put_object(
+                            Bucket=parsed_eventlog_dir.netloc,
+                            Key=parsed_eventlog_dir.path.lstrip("/"),
+                        )
+                        return Response(
+                            result=f"s3://{parsed_eventlog_dir.netloc}/{parsed_eventlog_dir.path.lstrip('/')}"
+                        )
+                    except Exception as exc:
+                        return Response(error=EMRError(message=str(exc)))
+
+    return Response(error=EMRError(message="No S3 event log dir configured"))
+
+
+def _get_eventlog_url_from_cluster_record(cluster_config: dict) -> Response[str]:
     """Returns an S3 URL to the event log for the cluster if one - and only one - exists."""
     eventlog_dir = None
     for config in cluster_config["Cluster"]["Configurations"]:

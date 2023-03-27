@@ -1,8 +1,9 @@
 Sync API
 ========
 
-.. automodule:: sync.api.projects
-  :members:
+.. toctree::
+   :maxdepth: 2
+   :caption: Reference
 
-.. automodule:: sync.api.predictions
-  :members:
+   api/projects
+   api/predictions

@@ -47,12 +47,12 @@ class Configuration(BaseSettings):
         if url:
             # There are valid S3 URLs (e.g. with spaces) not supported by Pydantic URL types: https://docs.pydantic.dev/usage/types/#urls
             # Hence the manual validation here
-            parsed_url = urlparse(url)
+            parsed_url = urlparse(url.rstrip("/"))
 
             if parsed_url.scheme != "s3":
                 raise ValueError("Only S3 URLs please!")
 
-            return url
+            return parsed_url.geturl()
 
     class Config:
         @classmethod

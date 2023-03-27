@@ -14,7 +14,7 @@ Install this library and CLI the same way you'd install a Python package. With a
 
 .. code-block:: shell
 
-  pip install https://github.com/synccomputingcode/sync_lib/archive/main.tar.gz
+  pip install https://github.com/synccomputingcode/syncsparkpy/archive/main.tar.gz
 
 Configuration
 -------------

@@ -12,6 +12,7 @@ from sync.models import Platform, Preference
 
 @click.group
 def aws_emr():
+    """EMR commands"""
     pass
 
 
@@ -20,10 +21,13 @@ def aws_emr():
 @click.option("-p", "--project", callback=validate_project)
 @click.option("-r", "--region")
 def run_job_flow(job_flow: TextIOWrapper, project: dict = None, region: str = None):
+    """Run a job flow
+
+    JOB_FLOW is a file containing the RunJobFlow request object"""
     job_flow_obj = orjson.loads(job_flow.read())
 
     run_response = awsemr.run_and_record_job_flow(
-        job_flow_obj, project["id"] if project else None
+        job_flow_obj, project["id"] if project else None, region
     )
     if prediction_id := run_response.result:
         click.echo(f"Run complete. Prediction ID: {prediction_id}")
@@ -39,14 +43,16 @@ def run_job_flow(job_flow: TextIOWrapper, project: dict = None, region: str = No
     type=click.Choice(Preference),
     default=CONFIG.default_prediction_preference,
 )
-def run_prediction(prediction_id: str, preference: Preference):
+@click.option("-r", "--region")
+def run_prediction(prediction_id: str, preference: Preference, region: str = None):
+    """Execute a prediction"""
     prediction_response = get_prediction(prediction_id, preference.value)
 
     if prediction := prediction_response.result:
         config = prediction["solutions"][preference.value]["configuration"]
 
         if prediction["product_code"] == Platform.AWS_EMR:
-            cluster_response = awsemr.run_job_flow(config, prediction.get("project_id"))
+            cluster_response = awsemr.run_job_flow(config, prediction.get("project_id"), region)
             if cluster_id := cluster_response.result:
                 click.echo(f"EMR cluster ID: {cluster_id}")
             else:
@@ -59,9 +65,10 @@ def run_prediction(prediction_id: str, preference: Preference):
 
 @aws_emr.command
 @click.argument("cluster-id")
-@click.option("-p", "--project", callback=validate_project)
-def create_prediction(cluster_id: str, project: str = None):
-    prediction_response = awsemr.create_prediction_for_cluster(cluster_id, project["id"])
+@click.option("-r", "--region")
+def create_prediction(cluster_id: str, region: str = None):
+    """Create prediction for a cluster"""
+    prediction_response = awsemr.create_prediction_for_cluster(cluster_id, region)
     if prediction := prediction_response.result:
         click.echo(f"Prediction ID: {prediction}")
     else:
@@ -71,8 +78,10 @@ def create_prediction(cluster_id: str, project: str = None):
 @aws_emr.command
 @click.argument("project", callback=validate_project)
 @click.option("-r", "--run-id")
-def create_project_prediction(project: dict[str, str], run_id: str = None):
-    prediction_response = awsemr.create_project_prediction(project["id"], run_id)
+@click.option("-r", "--region")
+def create_project_prediction(project: dict[str, str], run_id: str = None, region: str = None):
+    """Create prediction for the latest project cluster or one specified by --run-id"""
+    prediction_response = awsemr.create_project_prediction(project["id"], run_id, region)
     if prediction := prediction_response.result:
         click.echo(f"Prediction ID: {prediction}")
     else:
@@ -81,8 +90,10 @@ def create_project_prediction(project: dict[str, str], run_id: str = None):
 
 @aws_emr.command
 @click.argument("cluster-id")
-def get_cluster_record(cluster_id: str):
-    config_response = awsemr.get_cluster_record(cluster_id)
+@click.option("-r", "--region")
+def get_cluster_record(cluster_id: str, region: str = None):
+    """Get a cluster record"""
+    config_response = awsemr.get_cluster_record(cluster_id, region)
     if config := config_response.result:
         click.echo(
             orjson.dumps(
@@ -98,6 +109,7 @@ def get_cluster_record(cluster_id: str):
 @click.argument("project", callback=validate_project)
 @click.option("-r", "--region")
 def record_run(cluster_id: str, project: str, region: str = None):
+    """Record a project run"""
     response = awsemr.record_run(cluster_id, project["id"], region)
     if prediction_id := response.result:
         click.echo(f"Prediction ID: {prediction_id}")

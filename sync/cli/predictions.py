@@ -21,24 +21,30 @@ from sync.models import Platform, Preference
 
 @click.group
 def predictions():
+    """Sync prediction commands"""
     pass
 
 
 @predictions.command
 def platforms():
+    """List supported platforms"""
     products_response = get_products()
     if products := products_response.result:
-        click.echo(orjson.dumps(products, option=orjson.OPT_INDENT_2))
+        click.echo(", ".join(product for product in products if product != "aws-databricks"))
     else:
         click.echo(str(products_response.error), err=True)
 
 
 @predictions.command
-@click.argument("platform", type=click.Choice(Platform))
+@click.argument(
+    "platform",
+    type=click.Choice(platform for platform in Platform if platform is not Platform.AWS_DATABRICKS),
+)
 @click.option("-e", "--event-log", metavar="URL/PATH", required=True)
 @click.option("-c", "--config", metavar="URL/PATH", required=True)
-@click.option("-p", "--project", callback=validate_project)
+@click.option("-p", "--project", callback=validate_project, help="project/app ID")
 def create(platform: Platform, event_log: str, config: str, project: str):
+    """Create a prediction"""
     parsed_config = urlparse(config)
     match parsed_config.scheme:
         case "":
@@ -80,6 +86,7 @@ def create(platform: Platform, event_log: str, config: str, project: str):
 @predictions.command
 @click.argument("prediction-id")
 def status(prediction_id: str):
+    """Get the status of a prediction"""
     click.echo(get_status(prediction_id).result)
 
 
@@ -92,6 +99,7 @@ def status(prediction_id: str):
     default=CONFIG.default_prediction_preference,
 )
 def get(prediction_id: str, preference: Preference):
+    """Retrieve a prediction"""
     response = get_prediction(prediction_id, preference.value)
     click.echo(
         orjson.dumps(
@@ -106,8 +114,9 @@ def get(prediction_id: str, preference: Preference):
 
 @predictions.command
 @click.option("--platform", type=click.Choice(Platform))
-@click.option("--project", callback=validate_project)
+@click.option("--project", callback=validate_project, help="project/app ID")
 def list(platform: Platform, project: dict = None):
+    """List predictions"""
     response = get_predictions(
         product=platform.value if platform else None, project_id=project["id"]
     )

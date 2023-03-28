@@ -3,10 +3,10 @@
 
 SYNC_HOME="$(dirname "$(dirname "$(readlink -f $0)")")"
 
-{
+function install_sync() {
   local SYNC_PYTHON="$(command -v python3 python | sed q)"
 
-  if ! [[ $("$SYNC_PYTHON" --version 2>/dev/null) =~ '(^|[^[:digit:].])3.10(\.|$)' ]]; then
+  if ! [[ $("$SYNC_PYTHON" --version 2>/dev/null) =~ (^|[^[:digit:].])3.10(\.|$) ]]; then
     >&2 echo "Python 3.10 is required"
     return 1
   fi
@@ -40,3 +40,5 @@ EOD
     return 1
   fi
 }
+
+install_sync

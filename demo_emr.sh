@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Run the prediction passing in the Spark event log and cluster config.
 # Save the prediction Id.
 prediction_id=`sync-cli predictions create aws-emr -e demo/emr/application_1678162862227_0001 -c demo/emr/emr-config.json | sed 's/Prediction ID: //'`

@@ -143,9 +143,11 @@ class ASyncClient:
             )
         )
 
-    async def get_prediction(self, prediction_id) -> dict:
+    async def get_prediction(self, prediction_id, params: dict = None) -> dict:
         return await self._send(
-            self._client.build_request("GET", f"/v1/autotuner/predictions/{prediction_id}")
+            self._client.build_request(
+                "GET", f"/v1/autotuner/predictions/{prediction_id}", params=params
+            )
         )
 
     async def get_predictions(self, params: dict = None) -> dict:

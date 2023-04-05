@@ -3,14 +3,19 @@
 
 SYNC_HOME="$(dirname "$(dirname "$(readlink -f $0)")")"
 
-function install_sync() {
+function find_python() {
   local python_candidate
+
   while read python_candidate; do
     if [[ $("$python_candidate" --version 2>/dev/null) =~ (^|[^[:digit:].])3.10(\.|$) ]]; then
-      local SYNC_PYTHON="$python_candidate"
-      break
+      echo $python_candidate
+      return
     fi
   done < <(command -v python python3)
+}
+
+function install_sync() {
+  local SYNC_PYTHON="$(find_python)"
 
   if [[ -z $SYNC_PYTHON ]]; then
     >&2 echo "Python 3.10 is required"

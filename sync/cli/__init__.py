@@ -17,6 +17,7 @@ LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 
 @click.group()
 @click.option("--debug", is_flag=True, default=False, help="Enable logging.")
+@click.version_option(package_name="syncsparkpy")
 def main(debug: bool):
     if debug:
         logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)

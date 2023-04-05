@@ -42,27 +42,37 @@ def platforms():
     type=click.Choice(platform for platform in Platform if platform is not Platform.AWS_DATABRICKS),
 )
 @click.option("-e", "--event-log", metavar="URL/PATH", required=True)
-@click.option("-c", "--config", metavar="URL/PATH", required=True)
+@click.option("-r", "--record", metavar="URL/PATH", required=True)
 @click.option("--project", callback=validate_project, help="project/app ID")
 @click.option(
     "--preference",
     type=click.Choice(Preference),
     default=CONFIG.default_prediction_preference,
 )
-def generate(platform: Platform, event_log: str, config: str, project: str, preference: Preference):
+@click.pass_context
+def generate(
+    ctx: click.Context,
+    platform: Platform,
+    event_log: str,
+    record: str,
+    project: str,
+    preference: Preference,
+):
     """Create and retrieve a prediction"""
-    parsed_config = urlparse(config)
-    match parsed_config.scheme:
+    parsed_record_arg = urlparse(record)
+    match parsed_record_arg.scheme:
         case "":
-            with open(config) as config_fobj:
-                config = orjson.loads(config_fobj.read())
+            with open(record) as record_fobj:
+                record = orjson.loads(record_fobj.read())
         case "s3":
             s3 = boto.client("s3")
-            config_io = io.BytesIO()
-            s3.download_fileobj(parsed_config.netloc, parsed_config.path.lstrip("/"), config_io)
-            config = orjson.loads(config_io.getvalue())
+            record_io = io.BytesIO()
+            s3.download_fileobj(
+                parsed_record_arg.netloc, parsed_record_arg.path.lstrip("/"), record_io
+            )
+            record = orjson.loads(record_io.getvalue())
         case _:
-            click.echo("Unsupported config argument", err=True)
+            ctx.fail("Unsupported record argument")
 
     parsed_event_log_loc = urlparse(event_log)
     event_log_path = None
@@ -73,14 +83,14 @@ def generate(platform: Platform, event_log: str, config: str, project: str, pref
         case "s3" | "http" | "https":
             event_log_url = event_log
         case _:
-            click.echo("Unsupported config argument", err=True)
+            ctx.fail("Unsupported event log argument")
 
     if event_log_url:
-        response = create_prediction(platform, config, event_log_url, project["id"])
+        response = create_prediction(platform, record, event_log_url, project["id"])
     elif event_log_path:
         with open(event_log_path, "rb") as event_log_fobj:
             response = create_prediction_with_eventlog_bytes(
-                platform, config, event_log_path.name, event_log_fobj.read(), project["id"]
+                platform, record, event_log_path.name, event_log_fobj.read(), project["id"]
             )
 
     if prediction_id := response.result:
@@ -107,22 +117,25 @@ def generate(platform: Platform, event_log: str, config: str, project: str, pref
     type=click.Choice(platform for platform in Platform if platform is not Platform.AWS_DATABRICKS),
 )
 @click.option("-e", "--event-log", metavar="URL/PATH", required=True)
-@click.option("-c", "--config", metavar="URL/PATH", required=True)
+@click.option("-r", "--record", metavar="URL/PATH", required=True)
 @click.option("-p", "--project", callback=validate_project, help="project/app ID")
-def create(platform: Platform, event_log: str, config: str, project: str):
+@click.pass_context
+def create(ctx: click.Context, platform: Platform, event_log: str, record: str, project: str):
     """Create a prediction"""
-    parsed_config = urlparse(config)
-    match parsed_config.scheme:
+    parsed_record_arg = urlparse(record)
+    match parsed_record_arg.scheme:
         case "":
-            with open(config) as config_fobj:
-                config = orjson.loads(config_fobj.read())
+            with open(record) as record_fobj:
+                record = orjson.loads(record_fobj.read())
         case "s3":
             s3 = boto.client("s3")
-            config_io = io.BytesIO()
-            s3.download_fileobj(parsed_config.netloc, parsed_config.path.lstrip("/"), config_io)
-            config = orjson.loads(config_io.getvalue())
+            record_io = io.BytesIO()
+            s3.download_fileobj(
+                parsed_record_arg.netloc, parsed_record_arg.path.lstrip("/"), record_io
+            )
+            record = orjson.loads(record_io.getvalue())
         case _:
-            click.echo("Unsupported config argument", err=True)
+            ctx.fail("Unsupported record argument")
 
     parsed_event_log_loc = urlparse(event_log)
     event_log_path = None
@@ -133,14 +146,14 @@ def create(platform: Platform, event_log: str, config: str, project: str):
         case "s3" | "http" | "https":
             event_log_url = event_log
         case _:
-            click.echo("Unsupported config argument", err=True)
+            ctx.fail("Unsupported event log argument")
 
     if event_log_url:
-        response = create_prediction(platform, config, event_log_url, project["id"])
+        response = create_prediction(platform, record, event_log_url, project["id"])
     elif event_log_path:
         with open(event_log_path, "rb") as event_log_fobj:
             response = create_prediction_with_eventlog_bytes(
-                platform, config, event_log_path.name, event_log_fobj.read(), project["id"]
+                platform, record, event_log_path.name, event_log_fobj.read(), project["id"]
             )
 
     if prediction_id := response.result:

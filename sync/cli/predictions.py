@@ -11,7 +11,6 @@ from sync.api.predictions import (
     create_prediction_with_eventlog_bytes,
     get_prediction,
     get_predictions,
-    get_products,
     get_status,
     wait_for_prediction,
 )
@@ -24,16 +23,6 @@ from sync.models import Platform, Preference
 def predictions():
     """Sync prediction commands"""
     pass
-
-
-@predictions.command
-def platforms():
-    """List supported platforms"""
-    products_response = get_products()
-    if products := products_response.result:
-        click.echo(", ".join(product for product in products if product != "aws-databricks"))
-    else:
-        click.echo(str(products_response.error), err=True)
 
 
 @predictions.command

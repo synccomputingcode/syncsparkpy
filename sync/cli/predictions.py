@@ -94,6 +94,8 @@ def generate(
             )
 
     if prediction_id := response.result:
+        click.echo(f"Prediction ID: {prediction_id}")
+        click.echo("Waiting for result...")
         prediction_response = wait_for_prediction(prediction_id, preference.value)
         if prediction := prediction_response.result:
             click.echo(

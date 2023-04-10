@@ -30,16 +30,13 @@ def platforms():
     """List supported platforms"""
     products_response = get_products()
     if products := products_response.result:
-        click.echo(", ".join(product for product in products if product != "aws-databricks"))
+        click.echo(", ".join(products))
     else:
         click.echo(str(products_response.error), err=True)
 
 
 @predictions.command
-@click.argument(
-    "platform",
-    type=click.Choice(platform for platform in Platform if platform is not Platform.AWS_DATABRICKS),
-)
+@click.argument("platform", type=click.Choice(Platform))
 @click.option("-e", "--event-log", metavar="URL/PATH", required=True)
 @click.option("-c", "--config", metavar="URL/PATH", required=True)
 @click.option("-p", "--project", callback=validate_project, help="project/app ID")

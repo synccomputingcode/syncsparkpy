@@ -40,7 +40,7 @@ def run_prediction(job_id: str, prediction_id: str, preference: str = None):
     type=click.Choice(["All-Purpose Compute", "Jobs Compute", "Jobs Light Compute"]),
     default="Jobs Compute",
 )
-@click.option("-p", "--project", callback=validate_project)
+@click.option("--project", callback=validate_project)
 def run_job(job_id: str, plan: str, compute: str, project: dict = None):
     """Run a job, wait for it to complete then create a prediction"""
     run_response = awsdatabricks.run_and_record_job(job_id, plan, compute, project["id"])

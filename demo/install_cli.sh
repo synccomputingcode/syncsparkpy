@@ -3,13 +3,24 @@
 
 SYNC_HOME="$(dirname "$(dirname "$(readlink -f $0)")")"
 
-function install_sync() {
-  local SYNC_PYTHON="$(command -v python3 python | sed q)"
+function find_python() {
+  local python_candidate
 
-  # if ! [[ $("$SYNC_PYTHON" --version 2>/dev/null) =~ (^|[^[:digit:].])3.10(\.|$) ]]; then
-  #  >&2 echo "Python 3.10 is required"
-  #  return 1
-  # fi
+  while read python_candidate; do
+    if [[ $("$python_candidate" --version 2>/dev/null) =~ (^|[^[:digit:].])3.10(\.|$) ]]; then
+      echo $python_candidate
+      return
+    fi
+  done < <(command -v python python3)
+}
+
+function install_sync() {
+  local SYNC_PYTHON="$(find_python)"
+
+  if [[ -z $SYNC_PYTHON ]]; then
+    >&2 echo "Python 3.10 is required"
+    return 1
+  fi
 
   if [[ -z $VIRTUAL_ENV ]]; then
     if ! { "$SYNC_PYTHON" -m venv "$SYNC_HOME/venv" && source "$SYNC_HOME/venv/bin/activate"; }; then

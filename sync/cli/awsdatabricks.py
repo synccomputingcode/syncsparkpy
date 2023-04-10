@@ -22,6 +22,7 @@ def aws_databricks():
     default=CONFIG.default_prediction_preference,
 )
 def run_prediction(job_id: str, prediction_id: str, preference: str = None):
+    """Apply a prediction to a job and run it"""
     run = awsdatabricks.run_prediction(job_id, prediction_id, preference)
     if run_id := run.result:
         click.echo(f"Run ID: {run_id}")
@@ -41,6 +42,7 @@ def run_prediction(job_id: str, prediction_id: str, preference: str = None):
 )
 @click.option("-p", "--project", callback=validate_project)
 def run_job(job_id: str, plan: str, compute: str, project: dict = None):
+    """Run a job, wait for it to complete then create a prediction"""
     run_response = awsdatabricks.run_and_record_job(job_id, plan, compute, project["id"])
     if prediction_id := run_response.result:
         click.echo(f"Prediction ID: {prediction_id}")
@@ -58,8 +60,9 @@ def run_job(job_id: str, plan: str, compute: str, project: dict = None):
     type=click.Choice(["All-Purpose Compute", "Jobs Compute", "Jobs Light Compute"]),
     default="Jobs Compute",
 )
-@click.option("-p", "--project", callback=validate_project)
+@click.option("--project", callback=validate_project)
 def create_prediction(run_id: str, plan: str, compute: str, project: str = None):
+    """Create a prediction for a job run"""
     prediction_response = awsdatabricks.create_prediction_for_run(
         run_id, plan, compute, project["id"]
     )

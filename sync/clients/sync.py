@@ -58,7 +58,7 @@ class SyncClient:
         )
 
     def get_products(self) -> dict:
-        return self._send(self._client.build_request("GET", "/v1/autotuner/products"))
+        return self._send(self._client.build_request("GET", "/v1/autotuner/platforms"))
 
     def create_prediction(self, prediction: dict) -> dict:
         headers, content = encode_json(prediction)

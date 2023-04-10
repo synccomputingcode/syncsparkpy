@@ -5,6 +5,7 @@ import logging
 
 import click
 
+from sync.api.predictions import get_products
 from sync.cli import awsemr, predictions, projects
 from sync.clients.sync import get_default_client
 from sync.config import API_KEY, CONFIG, DB_CONFIG, APIKey, Configuration, DatabricksConf, init
@@ -17,6 +18,7 @@ LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 
 @click.group()
 @click.option("--debug", is_flag=True, default=False, help="Enable logging.")
+@click.version_option(package_name="syncsparkpy")
 def main(debug: bool):
     if debug:
         logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
@@ -70,6 +72,16 @@ def configure():
         if db_host != OPTIONAL_DEFAULT and db_token != OPTIONAL_DEFAULT
         else None,
     )
+
+
+@main.command
+def platforms():
+    """List supported platforms"""
+    products_response = get_products()
+    if products := products_response.result:
+        click.echo(", ".join(product for product in products if product != "aws-databricks"))
+    else:
+        click.echo(str(products_response.error), err=True)
 
 
 @main.command

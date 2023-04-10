@@ -3,6 +3,7 @@ import orjson
 
 from sync.api.projects import (
     create_project,
+    delete_project,
     get_prediction,
     get_project,
     get_projects,
@@ -26,7 +27,7 @@ def list():
     if projects := response.result:
         click.echo_via_pager(f"{p['updated_at']} {p['id']}: {p['app_id']}\n" for p in projects)
     else:
-        click.echo(f"{response.error.code}: {response.error.message}", err=True)
+        click.echo(str(response.error), err=True)
 
 
 @projects.command
@@ -44,7 +45,7 @@ def get(project: dict):
             )
         )
     else:
-        click.echo(f"{response.error.code}: {response.error.message}", err=True)
+        click.echo(str(response.error), err=True)
 
 
 @projects.command
@@ -87,6 +88,19 @@ def update(
     response = update_project(project_id, description, location, preference)
     if response.result:
         click.echo("Project updated")
+    else:
+        click.echo(str(response.error), err=True)
+
+
+@projects.command
+@click.argument("project", callback=validate_project)
+def delete(project: dict):
+    """Delete a project
+
+    PROJECT is either a project ID or application name"""
+    response = delete_project(project["id"])
+    if response.result:
+        click.echo(response.result)
     else:
         click.echo(str(response.error), err=True)
 

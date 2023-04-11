@@ -10,14 +10,14 @@ logger = logging.getLogger(__name__)
 
 
 async def generate_prediction(
-    platform: Platform, cluster_config: dict, eventlog_url: str, preference: str = None
+    platform: Platform, cluster_report: dict, eventlog_url: str, preference: str = None
 ) -> Response[dict]:
     """Create and return prediction
 
     :param platform: e.g. "aws-emr"
     :type platform: Platform
-    :param cluster_config: cluster record
-    :type cluster_config: dict
+    :param cluster_report: cluster report
+    :type cluster_report: dict
     :param eventlog_url: Apache Spark event log URL
     :type eventlog_url: str
     :param preference: prediction preference, defaults to None
@@ -25,7 +25,7 @@ async def generate_prediction(
     :return: prediction object
     :rtype: Response[dict]
     """
-    response = await create_prediction(platform, cluster_config, eventlog_url)
+    response = await create_prediction(platform, cluster_report, eventlog_url)
 
     if prediction_id := response.result:
         return await wait_for_prediction(prediction_id, preference)
@@ -126,14 +126,14 @@ async def wait_for_final_prediction_status(prediction_id: str) -> Response[str]:
 
 
 async def create_prediction(
-    platform: Platform, cluster_record: dict, eventlog_url: str, project_id: str = None
+    platform: Platform, cluster_report: dict, eventlog_url: str, project_id: str = None
 ) -> Response[str]:
     """Create prediction
 
     :param platform: platform, e.g. "aws-emr"
     :type platform: Platform
-    :param cluster_record: cluster record
-    :type cluster_record: dict
+    :param cluster_report: cluster report
+    :type cluster_report: dict
     :param eventlog_url: event log URL
     :type eventlog_url: str
     :param project_id: ID of project to which the prediction belongs, defaults to None
@@ -157,7 +157,7 @@ async def create_prediction(
             "project_id": project_id,
             "product_code": platform,
             "eventlog_url": eventlog_http_url,
-            "configs": cluster_record,
+            "configs": cluster_report,
         }
     )
 

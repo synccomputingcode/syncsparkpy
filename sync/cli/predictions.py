@@ -31,7 +31,7 @@ def predictions():
     type=click.Choice(platform for platform in Platform if platform is not Platform.AWS_DATABRICKS),
 )
 @click.option("-e", "--event-log", metavar="URL/PATH", required=True)
-@click.option("-r", "--record", metavar="URL/PATH", required=True)
+@click.option("-r", "--report", metavar="URL/PATH", required=True)
 @click.option("--project", callback=validate_project, help="project/app ID")
 @click.option(
     "--preference",
@@ -43,25 +43,25 @@ def generate(
     ctx: click.Context,
     platform: Platform,
     event_log: str,
-    record: str,
+    report: str,
     project: str,
     preference: Preference,
 ):
     """Create and retrieve a prediction"""
-    parsed_record_arg = urlparse(record)
-    match parsed_record_arg.scheme:
+    parsed_report_arg = urlparse(report)
+    match parsed_report_arg.scheme:
         case "":
-            with open(record) as record_fobj:
-                record = orjson.loads(record_fobj.read())
+            with open(report) as report_fobj:
+                report = orjson.loads(report_fobj.read())
         case "s3":
             s3 = boto.client("s3")
-            record_io = io.BytesIO()
+            report_io = io.BytesIO()
             s3.download_fileobj(
-                parsed_record_arg.netloc, parsed_record_arg.path.lstrip("/"), record_io
+                parsed_report_arg.netloc, parsed_report_arg.path.lstrip("/"), report_io
             )
-            record = orjson.loads(record_io.getvalue())
+            report = orjson.loads(report_io.getvalue())
         case _:
-            ctx.fail("Unsupported record argument")
+            ctx.fail("Unsupported report argument")
 
     parsed_event_log_loc = urlparse(event_log)
     event_log_path = None
@@ -75,11 +75,11 @@ def generate(
             ctx.fail("Unsupported event log argument")
 
     if event_log_url:
-        response = create_prediction(platform, record, event_log_url, project["id"])
+        response = create_prediction(platform, report, event_log_url, project["id"])
     elif event_log_path:
         with open(event_log_path, "rb") as event_log_fobj:
             response = create_prediction_with_eventlog_bytes(
-                platform, record, event_log_path.name, event_log_fobj.read(), project["id"]
+                platform, report, event_log_path.name, event_log_fobj.read(), project["id"]
             )
 
     if prediction_id := response.result:
@@ -103,30 +103,27 @@ def generate(
 
 
 @predictions.command
-@click.argument(
-    "platform",
-    type=click.Choice(platform for platform in Platform if platform is not Platform.AWS_DATABRICKS),
-)
+@click.argument("platform", type=click.Choice(Platform))
 @click.option("-e", "--event-log", metavar="URL/PATH", required=True)
-@click.option("-r", "--record", metavar="URL/PATH", required=True)
+@click.option("-r", "--report", metavar="URL/PATH", required=True)
 @click.option("-p", "--project", callback=validate_project, help="project/app ID")
 @click.pass_context
-def create(ctx: click.Context, platform: Platform, event_log: str, record: str, project: str):
+def create(ctx: click.Context, platform: Platform, event_log: str, report: str, project: str):
     """Create a prediction"""
-    parsed_record_arg = urlparse(record)
-    match parsed_record_arg.scheme:
+    parsed_report_arg = urlparse(report)
+    match parsed_report_arg.scheme:
         case "":
-            with open(record) as record_fobj:
-                record = orjson.loads(record_fobj.read())
+            with open(report) as report_fobj:
+                report = orjson.loads(report_fobj.read())
         case "s3":
             s3 = boto.client("s3")
-            record_io = io.BytesIO()
+            report_io = io.BytesIO()
             s3.download_fileobj(
-                parsed_record_arg.netloc, parsed_record_arg.path.lstrip("/"), record_io
+                parsed_report_arg.netloc, parsed_report_arg.path.lstrip("/"), report_io
             )
-            record = orjson.loads(record_io.getvalue())
+            report = orjson.loads(report_io.getvalue())
         case _:
-            ctx.fail("Unsupported record argument")
+            ctx.fail("Unsupported report argument")
 
     parsed_event_log_loc = urlparse(event_log)
     event_log_path = None
@@ -140,11 +137,11 @@ def create(ctx: click.Context, platform: Platform, event_log: str, record: str, 
             ctx.fail("Unsupported event log argument")
 
     if event_log_url:
-        response = create_prediction(platform, record, event_log_url, project["id"])
+        response = create_prediction(platform, report, event_log_url, project["id"])
     elif event_log_path:
         with open(event_log_path, "rb") as event_log_fobj:
             response = create_prediction_with_eventlog_bytes(
-                platform, record, event_log_path.name, event_log_fobj.read(), project["id"]
+                platform, report, event_log_path.name, event_log_fobj.read(), project["id"]
             )
 
     if prediction_id := response.result:

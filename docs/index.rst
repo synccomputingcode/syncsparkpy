@@ -20,6 +20,7 @@ Welcome to the Sync Library!
 
    reference/api
    reference/awsemr
+   reference/awsdatabricks
 
 
 Indices and tables

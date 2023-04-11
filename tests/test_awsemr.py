@@ -9,17 +9,19 @@ from deepdiff import DeepDiff
 from sync import TIME_FORMAT
 from sync.awsemr import (
     create_prediction_for_cluster,
-    get_cluster_record,
-    get_project_cluster_record,
+    get_cluster_report,
+    get_project_cluster_report,
 )
 from sync.models import Response
 
 
-@patch("sync.awsemr.get_cluster_record")
+@patch("sync.awsemr.get_cluster_report")
 @patch("sync.awsemr.create_prediction")
-def test_create_prediction(create_prediction, get_cluster_record):
-    with open("tests/data/emr-config.json") as emr_config_fobj:
-        get_cluster_record.return_value = Response(result=orjson.loads(emr_config_fobj.read()))
+def test_create_prediction(create_prediction, get_cluster_report):
+    with open("tests/data/emr-cluster-report.json") as emr_cluster_report_fobj:
+        get_cluster_report.return_value = Response(
+            result=orjson.loads(emr_cluster_report_fobj.read())
+        )
 
     prediction_id = "320554b0-3972-4b7c-9e41-c8efdbdc042c"
     create_prediction.return_value = Response(result=prediction_id)
@@ -52,55 +54,57 @@ def test_create_prediction(create_prediction, get_cluster_record):
     with stubber, patch("boto3.client") as mock_client:
         mock_client.return_value = s3_mock
         response = create_prediction_for_cluster(
-            get_cluster_record.return_value.result["Cluster"]["Id"]
+            get_cluster_report.return_value.result["Cluster"]["Id"]
         )
 
     assert prediction_id == response.result
 
 
-def test_get_cluster_record():
-    with open("tests/data/emr-config.json") as emr_config_fobj:
-        emr_config = orjson.loads(emr_config_fobj.read())
+def test_get_cluster_report():
+    with open("tests/data/emr-cluster-report.json") as emr_cluster_report_fobj:
+        emr_cluster_report = orjson.loads(emr_cluster_report_fobj.read())
 
-    cluster_id = emr_config["Cluster"]["Id"]
-    region = emr_config["Region"]
+    cluster_id = emr_cluster_report["Cluster"]["Id"]
+    region = emr_cluster_report["Region"]
 
     emr = boto.client("emr")
     stubber = Stubber(emr)
 
-    describe_response = {"Cluster": emr_config["Cluster"].copy()}
+    describe_response = {"Cluster": emr_cluster_report["Cluster"].copy()}
     del describe_response["Cluster"]["BootstrapActions"]
     del describe_response["Cluster"]["InstanceFleets"]
 
     stubber.add_response("describe_cluster", describe_response, {"ClusterId": cluster_id})
     stubber.add_response(
         "list_bootstrap_actions",
-        {"BootstrapActions": emr_config["Cluster"]["BootstrapActions"]},
+        {"BootstrapActions": emr_cluster_report["Cluster"]["BootstrapActions"]},
         {"ClusterId": cluster_id},
     )
     stubber.add_response(
         "list_instance_fleets",
-        {"InstanceFleets": emr_config["Cluster"]["InstanceFleets"]},
+        {"InstanceFleets": emr_cluster_report["Cluster"]["InstanceFleets"]},
         {"ClusterId": cluster_id},
     )
     stubber.add_response(
-        "list_instances", {"Instances": emr_config["Instances"]}, {"ClusterId": cluster_id}
+        "list_instances", {"Instances": emr_cluster_report["Instances"]}, {"ClusterId": cluster_id}
     )
-    stubber.add_response("list_steps", {"Steps": emr_config["Steps"]}, {"ClusterId": cluster_id})
+    stubber.add_response(
+        "list_steps", {"Steps": emr_cluster_report["Steps"]}, {"ClusterId": cluster_id}
+    )
 
     with stubber, patch("boto3.client") as mock_client:
         mock_client.return_value = emr
-        result = get_cluster_record(cluster_id, region).result
+        result = get_cluster_report(cluster_id, region).result
 
-    assert not DeepDiff(emr_config, result)
+    assert not DeepDiff(emr_cluster_report, result)
 
 
-@patch("sync.awsemr.get_cluster_record")
+@patch("sync.awsemr.get_cluster_report")
 @patch("sync.awsemr.get_project")
-def test_get_project_record(get_project, get_cluster_record):
-    with open("tests/data/emr-config.json") as emr_config_fobj:
-        cluster_record = orjson.loads(emr_config_fobj.read())
-        get_cluster_record.return_value = Response(result=cluster_record)
+def test_get_project_report(get_project, get_cluster_report):
+    with open("tests/data/emr-cluster-report.json") as emr_cluster_report_fobj:
+        cluster_report = orjson.loads(emr_cluster_report_fobj.read())
+        get_cluster_report.return_value = Response(result=cluster_report)
 
     get_project.return_value = Response(
         result={
@@ -151,7 +155,7 @@ def test_get_project_record(get_project, get_cluster_record):
             },
             "VersionId": "Dbc0gbLVEN4N5F4oz7Hhek0Xd82Mdgyo",
         },
-        {"Body": ANY, "Bucket": bucket, "Key": f"{run_prefix}/emr-cluster-record.json"},
+        {"Body": ANY, "Bucket": bucket, "Key": f"{run_prefix}/emr-cluster-report.json"},
     )
 
     emr = boto.client("emr")
@@ -188,7 +192,7 @@ def test_get_project_record(get_project, get_cluster_record):
 
     with s3_stubber, emr_stubber, patch("boto3.client") as mock_client:
         mock_client.side_effect = client_patch
-        result = get_project_cluster_record(project_id).result
+        result = get_project_cluster_report(project_id).result
 
-    assert not DeepDiff(cluster_record, result[0])
+    assert not DeepDiff(cluster_report, result[0])
     assert f"s3://{bucket}/{event_log_key}" == result[1]

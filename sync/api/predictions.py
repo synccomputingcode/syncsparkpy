@@ -26,14 +26,14 @@ def get_products() -> Response[list[str]]:
 
 
 def generate_prediction(
-    platform: Platform, cluster_config: dict, eventlog_url: str, preference: str = None
+    platform: Platform, cluster_report: dict, eventlog_url: str, preference: str = None
 ) -> Response[dict]:
     """Create and return prediction
 
     :param platform: e.g. "aws-emr"
     :type platform: Platform
-    :param cluster_config: cluster record
-    :type cluster_config: dict
+    :param cluster_report: cluster report
+    :type cluster_report: dict
     :param eventlog_url: Apache Spark event log URL
     :type eventlog_url: str
     :param preference: prediction preference, defaults to None
@@ -41,7 +41,7 @@ def generate_prediction(
     :return: prediction object
     :rtype: Response[dict]
     """
-    response = create_prediction(platform, cluster_config, eventlog_url)
+    response = create_prediction(platform, cluster_report, eventlog_url)
 
     if prediction_id := response.result:
         return wait_for_prediction(prediction_id, preference)
@@ -159,7 +159,7 @@ def wait_for_final_prediction_status(prediction_id: str) -> Response[str]:
 
 def create_prediction_with_eventlog_bytes(
     platform: Platform,
-    cluster_config: dict,
+    cluster_report: dict,
     eventlog_name: str,
     eventlog_bytes: bytes,
     project_id: str = None,
@@ -168,8 +168,8 @@ def create_prediction_with_eventlog_bytes(
 
     :param platform: platform, e.g. "aws-emr"
     :type platform: Platform
-    :param cluster_config: cluster record
-    :type cluster_config: dict
+    :param cluster_report: cluster report
+    :type cluster_report: dict
     :param eventlog_name: name of event log (extension is important)
     :type eventlog_name: str
     :param eventlog_bytes: encoded event log
@@ -183,7 +183,7 @@ def create_prediction_with_eventlog_bytes(
         {
             "project_id": project_id,
             "product_code": platform,
-            "configs": cluster_config,
+            "configs": cluster_report,
         }
     )
 
@@ -206,14 +206,14 @@ def create_prediction_with_eventlog_bytes(
 
 
 def create_prediction(
-    platform: Platform, cluster_record: dict, eventlog_url: str, project_id: str = None
+    platform: Platform, cluster_report: dict, eventlog_url: str, project_id: str = None
 ) -> Response[str]:
     """Create prediction
 
     :param platform: platform, e.g. "aws-emr"
     :type platform: Platform
-    :param cluster_record: cluster record
-    :type cluster_record: dict
+    :param cluster_report: cluster report
+    :type cluster_report: dict
     :param eventlog_url: event log URL
     :type eventlog_url: str
     :param project_id: ID of project to which the prediction belongs, defaults to None
@@ -237,7 +237,7 @@ def create_prediction(
             "project_id": project_id,
             "product_code": platform,
             "eventlog_url": eventlog_http_url,
-            "configs": cluster_record,
+            "configs": cluster_report,
         }
     )
 

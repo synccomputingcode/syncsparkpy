@@ -78,7 +78,7 @@ def get_project_job_flow(job_flow: dict, project_id: str) -> Response[dict]:
 def get_project_prediction(
     project_id: str, run_id: str = None, preference: str = None, region_name: str = None
 ) -> Response[dict]:
-    """Finds the latest run in a project or one with the ID if provided (see :py:func:`~get_project_cluster_record`) and returns a prediction based on it.
+    """Finds the latest run in a project or one with the ID if provided (see :py:func:`~get_project_cluster_report`) and returns a prediction based on it.
 
     The project must be configured with an S3 URL.
 
@@ -135,8 +135,8 @@ def run_project_prediction(
 
 
 def record_run(cluster_id: str, project_id: str, region_name: str = None) -> Response[str]:
-    """Adds a record of the cluster to the project's S3 location if it has one, and
-    creates a prediction based on such returning the ID.
+    """Adds a report of the cluster to the project's S3 location if it has one, and
+    adds to the project a prediction based on such returning the ID.
 
     :param cluster_id: EMR cluster ID
     :type cluster_id: str
@@ -147,22 +147,22 @@ def record_run(cluster_id: str, project_id: str, region_name: str = None) -> Res
     :return: prediction ID
     :rtype: Response[str]
     """
-    record_response = get_cluster_record(cluster_id, region_name)
-    if record_response.error:
-        return record_response
+    report_response = get_cluster_report(cluster_id, region_name)
+    if report_response.error:
+        return report_response
 
-    cluster_record = record_response.result
+    cluster_report = report_response.result
 
-    if eventlog_url := _get_eventlog_url_from_cluster_record(cluster_record).result:
-        if run_dir := _get_existing_run_dir_from_cluster_config(cluster_record, project_id).result:
+    if eventlog_url := _get_eventlog_url_from_cluster_report(cluster_report).result:
+        if run_dir := _get_existing_run_dir_from_cluster_config(cluster_report, project_id).result:
             if _upload_object(
-                cluster_record,
-                f"{run_dir}/emr-cluster-record.json",
+                cluster_report,
+                f"{run_dir}/emr-cluster-report.json",
             ).error:
                 logger.warning("Failed to save configuration")
 
         # Start prediction
-        return create_prediction(Platform.AWS_EMR, cluster_record, eventlog_url, project_id)
+        return create_prediction(Platform.AWS_EMR, cluster_report, eventlog_url, project_id)
 
     return Response(error=EMRError(message="Failed to find event log"))
 
@@ -170,7 +170,7 @@ def record_run(cluster_id: str, project_id: str, region_name: str = None) -> Res
 def create_project_prediction(
     project_id: str, run_id: str = None, region_name: str = None
 ) -> Response[str]:
-    """Finds the latest run in a project or one with the ID if provided (see :py:func:`~get_project_cluster_record`)
+    """Finds the latest run in a project or one with the ID if provided (see :py:func:`~get_project_cluster_report`)
     and creates a prediction based on it returning the ID.
 
     The project must be configured with an S3 URL.
@@ -184,7 +184,7 @@ def create_project_prediction(
     :return: Sync prediction ID
     :rtype: Response[str]
     """
-    response = get_project_cluster_record(project_id, run_id, region_name)
+    response = get_project_cluster_report(project_id, run_id, region_name)
     if response.error:
         return response
 
@@ -192,10 +192,10 @@ def create_project_prediction(
     return create_prediction(Platform.AWS_EMR, config, eventlog_url, project_id)
 
 
-def get_project_cluster_record(  # noqa: C901
+def get_project_cluster_report(  # noqa: C901
     project_id: str, run_id: str = None, region_name: str = None
 ) -> Response[tuple[dict, str]]:
-    """Gets the record and event log URL for the latest cluster in the project or the one identified by the `run_id` if provided.
+    """Gets the report and event log URL for the latest cluster in the project or the one identified by the `run_id` if provided.
 
     The project must be configured with an S3 URL.
 
@@ -232,7 +232,7 @@ def get_project_cluster_record(  # noqa: C901
                 event_logs.sort(key=lambda x: x[0]["LastModified"], reverse=True)
                 for log_content, log_match in event_logs:
                     log_key = log_content["Key"]
-                    config_key = f"{log_key[:log_key.rindex('/eventlog/')]}/emr-cluster-record.json"
+                    config_key = f"{log_key[:log_key.rindex('/eventlog/')]}/emr-cluster-report.json"
                     if config_key in [content["Key"] for content in contents]:
                         config = io.BytesIO()
                         s3.download_fileobj(parsed_project_url.netloc, config_key, config)
@@ -250,7 +250,7 @@ def get_project_cluster_record(  # noqa: C901
                         region_name=region_name,
                     )
                     if cluster := response.result:
-                        response = get_cluster_record(cluster["Id"], region_name)
+                        response = get_cluster_report(cluster["Id"], region_name)
                         if config := response.result:
                             if error := _upload_object(
                                 config, f"s3://{parsed_project_url.netloc}/{config_key}"
@@ -364,21 +364,21 @@ def create_prediction_for_cluster(cluster_id: str, region_name: str = None) -> R
     :return: prediction ID
     :rtype: Response[str]
     """
-    record_response = get_cluster_record(cluster_id, region_name)
-    if cluster_record := record_response.result:
-        eventlog_response = _get_eventlog_url_from_cluster_record(cluster_record)
+    report_response = get_cluster_report(cluster_id, region_name)
+    if cluster_report := report_response.result:
+        eventlog_response = _get_eventlog_url_from_cluster_report(cluster_report)
         if eventlog_response.error:
             return eventlog_response
 
         if eventlog_http_url := eventlog_response.result:
-            return create_prediction(Platform.AWS_EMR, cluster_record, eventlog_http_url)
+            return create_prediction(Platform.AWS_EMR, cluster_report, eventlog_http_url)
 
         return eventlog_response
 
-    return cluster_record
+    return cluster_report
 
 
-def get_cluster_record(cluster_id: str, region: str = None) -> Response[dict]:
+def get_cluster_report(cluster_id: str, region: str = None) -> Response[dict]:
     """Get the cluster configuration required for Sync prediction
 
     :param cluster_id: cluster ID
@@ -452,7 +452,7 @@ def create_s3_event_log_dir(job_flow: dict) -> Response[str]:
     return Response(error=EMRError(message="No S3 event log dir configured"))
 
 
-def _get_eventlog_url_from_cluster_record(cluster_config: dict) -> Response[str]:
+def _get_eventlog_url_from_cluster_report(cluster_config: dict) -> Response[str]:
     """Returns an S3 URL to the event log for the cluster if one - and only one - exists."""
     eventlog_dir = None
     for config in cluster_config["Cluster"]["Configurations"]:

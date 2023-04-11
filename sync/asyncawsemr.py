@@ -1,5 +1,5 @@
 from sync.asyncapi.predictions import create_prediction, wait_for_prediction
-from sync.awsemr import _get_eventlog_url_from_cluster_record, get_cluster_record
+from sync.awsemr import _get_eventlog_url_from_cluster_report, get_cluster_report
 from sync.models import Platform, Response
 
 
@@ -35,15 +35,15 @@ async def create_prediction_for_cluster(cluster_id: str, region_name: str = None
     :return: prediction ID
     :rtype: Response[str]
     """
-    record_response = get_cluster_record(cluster_id, region_name)
-    if cluster_record := record_response.result:
-        eventlog_response = _get_eventlog_url_from_cluster_record(cluster_record)
+    report_response = get_cluster_report(cluster_id, region_name)
+    if cluster_report := report_response.result:
+        eventlog_response = _get_eventlog_url_from_cluster_report(cluster_report)
         if eventlog_response.error:
             return eventlog_response
 
         if eventlog_http_url := eventlog_response.result:
-            return await create_prediction(Platform.AWS_EMR, cluster_record, eventlog_http_url)
+            return await create_prediction(Platform.AWS_EMR, cluster_report, eventlog_http_url)
 
         return eventlog_response
 
-    return cluster_record
+    return report_response

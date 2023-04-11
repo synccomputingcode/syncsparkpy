@@ -91,9 +91,9 @@ def create_project_prediction(project: dict[str, str], run_id: str = None, regio
 @aws_emr.command
 @click.argument("cluster-id")
 @click.option("-r", "--region")
-def get_cluster_record(cluster_id: str, region: str = None):
-    """Get a cluster record"""
-    config_response = awsemr.get_cluster_record(cluster_id, region)
+def get_cluster_report(cluster_id: str, region: str = None):
+    """Get a cluster report"""
+    config_response = awsemr.get_cluster_report(cluster_id, region)
     if config := config_response.result:
         click.echo(
             orjson.dumps(

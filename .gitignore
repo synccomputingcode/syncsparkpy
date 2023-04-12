@@ -4,3 +4,4 @@ __pycache__
 *.swo
 venv/*
 .idea/*
+.python-version

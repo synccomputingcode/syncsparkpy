@@ -35,31 +35,21 @@ def create_prediction(
     :type plan_type: str
     :param compute_type: e.g. "Jobs Compute"
     :type compute_type: str
-
     :param cluster: The Databricks cluster definition as defined by -
         https://docs.databricks.com/dev-tools/api/latest/clusters.html#get
     :type cluster: dict
-
     :param cluster_events: All events, including paginated events, for the cluster as defined by -
         https://docs.databricks.com/dev-tools/api/latest/clusters.html#events
-
         If the cluster is a long-running cluster, this should only include events relevant to the time window that a
         run occurred in.
     :type cluster_events: dict
-
     :param instances: All EC2 Instances that were a part of the cluster. Expects a data format as is returned by
         boto3's EC2.describe_instances API - https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2/client/describe_instances.html
-
         Instances should be narrowed to just those instances relevant to the Databricks Run. This can be done by passing
         a `tag:ClusterId` filter to the describe_instances call like -
-        Filters=[
-            {"Name": "tag:ClusterId", "Values": ["my-dbx-clusterid"]}
-        ]
-
+        Filters=[{"Name": "tag:ClusterId", "Values": ["my-dbx-clusterid"]}]
         If there are multiple pages of instances, all pages should be accumulated into 1 dictionary and passed to this
         function
-    :type instances: dict
-
     :param eventlog: encoded event log zip
     :type eventlog: bytes
     :param project_id: Sync project ID, defaults to None
@@ -158,7 +148,7 @@ def create_prediction_for_run(
                     cluster_events=cluster_report["cluster_events"],
                     instances=cluster_report["instances"],
                     eventlog=eventlog,
-                    project_id=project_id
+                    project_id=project_id,
                 )
 
             return eventlog_response
@@ -166,12 +156,8 @@ def create_prediction_for_run(
     return cluster_id_response
 
 
-def get_cluster_report(
-    cluster_id: str, plan_type: str, compute_type: str
-) -> Response[dict]:
-    """
-
-    """
+def get_cluster_report(cluster_id: str, plan_type: str, compute_type: str) -> Response[dict]:
+    """ """
     cluster = dbx.get_default_client().get_cluster(cluster_id)
     if "error_code" in cluster:
         return Response(error=DatabricksAPIError(**cluster))
@@ -191,9 +177,7 @@ def get_cluster_report(
         ]
     )
     if not instances["Reservations"]:
-        no_instances_found_error_message = (
-            f"Unable to find any active or recently terminated instances for cluster `{cluster_id}` in `{aws_region_name}`"
-        )
+        no_instances_found_error_message = f"Unable to find any active or recently terminated instances for cluster `{cluster_id}` in `{aws_region_name}`"
         return Response(error=DatabricksError(message=no_instances_found_error_message))
 
     return Response(
@@ -257,10 +241,10 @@ def get_prediction_job(
                 )
                 cluster_key = tasks[0]["job_cluster_key"]
                 job_settings["job_clusters"] = [
-                                                   j
-                                                   for j in job_settings["job_clusters"]
-                                                   if j.get("job_cluster_key") != cluster_key
-                                               ] + [{"job_cluster_key": cluster_key, "new_cluster": prediction_cluster}]
+                    j
+                    for j in job_settings["job_clusters"]
+                    if j.get("job_cluster_key") != cluster_key
+                ] + [{"job_cluster_key": cluster_key, "new_cluster": prediction_cluster}]
                 return Response(result=job)
             return cluster_response
         return Response(error=DatabricksError(message="No task found in job"))
@@ -296,10 +280,10 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
                 project_cluster = _deep_update(cluster, project_cluster_settings)
                 cluster_key = tasks[0]["job_cluster_key"]
                 job_settings["job_clusters"] = [
-                                                   j
-                                                   for j in job_settings["job_clusters"]
-                                                   if j.get("job_cluster_key") != cluster_key
-                                               ] + [{"job_cluster_key": cluster_key, "new_cluster": project_cluster}]
+                    j
+                    for j in job_settings["job_clusters"]
+                    if j.get("job_cluster_key") != cluster_key
+                ] + [{"job_cluster_key": cluster_key, "new_cluster": project_cluster}]
                 return Response(result=job)
             return project_settings_response
         return cluster_response

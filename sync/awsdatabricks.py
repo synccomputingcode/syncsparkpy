@@ -1,9 +1,11 @@
 """
 Utilities for interacting with Databricks
 """
+import datetime
 import io
 import logging
 import zipfile
+from pathlib import Path
 from time import sleep
 from typing import Any, TypeVar
 from urllib.parse import urlparse
@@ -12,7 +14,7 @@ import boto3 as boto
 
 from sync.api.predictions import create_prediction_with_eventlog_bytes, get_prediction
 from sync.api.projects import get_project
-from sync.clients.databricks import get_default_client
+from sync.clients.databricks import get_default_client, get_databricks_config
 from sync.config import CONFIG
 from sync.models import DatabricksAPIError, DatabricksError, Platform, Response
 
@@ -20,7 +22,13 @@ logger = logging.getLogger(__name__)
 
 
 def create_prediction(
-    plan_type: str, compute_type: str, eventlog: bytes, project_id: str = None
+    plan_type: str,
+    compute_type: str,
+    cluster: dict,
+    cluster_events: dict,
+    instances: dict,
+    eventlog: bytes,
+    project_id: str = None,
 ) -> Response[str]:
     """Create a Databricks prediction
 
@@ -28,6 +36,31 @@ def create_prediction(
     :type plan_type: str
     :param compute_type: e.g. "Jobs Compute"
     :type compute_type: str
+
+    :param cluster: The Databricks cluster definition as defined by -
+        https://docs.databricks.com/dev-tools/api/latest/clusters.html#get
+    :type cluster: dict
+
+    :param cluster_events: All events, including paginated events, for the cluster as defined by -
+        https://docs.databricks.com/dev-tools/api/latest/clusters.html#events
+
+        If the cluster is a long-running cluster, this should only include events relevant to the time window that a
+        run occurred in.
+    :type cluster_events: dict
+
+    :param instances: All EC2 Instances that were a part of the cluster. Expects a data format as is returned by
+        boto3's EC2.describe_instances API - https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2/client/describe_instances.html
+
+        Instances should be narrowed to just those instances relevant to the Databricks Run. This can be done by passing
+        a `tag:ClusterId` filter to the describe_instances call like -
+        Filters=[
+            {"Name": "tag:ClusterId", "Values": ["my-dbx-clusterid"]}
+        ]
+
+        If there are multiple pages of instances, all pages should be accumulated into 1 dictionary and passed to this
+        function
+    :type instances: dict
+
     :param eventlog: encoded event log zip
     :type eventlog: bytes
     :param project_id: Sync project ID, defaults to None
@@ -37,7 +70,13 @@ def create_prediction(
     """
     return create_prediction_with_eventlog_bytes(
         Platform.AWS_DATABRICKS,
-        {"plan_type": plan_type, "compute_type": compute_type},
+        {
+            "plan_type": plan_type,
+            "compute_type": compute_type,
+            "cluster": cluster,
+            "cluster_events": cluster_events,
+            "instances": instances,
+        },
         "eventlog.zip",
         eventlog,
         project_id,
@@ -76,6 +115,7 @@ def get_cluster(cluster_id: str) -> Response[dict]:
     return Response(result=cluster)
 
 
+# TODO - Databricks configuration documentation
 def create_prediction_for_run(
     run_id: str, plan_type: str, compute_type: str, project_id: str = None
 ) -> Response[str]:
@@ -99,11 +139,37 @@ def create_prediction_for_run(
     if run["state"].get("result_state") != "SUCCESS":
         return Response(error=DatabricksError(message="Run did not successfully complete"))
 
+    run_end_time = run.get("end_time")
     cluster_response = _get_run_cluster(run["tasks"])
     if cluster := cluster_response.result:
-        eventlog_response = _get_eventlog(run["tasks"][0], cluster)
+        # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
+        #  uploading all the event log data before we start checking for it
+        cluster_id = cluster["cluster_id"]
+
+        cluster_events = get_default_client().get_cluster_events(cluster_id)
+
+        aws_region_name = get_databricks_config().aws_region_name
+        ec2 = boto.client("ec2", region_name=aws_region_name)
+        instances = ec2.describe_instances(
+            Filters=[
+                {"Name": "tag:Vendor", "Values": ["Databricks"]},
+                {"Name": "tag:ClusterId", "Values": [cluster_id]},
+                # {'Name': 'tag:JobId', 'Values': []}
+            ]
+        )
+        if not instances["Reservations"]:
+            no_instances_found_error_message = (
+                f"Unable to find any active (or recently terminated) instances for run: {run_id}, "
+                + f"on cluster: {cluster_id}, in {aws_region_name}"
+            )
+            return Response(error=DatabricksError(message=no_instances_found_error_message))
+
+        eventlog_response = _get_eventlog(run["tasks"][0], cluster, run_end_time)
         if eventlog := eventlog_response.result:
-            return create_prediction(plan_type, compute_type, eventlog, project_id)
+            return create_prediction(
+                plan_type, compute_type, cluster, cluster_events, instances, eventlog, project_id
+            )
+
         return eventlog_response
 
     return cluster_response
@@ -525,6 +591,7 @@ def wait_for_final_run_status(run_id: str) -> Response[str]:
 
         sleep(30)
         run = get_default_client().get_run(run_id)
+        # TODO - log status periodically?
 
     return Response(error=DatabricksAPIError(**run))
 
@@ -623,16 +690,66 @@ def _get_task_cluster(task: dict, clusters: list) -> Response[dict]:
     return Response(result=cluster)
 
 
-def _get_eventlog(task: dict, cluster: dict) -> Response[bytes]:
+def _s3_contents_have_all_rollover_logs(contents: list[dict], run_end_time_seconds: float):
+    final_rollover_log = contents and next(
+        content
+        for content in contents
+        if Path(content["Key"]).stem in {"eventlog", "eventlog.gz", "eventlog.json.gz"}
+    )
+    return (
+        # Related to - https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1
+        # We want to make sure that the final_rollover_log has had data written to it AFTER the run has actually
+        # completed. We use this as a signal that Databricks has flushed all event log data to S3, and that we
+        # can proceed with the upload + prediction. If this proves to be finnicky in some way, we can always
+        # wait for the full 5 minutes after the run_end_time_seconds
+        final_rollover_log
+        and final_rollover_log["LastModified"].timestamp() >= run_end_time_seconds
+    )
+
+
+def _get_eventlog(task: dict, cluster: dict, run_end_time_millis: int) -> Response[bytes]:
     log_url = cluster.get("cluster_log_conf", {}).get("s3", {}).get("destination")
     if log_url:
         parsed_log_url = urlparse(log_url)
-
+        cluster_id = task.get("cluster_instance", {}).get("cluster_id")
         s3 = boto.client("s3")
-        contents = s3.list_objects_v2(
-            Bucket=parsed_log_url.netloc,
-            Prefix=f"{parsed_log_url.path.strip('/')}/{task.get('cluster_instance', {}).get('cluster_id')}/eventlog/{task.get('cluster_instance').get('cluster_id')}",
-        ).get("Contents")
+
+        if stripped_path := parsed_log_url.path.strip("/"):
+            prefix = f"{stripped_path}/{cluster_id}/eventlog/{cluster_id}"
+        else:
+            # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
+            #  a leading `/` in our Prefix (which will make it so that we never actually find the event log)
+            prefix = f"{cluster_id}/eventlog/{cluster_id}"
+
+        logger.info(f"Looking for eventlogs at location: {prefix}")
+
+        # Databricks uploads event log data every ~5 minutes to S3 -
+        #   https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1
+        # So we will poll this location for *up to* 5 minutes until we see all the eventlog files we are expecting
+        # in the S3 bucket
+        poll_period_seconds = 15
+        num_attempts = 0
+        # max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
+        max_attempts = 4
+        contents = None
+        run_end_time_seconds = run_end_time_millis / 1000
+        while (
+            not _s3_contents_have_all_rollover_logs(contents, run_end_time_seconds)
+            and num_attempts < max_attempts
+        ):
+            if num_attempts > 0:
+                logger.info(
+                    f"No or incomplete event log data detected - attempting again in {poll_period_seconds} seconds"
+                )
+                sleep(poll_period_seconds)
+
+            logger.info(contents)
+
+            contents = s3.list_objects_v2(
+                Bucket=parsed_log_url.netloc,
+                Prefix=prefix,
+            ).get("Contents")
+            num_attempts += 1
 
         if contents:
             eventlog_zip = io.BytesIO()
@@ -646,7 +763,11 @@ def _get_eventlog(task: dict, cluster: dict) -> Response[bytes]:
 
             return Response(result=eventlog_zip.getvalue())
 
-        return Response(error=DatabricksError(message="No eventlog found"))
+        return Response(
+            error=DatabricksError(
+                message=f"No eventlog found at location - {log_url} - after {num_attempts * poll_period_seconds} seconds"
+            )
+        )
 
 
 KeyType = TypeVar("KeyType")

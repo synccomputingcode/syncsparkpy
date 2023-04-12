@@ -35,9 +35,9 @@ main.add_command(awsdatabricks.aws_databricks)
 @main.command
 def configure():
     """Configure Sync Library"""
-    api_key_id = click.prompt("API key ID", default=API_KEY.id if API_KEY else None)
+    api_key_id = click.prompt("Sync API Key ID", default=API_KEY.id if API_KEY else None)
     api_key_secret = click.prompt(
-        "API key secret",
+        "Sync API Key Secret",
         default=API_KEY.secret if API_KEY else None,
         hide_input=True,
         show_default=False,
@@ -52,16 +52,24 @@ def configure():
         default=(CONFIG.default_prediction_preference or Preference.BALANCED).value,
     )
 
-    db_host = click.prompt(
-        "Databricks host (prefix with https://)",
-        default=DB_CONFIG.host if DB_CONFIG else OPTIONAL_DEFAULT,
-    )
-    db_token = click.prompt(
-        "Databricks token",
-        default=DB_CONFIG.token if DB_CONFIG else OPTIONAL_DEFAULT,
-        hide_input=True,
-        show_default=False,
-    )
+    dbx_host = OPTIONAL_DEFAULT
+    dbx_token = OPTIONAL_DEFAULT
+    dbx_region = OPTIONAL_DEFAULT
+    if click.confirm('Would you like to configure a Databricks workspace?'):
+        dbx_host = click.prompt(
+            "Databricks host (prefix with https://)",
+            default=DB_CONFIG.host if DB_CONFIG else OPTIONAL_DEFAULT,
+        )
+        dbx_token = click.prompt(
+            "Databricks token",
+            default=DB_CONFIG.token if DB_CONFIG else OPTIONAL_DEFAULT,
+            hide_input=True,
+            show_default=False,
+        )
+        dbx_region = click.prompt(
+            "Databricks AWS Region name",
+            default=DB_CONFIG.aws_region_name if DB_CONFIG else OPTIONAL_DEFAULT,
+        )
 
     init(
         APIKey(api_key_id=api_key_id, api_key_secret=api_key_secret),
@@ -69,8 +77,8 @@ def configure():
             default_project_url=project_url if project_url != OPTIONAL_DEFAULT else None,
             default_prediction_preference=prediction_preference,
         ),
-        DatabricksConf(host=db_host, token=db_token)
-        if db_host != OPTIONAL_DEFAULT and db_token != OPTIONAL_DEFAULT
+        DatabricksConf(host=dbx_host, token=dbx_token, aws_region_name=dbx_region)
+        if dbx_host != OPTIONAL_DEFAULT and dbx_token != OPTIONAL_DEFAULT and dbx_region != OPTIONAL_DEFAULT
         else None,
     )
 

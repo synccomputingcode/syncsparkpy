@@ -63,6 +63,7 @@ class Configuration(BaseSettings):
 class DatabricksConf(BaseSettings):
     host: str = Field(..., env="DATABRICKS_HOST")
     token: str = Field(..., env="DATABRICKS_TOKEN")
+    aws_region_name: str = Field(..., env="DATABRICKS_AWS_REGION")
 
     @validator("host")
     def validate_host(cls, host):
@@ -165,7 +166,7 @@ def __getattr__(name):
             if _db_config is None:
                 try:
                     _db_config = DatabricksConf()
-                except ValueError:
+                except ValueError as e:
                     pass
             return _db_config
 

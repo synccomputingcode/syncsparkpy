@@ -63,9 +63,7 @@ def run_job(job_id: str, plan: str, compute: str, project: dict = None):
 @click.option("--project", callback=validate_project)
 def create_prediction(run_id: str, plan: str, compute: str, project: str = None):
     """Create a prediction for a job run"""
-    prediction_response = awsdatabricks.create_prediction_for_run(
-        run_id, plan, compute, project["id"]
-    )
+    prediction_response = awsdatabricks.create_prediction_for_run(run_id, plan, compute, project)
     if prediction := prediction_response.result:
         click.echo(f"Prediction ID: {prediction}")
     else:

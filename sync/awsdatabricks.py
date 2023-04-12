@@ -139,39 +139,72 @@ def create_prediction_for_run(
         return Response(error=DatabricksError(message="Run did not successfully complete"))
 
     run_end_time = run.get("end_time")
-    cluster_response = _get_run_cluster(run["tasks"])
-    if cluster := cluster_response.result:
+
+    cluster_id_response = _get_run_cluster_id(run["tasks"])
+    if cluster_id := cluster_id_response.result:
         # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
         #  uploading all the event log data before we start checking for it
-        cluster_id = cluster["cluster_id"]
+        cluster_report_response = get_cluster_report(cluster_id, plan_type, compute_type)
+        if cluster_report := cluster_report_response.result:
 
-        cluster_events = dbx.get_default_client().get_cluster_events(cluster_id)
+            cluster = cluster_report["cluster"]
+            eventlog_response = _get_eventlog(run["tasks"][0], cluster, run_end_time)
 
-        aws_region_name = dbx.get_databricks_config().aws_region_name
-        ec2 = boto.client("ec2", region_name=aws_region_name)
-        instances = ec2.describe_instances(
-            Filters=[
-                {"Name": "tag:Vendor", "Values": ["Databricks"]},
-                {"Name": "tag:ClusterId", "Values": [cluster_id]},
-                # {'Name': 'tag:JobId', 'Values': []}
-            ]
+            if eventlog := eventlog_response.result:
+                return create_prediction(
+                    plan_type=plan_type,
+                    compute_type=compute_type,
+                    cluster=cluster,
+                    cluster_events=cluster_report["cluster_events"],
+                    instances=cluster_report["instances"],
+                    eventlog=eventlog,
+                    project_id=project_id
+                )
+
+            return eventlog_response
+        return cluster_report_response
+    return cluster_id_response
+
+
+def get_cluster_report(
+    cluster_id: str, plan_type: str, compute_type: str
+) -> Response[dict]:
+    """
+
+    """
+    cluster = dbx.get_default_client().get_cluster(cluster_id)
+    if "error_code" in cluster:
+        return Response(error=DatabricksAPIError(**cluster))
+
+    # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
+    #  uploading all the event log data before we start checking for it
+    cluster_events = dbx.get_default_client().get_cluster_events(cluster_id)
+
+    aws_region_name = dbx.get_databricks_config().aws_region_name
+    ec2 = boto.client("ec2", region_name=aws_region_name)
+
+    instances = ec2.describe_instances(
+        Filters=[
+            {"Name": "tag:Vendor", "Values": ["Databricks"]},
+            {"Name": "tag:ClusterId", "Values": [cluster_id]},
+            # {'Name': 'tag:JobId', 'Values': []}
+        ]
+    )
+    if not instances["Reservations"]:
+        no_instances_found_error_message = (
+            f"Unable to find any active or recently terminated instances for cluster `{cluster_id}` in `{aws_region_name}`"
         )
-        if not instances["Reservations"]:
-            no_instances_found_error_message = (
-                f"Unable to find any active (or recently terminated) instances for run: {run_id}, "
-                + f"on cluster: {cluster_id}, in {aws_region_name}"
-            )
-            return Response(error=DatabricksError(message=no_instances_found_error_message))
+        return Response(error=DatabricksError(message=no_instances_found_error_message))
 
-        eventlog_response = _get_eventlog(run["tasks"][0], cluster, run_end_time)
-        if eventlog := eventlog_response.result:
-            return create_prediction(
-                plan_type, compute_type, cluster, cluster_events, instances, eventlog, project_id
-            )
-
-        return eventlog_response
-
-    return cluster_response
+    return Response(
+        result={
+            "plan_type": plan_type,
+            "compute_type": compute_type,
+            "cluster": cluster,
+            "cluster_events": cluster_events,
+            "instances": instances,
+        }
+    )
 
 
 def record_run(run_id: str, plan_type: str, compute_type: str, project_id: str) -> Response[str]:
@@ -224,10 +257,10 @@ def get_prediction_job(
                 )
                 cluster_key = tasks[0]["job_cluster_key"]
                 job_settings["job_clusters"] = [
-                    j
-                    for j in job_settings["job_clusters"]
-                    if j.get("job_cluster_key") != cluster_key
-                ] + [{"job_cluster_key": cluster_key, "new_cluster": prediction_cluster}]
+                                                   j
+                                                   for j in job_settings["job_clusters"]
+                                                   if j.get("job_cluster_key") != cluster_key
+                                               ] + [{"job_cluster_key": cluster_key, "new_cluster": prediction_cluster}]
                 return Response(result=job)
             return cluster_response
         return Response(error=DatabricksError(message="No task found in job"))
@@ -263,10 +296,10 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
                 project_cluster = _deep_update(cluster, project_cluster_settings)
                 cluster_key = tasks[0]["job_cluster_key"]
                 job_settings["job_clusters"] = [
-                    j
-                    for j in job_settings["job_clusters"]
-                    if j.get("job_cluster_key") != cluster_key
-                ] + [{"job_cluster_key": cluster_key, "new_cluster": project_cluster}]
+                                                   j
+                                                   for j in job_settings["job_clusters"]
+                                                   if j.get("job_cluster_key") != cluster_key
+                                               ] + [{"job_cluster_key": cluster_key, "new_cluster": project_cluster}]
                 return Response(result=job)
             return project_settings_response
         return cluster_response
@@ -660,14 +693,11 @@ def _get_job_cluster(tasks: list[dict], job_clusters: list) -> Response[dict]:
     return Response(error=DatabricksError(message="Not all tasks use the same cluster"))
 
 
-def _get_run_cluster(tasks: list[dict]) -> Response[dict]:
+def _get_run_cluster_id(tasks: list[dict]) -> Response[str]:
     cluster_ids = {task["cluster_instance"]["cluster_id"] for task in tasks}
     match len(cluster_ids):
         case 1:
-            cluster = dbx.get_default_client().get_cluster(cluster_ids.pop())
-            if "error_code" in cluster:
-                return Response(error=DatabricksAPIError(**cluster))
-            return Response(result=cluster)
+            return Response(result=cluster_ids.pop())
         case 0:
             return Response(error=DatabricksError(message="No cluster found for tasks"))
         case _:

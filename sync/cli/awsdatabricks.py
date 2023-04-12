@@ -1,4 +1,5 @@
 import click
+from orjson import orjson
 
 from sync import awsdatabricks
 from sync.cli.util import validate_project
@@ -68,3 +69,26 @@ def create_prediction(run_id: str, plan: str, compute: str, project: str = None)
         click.echo(f"Prediction ID: {prediction}")
     else:
         click.echo(f"Failed to create prediction. {prediction_response.error}", err=True)
+
+
+@aws_databricks.command
+@click.argument("cluster-id")
+@click.option(
+    "--plan", type=click.Choice(["Standard", "Premium", "Enterprise"]), default="Standard"
+)
+@click.option(
+    "--compute",
+    type=click.Choice(["All-Purpose Compute", "Jobs Compute", "Jobs Light Compute"]),
+    default="Jobs Compute",
+)
+def get_cluster_report(cluster_id: str, plan: str, compute: str):
+    """Get a cluster report"""
+    config_response = awsdatabricks.get_cluster_report(cluster_id, plan, compute)
+    if config := config_response.result:
+        click.echo(
+            orjson.dumps(
+                config, option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_UTC_Z
+            )
+        )
+    else:
+        click.echo(f"Failed to create cluster report. {config_response.error}", err=True)

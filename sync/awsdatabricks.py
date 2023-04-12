@@ -11,9 +11,9 @@ from urllib.parse import urlparse
 
 import boto3 as boto
 
+import sync.clients.databricks as dbx
 from sync.api.predictions import create_prediction_with_eventlog_bytes, get_prediction
 from sync.api.projects import get_project
-from sync.clients.databricks import get_databricks_config, get_default_client
 from sync.config import CONFIG
 from sync.models import DatabricksAPIError, DatabricksError, Platform, Response
 
@@ -92,7 +92,7 @@ def create_cluster(config: dict) -> Response[str]:
     :return: cluster ID
     :rtype: Response[str]
     """
-    response = get_default_client().create_cluster(config)
+    response = dbx.get_default_client().create_cluster(config)
     if "error_code" in response:
         return Response(error=DatabricksAPIError(**response))
 
@@ -107,7 +107,7 @@ def get_cluster(cluster_id: str) -> Response[dict]:
     :return: cluster object
     :rtype: Response[dict]
     """
-    cluster = get_default_client().get_cluster(cluster_id)
+    cluster = dbx.get_default_client().get_cluster(cluster_id)
     if "error_code" in cluster:
         return Response(error=DatabricksAPIError(**cluster))
 
@@ -131,7 +131,7 @@ def create_prediction_for_run(
     :return: prediction ID
     :rtype: Response[str]
     """
-    run = get_default_client().get_run(run_id)
+    run = dbx.get_default_client().get_run(run_id)
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
@@ -145,9 +145,9 @@ def create_prediction_for_run(
         #  uploading all the event log data before we start checking for it
         cluster_id = cluster["cluster_id"]
 
-        cluster_events = get_default_client().get_cluster_events(cluster_id)
+        cluster_events = dbx.get_default_client().get_cluster_events(cluster_id)
 
-        aws_region_name = get_databricks_config().aws_region_name
+        aws_region_name = dbx.get_databricks_config().aws_region_name
         ec2 = boto.client("ec2", region_name=aws_region_name)
         instances = ec2.describe_instances(
             Filters=[
@@ -211,7 +211,7 @@ def get_prediction_job(
     """
     prediction_response = get_prediction(prediction_id)
     if prediction := prediction_response.result:
-        job = get_default_client().get_job(job_id)
+        job = dbx.get_default_client().get_job(job_id)
         if "error_code" in job:
             return Response(error=DatabricksAPIError(**job))
 
@@ -250,7 +250,7 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
     :return: project job object
     :rtype: Response[dict]
     """
-    job = get_default_client().get_job(job_id)
+    job = dbx.get_default_client().get_job(job_id)
     if "error_code" in job:
         return Response(error=DatabricksAPIError(**job))
 
@@ -330,7 +330,7 @@ def run_job_object(job: dict) -> Response[str]:
             cluster["cluster_name"] = cluster["cluster_name"] or job["settings"]["name"]
             cluster["autotermination_minutes"] = 10  # 10 minutes is the minimum
 
-            cluster_result = get_default_client().create_cluster(cluster)
+            cluster_result = dbx.get_default_client().create_cluster(cluster)
             if "error_code" in cluster_result:
                 return Response(error=DatabricksAPIError(**cluster_result))
 
@@ -341,7 +341,7 @@ def run_job_object(job: dict) -> Response[str]:
                 if "job_cluster_key" in task:
                     del task["job_cluster_key"]
 
-        run_result = get_default_client().create_run(
+        run_result = dbx.get_default_client().create_run(
             {"run_name": job["settings"]["name"], "tasks": tasks}
         )
         if "error_code" in run_result:
@@ -377,7 +377,7 @@ def create_run(run: dict) -> Response[str]:
     :return: run ID
     :rtype: Response[str]
     """
-    run_result = get_default_client().create_run(run)
+    run_result = dbx.get_default_client().create_run(run)
     if "error_code" in run_result:
         return Response(error=DatabricksAPIError(**run_result))
 
@@ -463,7 +463,7 @@ def run_and_record_job(
     :rtype: Response[str]
     """
     # creates a "Jobs Compute" cluster
-    run_result = get_default_client().create_job_run({"job_id": job_id})
+    run_result = dbx.get_default_client().create_job_run({"job_id": job_id})
     if "error_code" in run_result:
         return Response(error=DatabricksAPIError(**run_result))
 
@@ -582,14 +582,14 @@ def wait_for_final_run_status(run_id: str) -> Response[str]:
     :return: result state, e.g. "SUCCESS"
     :rtype: Response[str]
     """
-    run = get_default_client().get_run(run_id)
+    run = dbx.get_default_client().get_run(run_id)
     while "error_code" not in run:
         result_state = run["state"].get("result_state")  # result_state isn't present while running
         if result_state in {"SUCCESS", "FAILED", "TIMEDOUT", "CANCELED"}:
             return Response(result=result_state)
 
         sleep(30)
-        run = get_default_client().get_run(run_id)
+        run = dbx.get_default_client().get_run(run_id)
         # TODO - log status periodically?
 
     return Response(error=DatabricksAPIError(**run))
@@ -603,7 +603,7 @@ def wait_for_run_and_cluster(run_id: str) -> Response[str]:
     :return: result state, e.g. "SUCCESS"
     :rtype: Response[str]
     """
-    run = get_default_client().get_run(run_id)
+    run = dbx.get_default_client().get_run(run_id)
     while "error_code" not in run:
         result_state = run["state"].get("result_state")  # result_state isn't present while running
         if result_state in {"SUCCESS", "FAILED", "TIMEDOUT", "CANCELED"}:
@@ -615,7 +615,7 @@ def wait_for_run_and_cluster(run_id: str) -> Response[str]:
             return Response(result=result_state)
 
         sleep(30)
-        run = get_default_client().get_run(run_id)
+        run = dbx.get_default_client().get_run(run_id)
 
     return Response(error=DatabricksAPIError(**run))
 
@@ -628,7 +628,7 @@ def terminate_cluster(cluster_id: str) -> Response[str]:
     :return: terminal state: "TERMINATED"
     :rtype: Response[str]
     """
-    cluster = get_default_client().get_cluster(cluster_id)
+    cluster = dbx.get_default_client().get_cluster(cluster_id)
     while "error_code" not in cluster:
         state = cluster.get("state")
         match state:
@@ -637,11 +637,11 @@ def terminate_cluster(cluster_id: str) -> Response[str]:
             case "TERMINATING":
                 sleep(30)
             case "PENDING" | "RUNNING" | "RESTARTING" | "RESIZING":
-                get_default_client().delete_cluster(cluster_id)
+                dbx.get_default_client().delete_cluster(cluster_id)
             case _:
                 return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
 
-        cluster = get_default_client().get_cluster(cluster_id)
+        cluster = dbx.get_default_client().get_cluster(cluster_id)
 
     return Response(error=DatabricksAPIError(**cluster))
 
@@ -664,7 +664,7 @@ def _get_run_cluster(tasks: list[dict]) -> Response[dict]:
     cluster_ids = {task["cluster_instance"]["cluster_id"] for task in tasks}
     match len(cluster_ids):
         case 1:
-            cluster = get_default_client().get_cluster(cluster_ids.pop())
+            cluster = dbx.get_default_client().get_cluster(cluster_ids.pop())
             if "error_code" in cluster:
                 return Response(error=DatabricksAPIError(**cluster))
             return Response(result=cluster)
@@ -691,9 +691,12 @@ def _get_task_cluster(task: dict, clusters: list) -> Response[dict]:
 
 def _s3_contents_have_all_rollover_logs(contents: list[dict], run_end_time_seconds: float):
     final_rollover_log = contents and next(
-        content
-        for content in contents
-        if Path(content["Key"]).stem in {"eventlog", "eventlog.gz", "eventlog.json.gz"}
+        (
+            content
+            for content in contents
+            if Path(content["Key"]).stem in {"eventlog", "eventlog.gz", "eventlog.json.gz"}
+        ),
+        False,
     )
     return (
         # Related to - https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1
@@ -704,6 +707,11 @@ def _s3_contents_have_all_rollover_logs(contents: list[dict], run_end_time_secon
         final_rollover_log
         and final_rollover_log["LastModified"].timestamp() >= run_end_time_seconds
     )
+
+
+def event_log_poll_duration_seconds():
+    """Convenience function to aid testing"""
+    return 15
 
 
 def _get_eventlog(task: dict, cluster: dict, run_end_time_millis: int) -> Response[bytes]:
@@ -726,7 +734,7 @@ def _get_eventlog(task: dict, cluster: dict, run_end_time_millis: int) -> Respon
         #   https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1
         # So we will poll this location for *up to* 5 minutes until we see all the eventlog files we are expecting
         # in the S3 bucket
-        poll_period_seconds = 15
+        poll_duration_seconds = event_log_poll_duration_seconds()
         num_attempts = 0
         max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
         contents = None
@@ -737,9 +745,9 @@ def _get_eventlog(task: dict, cluster: dict, run_end_time_millis: int) -> Respon
         ):
             if num_attempts > 0:
                 logger.info(
-                    f"No or incomplete event log data detected - attempting again in {poll_period_seconds} seconds"
+                    f"No or incomplete event log data detected - attempting again in {poll_duration_seconds} seconds"
                 )
-                sleep(poll_period_seconds)
+                sleep(poll_duration_seconds)
 
             contents = s3.list_objects_v2(
                 Bucket=parsed_log_url.netloc,
@@ -761,7 +769,7 @@ def _get_eventlog(task: dict, cluster: dict, run_end_time_millis: int) -> Respon
 
         return Response(
             error=DatabricksError(
-                message=f"No eventlog found at location - {log_url} - after {num_attempts * poll_period_seconds} seconds"
+                message=f"No eventlog found at location - {log_url} - after {num_attempts * poll_duration_seconds} seconds"
             )
         )
 

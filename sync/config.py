@@ -166,7 +166,7 @@ def __getattr__(name):
             if _db_config is None:
                 try:
                     _db_config = DatabricksConf()
-                except ValueError as e:
+                except ValueError:
                     pass
             return _db_config
 

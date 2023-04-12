@@ -1,7 +1,6 @@
 """
 Utilities for interacting with Databricks
 """
-import datetime
 import io
 import logging
 import zipfile
@@ -14,7 +13,7 @@ import boto3 as boto
 
 from sync.api.predictions import create_prediction_with_eventlog_bytes, get_prediction
 from sync.api.projects import get_project
-from sync.clients.databricks import get_default_client, get_databricks_config
+from sync.clients.databricks import get_databricks_config, get_default_client
 from sync.config import CONFIG
 from sync.models import DatabricksAPIError, DatabricksError, Platform, Response
 
@@ -729,8 +728,7 @@ def _get_eventlog(task: dict, cluster: dict, run_end_time_millis: int) -> Respon
         # in the S3 bucket
         poll_period_seconds = 15
         num_attempts = 0
-        # max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
-        max_attempts = 4
+        max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
         contents = None
         run_end_time_seconds = run_end_time_millis / 1000
         while (
@@ -742,8 +740,6 @@ def _get_eventlog(task: dict, cluster: dict, run_end_time_millis: int) -> Respon
                     f"No or incomplete event log data detected - attempting again in {poll_period_seconds} seconds"
                 )
                 sleep(poll_period_seconds)
-
-            logger.info(contents)
 
             contents = s3.list_objects_v2(
                 Bucket=parsed_log_url.netloc,

@@ -55,7 +55,7 @@ def configure():
     dbx_host = OPTIONAL_DEFAULT
     dbx_token = OPTIONAL_DEFAULT
     dbx_region = OPTIONAL_DEFAULT
-    if click.confirm('Would you like to configure a Databricks workspace?'):
+    if click.confirm("Would you like to configure a Databricks workspace?"):
         dbx_host = click.prompt(
             "Databricks host (prefix with https://)",
             default=DB_CONFIG.host if DB_CONFIG else OPTIONAL_DEFAULT,
@@ -78,7 +78,9 @@ def configure():
             default_prediction_preference=prediction_preference,
         ),
         DatabricksConf(host=dbx_host, token=dbx_token, aws_region_name=dbx_region)
-        if dbx_host != OPTIONAL_DEFAULT and dbx_token != OPTIONAL_DEFAULT and dbx_region != OPTIONAL_DEFAULT
+        if dbx_host != OPTIONAL_DEFAULT
+        and dbx_token != OPTIONAL_DEFAULT
+        and dbx_region != OPTIONAL_DEFAULT
         else None,
     )
 

@@ -76,11 +76,11 @@ def configure():
 
 
 @main.command
-def platforms():
-    """List supported platforms"""
+def products():
+    """List supported products"""
     products_response = get_products()
     if products := products_response.result:
-        click.echo(", ".join(product for product in products if product != "aws-databricks"))
+        click.echo(", ".join(products))
     else:
         click.echo(str(products_response.error), err=True)
 

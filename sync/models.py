@@ -2,7 +2,7 @@
 Models used throughout this SDK
 """
 
-from enum import Enum
+from enum import Enum, unique
 from typing import Generic, TypeVar
 
 from pydantic import BaseModel, Field, root_validator, validator
@@ -50,6 +50,28 @@ class ProjectError(Error):
 
 class EMRError(Error):
     code: str = Field("EMR Error", const=True)
+
+
+@unique
+class DatabricksPlanType(str, Enum):
+    STANDARD = "Standard"
+    PREMIUM = "Premium"
+    ENTERPRISE = "Enterprise"
+
+
+@unique
+class DatabricksComputeType(str, Enum):
+    ALL_PURPOSE_COMPUTE = "All-Purpose Compute"
+    JOBS_COMPUTE = "Jobs Compute"
+    JOBS_COMPUTE_LIGHT = "Jobs Compute Light"
+
+
+class DatabricksClusterReport(BaseModel):
+    plan_type: DatabricksPlanType
+    compute_type: DatabricksComputeType
+    cluster: dict
+    cluster_events: dict
+    instances: dict
 
 
 class DatabricksError(Error):

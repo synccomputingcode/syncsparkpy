@@ -3,7 +3,7 @@ from typing import Generator
 
 import httpx
 
-from ..config import DatabricksConf
+from ..config import DB_CONFIG
 from . import USER_AGENT, encode_json
 
 logger = logging.getLogger(__name__)
@@ -143,22 +143,12 @@ class DatabricksClient:
         return {"error_code": "UNKNOWN_ERROR", "message": "Transaction failure"}
 
 
-_databricks_config: DatabricksConf | None = None
-
-
-def get_databricks_config() -> DatabricksConf:
-    global _databricks_config
-    if not _databricks_config:
-        _databricks_config = DatabricksConf()
-    return _databricks_config
-
-
 _sync_client: DatabricksClient | None = None
 
 
 def get_default_client() -> DatabricksClient:
     global _sync_client
     if not _sync_client:
-        conf = get_databricks_config()
+        conf = DB_CONFIG
         _sync_client = DatabricksClient(conf.host, conf.token)
     return _sync_client

@@ -5,12 +5,14 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import boto3 as boto
+import respx as respx
 from botocore.response import StreamingBody
 from botocore.stub import Stubber
+from httpx import Response
 
 from sync.awsdatabricks import create_prediction_for_run
-from sync.config import DatabricksConf
-from sync.models import Response
+from sync.config import DatabricksConf, DB_CONFIG
+from sync.models import DatabricksAPIError, DatabricksError
 
 MOCK_RUN = {
     "job_id": 12345678910,
@@ -300,62 +302,37 @@ MOCK_INSTANCES = {
     ],
 }
 
-
-class MockDatabricksClient:
-    def __init__(self, responses):
-        self._responses = responses
-        return
-
-    def get_run(self, run_id: str):
-        return self._responses["get_run"][run_id]
-
-    def get_cluster(self, cluster_id: str):
-        return self._responses["get_cluster"][cluster_id]
-
-    def get_cluster_events(self, cluster_id: str):
-        return self._responses["get_cluster_events"][cluster_id]
-
-
 MOCK_DBX_CONF = DatabricksConf(
-    host="https://dbc-foo-bar.cloud.databricks.com/",
-    token="dbcmytoken",
-    aws_region_name="us-east-1",
+    host="https://dbc-123.cloud.databricks.com",
+    token="my_secret_token",
+    aws_region_name="us-east-1"
 )
 
 
-@patch("sync.clients.databricks.get_default_client")
-def test_create_prediction_for_run_failed_run(get_default_client):
+def test_create_prediction_for_run_failed_run(respx_mock):
     failure_response = {"error_code": "FAILED", "message": "This run failed"}
-    mock_dbx_client = MockDatabricksClient(
-        {
-            "get_run": {"75778": failure_response},
-        }
+
+    respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
+        return_value=Response(200, json=failure_response)
     )
-    get_default_client.return_value = mock_dbx_client
 
     result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
 
     assert result.error
-    assert result.error.message.index(failure_response["message"])
+    assert isinstance(result.error, DatabricksAPIError)
 
     failure_response = {"state": {"result_state": "FAILED"}}
-    mock_dbx_client = MockDatabricksClient(
-        {
-            "get_run": {"75778": failure_response},
-        }
+    respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
+        return_value=Response(200, json=failure_response)
     )
-    get_default_client.return_value = mock_dbx_client
 
     result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
 
     assert result.error
+    assert isinstance(result.error, DatabricksError)
 
 
-@patch("sync.clients.databricks.get_databricks_config")
-@patch("sync.clients.databricks.get_default_client")
-def test_create_prediction_for_run_bad_cluster_data(get_default_client, get_databricks_config):
-    get_databricks_config.return_value = MOCK_DBX_CONF
-
+def test_create_prediction_for_run_bad_cluster_data(respx_mock):
     # Test too many clusters found
     run_with_multiple_clusters = copy.deepcopy(MOCK_RUN)
     run_with_multiple_clusters["tasks"][0]["cluster_instance"][
@@ -367,8 +344,9 @@ def test_create_prediction_for_run_bad_cluster_data(get_default_client, get_data
         run_with_multiple_clusters["tasks"][0],
     ]
 
-    mock_dbx_client = MockDatabricksClient({"get_run": {"75778": run_with_multiple_clusters}})
-    get_default_client.return_value = mock_dbx_client
+    respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
+        return_value=Response(200, json=run_with_multiple_clusters)
+    )
 
     result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
 
@@ -377,28 +355,32 @@ def test_create_prediction_for_run_bad_cluster_data(get_default_client, get_data
     # Test no tasks/clusters at all
     run_with_no_tasks = copy.deepcopy(MOCK_RUN)
     run_with_no_tasks["tasks"] = []
-    mock_dbx_client = MockDatabricksClient({"get_run": {"75778": run_with_no_tasks}})
-    get_default_client.return_value = mock_dbx_client
+    respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
+        return_value=Response(200, json=run_with_no_tasks)
+    )
 
     result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
 
     assert result.error
 
 
-@patch("sync.clients.databricks.get_databricks_config")
-@patch("sync.clients.databricks.get_default_client")
-def test_create_prediction_for_run_no_instances_found(get_default_client, get_databricks_config):
-    get_databricks_config.return_value = MOCK_DBX_CONF
+@patch("sync.config._db_config", new=MOCK_DBX_CONF)
+def test_create_prediction_for_run_no_instances_found(respx_mock):
+    from sync.config import DB_CONFIG
 
-    get_default_client.return_value = MockDatabricksClient(
-        {
-            "get_run": {"75778": MOCK_RUN},
-            "get_cluster": {"0101-214342-tpi6qdp2": MOCK_CLUSTER},
-            "get_cluster_events": {"0101-214342-tpi6qdp2": {"events": [], "total_count": 0}},
-        }
+    respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
+        return_value=Response(200, json=MOCK_RUN)
     )
 
-    ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
+    respx_mock.get(
+        "https://*.cloud.databricks.com/api/2.0/clusters/get?cluster_id=0101-214342-tpi6qdp2"
+    ).mock(return_value=Response(200, json=MOCK_CLUSTER))
+
+    respx_mock.post("https://*.cloud.databricks.com/api/2.0/clusters/events").mock(
+        return_value=Response(200, json={"events": [], "total_count": 0})
+    )
+
+    ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
     ec2_stubber = Stubber(ec2)
     ec2_stubber.add_response("describe_instances", {"Reservations": []})
 
@@ -414,25 +396,51 @@ def test_create_prediction_for_run_no_instances_found(get_default_client, get_da
     assert result.error
 
 
-@patch("sync.clients.databricks.get_databricks_config")
-@patch("sync.clients.databricks.get_default_client")
-@patch("sync.awsdatabricks.create_prediction")
-def test_create_prediction_for_run_success(
-    create_prediction, get_default_client, get_databricks_config
-):
-    create_prediction.return_value = Response(result=uuid4())
+MOCK_PREDICTION_CREATION_RESPONSE = {
+    "result": {
+        "prediction_id": str(uuid4()),
+        "upload_details": {"url": "https://presigned-url", "fields": {"key": "foobar"}},
+    }
+}
 
-    get_databricks_config.return_value = MOCK_DBX_CONF
 
-    get_default_client.return_value = MockDatabricksClient(
-        {
-            "get_run": {"75778": MOCK_RUN},
-            "get_cluster": {"0101-214342-tpi6qdp2": MOCK_CLUSTER},
-            "get_cluster_events": {"0101-214342-tpi6qdp2": {"events": [], "total_count": 0}},
-        }
+@patch("sync.config._db_config", new=MOCK_DBX_CONF)
+def test_create_prediction_for_run_success(respx_mock):
+    from sync.config import DB_CONFIG
+
+    respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
+        return_value=Response(200, json=MOCK_RUN)
     )
 
-    ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
+    respx_mock.get(
+        "https://*.cloud.databricks.com/api/2.0/clusters/get?cluster_id=0101-214342-tpi6qdp2"
+    ).mock(return_value=Response(200, json=MOCK_CLUSTER))
+
+    respx_mock.post("https://*.cloud.databricks.com/api/2.0/clusters/events").mock(
+        return_value=Response(200, json={"events": [], "total_count": 0})
+    )
+
+    respx_mock.post("/v1/auth/token").mock(
+        return_value=Response(
+            200,
+            json={
+                "result": {
+                    "access_token": "notarealtoken",
+                    "expires_at_utc": "2022-09-01T20:54:48Z",
+                }
+            },
+        )
+    )
+
+    respx_mock.post("/v1/autotuner/predictions").mock(
+        return_value=Response(200, json=MOCK_PREDICTION_CREATION_RESPONSE)
+    )
+
+    respx_mock.post(MOCK_PREDICTION_CREATION_RESPONSE["result"]["upload_details"]["url"]).mock(
+        return_value=Response(204)
+    )
+
+    ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
     ec2_stubber = Stubber(ec2)
     ec2_stubber.add_response("describe_instances", MOCK_INSTANCES)
 
@@ -477,28 +485,47 @@ def test_create_prediction_for_run_success(
     assert result.result
 
 
-@patch("sync.clients.databricks.get_databricks_config")
-@patch("sync.clients.databricks.get_default_client")
 @patch("sync.awsdatabricks.event_log_poll_duration_seconds")
-@patch("sync.awsdatabricks.create_prediction")
-def test_create_prediction_for_run_event_log_upload_delay(
-    create_prediction, event_log_poll_duration_seconds, get_default_client, get_databricks_config
-):
-    create_prediction.return_value = Response(result=uuid4())
+@patch("sync.config._db_config", new=MOCK_DBX_CONF)
+def test_create_prediction_for_run_event_log_upload_delay(event_log_poll_duration_seconds, respx_mock):
+    from sync.config import DB_CONFIG
 
     event_log_poll_duration_seconds.return_value = 0
 
-    get_databricks_config.return_value = MOCK_DBX_CONF
-
-    get_default_client.return_value = MockDatabricksClient(
-        {
-            "get_run": {"75778": MOCK_RUN},
-            "get_cluster": {"0101-214342-tpi6qdp2": MOCK_CLUSTER},
-            "get_cluster_events": {"0101-214342-tpi6qdp2": {"events": [], "total_count": 0}},
-        }
+    respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
+        return_value=Response(200, json=MOCK_RUN)
     )
 
-    ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
+    respx_mock.get(
+        "https://*.cloud.databricks.com/api/2.0/clusters/get?cluster_id=0101-214342-tpi6qdp2"
+    ).mock(return_value=Response(200, json=MOCK_CLUSTER))
+
+    respx_mock.post("https://*.cloud.databricks.com/api/2.0/clusters/events").mock(
+        return_value=Response(200, json={"events": [], "total_count": 0})
+    )
+
+    respx_mock.post("/v1/auth/token").mock(
+        return_value=Response(
+            200,
+            json={
+                "result": {
+                    "access_token": "notarealtoken",
+                    "expires_at_utc": "2022-09-01T20:54:48Z",
+                }
+            },
+        )
+    )
+
+    respx_mock.post("/v1/autotuner/predictions").mock(
+        return_value=Response(200, json=MOCK_PREDICTION_CREATION_RESPONSE)
+    )
+
+    respx_mock.post(MOCK_PREDICTION_CREATION_RESPONSE["result"]["upload_details"]["url"]).mock(
+        return_value=Response(204)
+    )
+
+    # TODO - make more robust?
+    ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
     ec2_stubber = Stubber(ec2)
     ec2_stubber.add_response("describe_instances", MOCK_INSTANCES)
 

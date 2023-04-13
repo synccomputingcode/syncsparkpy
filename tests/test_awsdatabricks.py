@@ -5,13 +5,12 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import boto3 as boto
-import respx as respx
 from botocore.response import StreamingBody
 from botocore.stub import Stubber
 from httpx import Response
 
 from sync.awsdatabricks import create_prediction_for_run
-from sync.config import DatabricksConf, DB_CONFIG
+from sync.config import DatabricksConf
 from sync.models import DatabricksAPIError, DatabricksError
 
 MOCK_RUN = {
@@ -305,7 +304,7 @@ MOCK_INSTANCES = {
 MOCK_DBX_CONF = DatabricksConf(
     host="https://dbc-123.cloud.databricks.com",
     token="my_secret_token",
-    aws_region_name="us-east-1"
+    aws_region_name="us-east-1",
 )
 
 
@@ -487,7 +486,9 @@ def test_create_prediction_for_run_success(respx_mock):
 
 @patch("sync.awsdatabricks.event_log_poll_duration_seconds")
 @patch("sync.config._db_config", new=MOCK_DBX_CONF)
-def test_create_prediction_for_run_event_log_upload_delay(event_log_poll_duration_seconds, respx_mock):
+def test_create_prediction_for_run_event_log_upload_delay(
+    event_log_poll_duration_seconds, respx_mock
+):
     from sync.config import DB_CONFIG
 
     event_log_poll_duration_seconds.return_value = 0

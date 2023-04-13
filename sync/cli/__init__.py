@@ -35,9 +35,9 @@ main.add_command(awsdatabricks.aws_databricks)
 @main.command
 def configure():
     """Configure Sync Library"""
-    api_key_id = click.prompt("Sync API Key ID", default=API_KEY.id if API_KEY else None)
+    api_key_id = click.prompt("Sync API key ID", default=API_KEY.id if API_KEY else None)
     api_key_secret = click.prompt(
-        "Sync API Key Secret",
+        "Sync API key secret",
         default=API_KEY.secret if API_KEY else None,
         hide_input=True,
         show_default=False,
@@ -67,7 +67,7 @@ def configure():
             show_default=False,
         )
         dbx_region = click.prompt(
-            "Databricks AWS Region name",
+            "Databricks AWS region name",
             default=DB_CONFIG.aws_region_name if DB_CONFIG else OPTIONAL_DEFAULT,
         )
 

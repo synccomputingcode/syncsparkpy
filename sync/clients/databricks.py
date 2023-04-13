@@ -150,5 +150,7 @@ def get_default_client() -> DatabricksClient:
     global _sync_client
     if not _sync_client:
         conf = DB_CONFIG
+        print(conf.host)
         _sync_client = DatabricksClient(conf.host, conf.token)
+        print(_sync_client)
     return _sync_client

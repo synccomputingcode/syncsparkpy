@@ -40,7 +40,9 @@ def run_prediction(job_id: str, prediction_id: str, preference: str = None):
     default=DatabricksComputeType.JOBS_COMPUTE,
 )
 @click.option("--project", callback=validate_project)
-def run_job(job_id: str, plan: DatabricksPlanType, compute: DatabricksComputeType, project: dict = None):
+def run_job(
+    job_id: str, plan: DatabricksPlanType, compute: DatabricksComputeType, project: dict = None
+):
     """Run a job, wait for it to complete then create a prediction"""
     run_response = awsdatabricks.run_and_record_job(job_id, plan, compute, project["id"])
     if prediction_id := run_response.result:
@@ -58,7 +60,9 @@ def run_job(job_id: str, plan: DatabricksPlanType, compute: DatabricksComputeTyp
     default=DatabricksComputeType.JOBS_COMPUTE,
 )
 @click.option("--project", callback=validate_project)
-def create_prediction(run_id: str, plan: DatabricksPlanType, compute: DatabricksComputeType, project: dict = None):
+def create_prediction(
+    run_id: str, plan: DatabricksPlanType, compute: DatabricksComputeType, project: dict = None
+):
     """Create a prediction for a job run"""
     prediction_response = awsdatabricks.create_prediction_for_run(
         run_id, plan, compute, project["id"]

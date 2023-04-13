@@ -308,7 +308,9 @@ MOCK_DBX_CONF = DatabricksConf(
 )
 
 
-def test_create_prediction_for_run_failed_run(respx_mock):
+@patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
+def test_create_prediction_for_failed_run(respx_mock):
     failure_response = {"error_code": "FAILED", "message": "This run failed"}
 
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
@@ -331,6 +333,8 @@ def test_create_prediction_for_run_failed_run(respx_mock):
     assert isinstance(result.error, DatabricksError)
 
 
+@patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
 def test_create_prediction_for_run_bad_cluster_data(respx_mock):
     # Test too many clusters found
     run_with_multiple_clusters = copy.deepcopy(MOCK_RUN)
@@ -363,10 +367,9 @@ def test_create_prediction_for_run_bad_cluster_data(respx_mock):
     assert result.error
 
 
-@patch("sync.config._db_config", new=MOCK_DBX_CONF)
+@patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
 def test_create_prediction_for_run_no_instances_found(respx_mock):
-    from sync.config import DB_CONFIG
-
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=MOCK_RUN)
     )
@@ -379,7 +382,7 @@ def test_create_prediction_for_run_no_instances_found(respx_mock):
         return_value=Response(200, json={"events": [], "total_count": 0})
     )
 
-    ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
+    ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
     ec2_stubber = Stubber(ec2)
     ec2_stubber.add_response("describe_instances", {"Reservations": []})
 
@@ -403,9 +406,9 @@ MOCK_PREDICTION_CREATION_RESPONSE = {
 }
 
 
-@patch("sync.config._db_config", new=MOCK_DBX_CONF)
+@patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
 def test_create_prediction_for_run_success(respx_mock):
-    from sync.config import DB_CONFIG
 
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=MOCK_RUN)
@@ -439,7 +442,7 @@ def test_create_prediction_for_run_success(respx_mock):
         return_value=Response(204)
     )
 
-    ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
+    ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
     ec2_stubber = Stubber(ec2)
     ec2_stubber.add_response("describe_instances", MOCK_INSTANCES)
 
@@ -484,13 +487,12 @@ def test_create_prediction_for_run_success(respx_mock):
     assert result.result
 
 
+@patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
 @patch("sync.awsdatabricks.event_log_poll_duration_seconds")
-@patch("sync.config._db_config", new=MOCK_DBX_CONF)
 def test_create_prediction_for_run_event_log_upload_delay(
     event_log_poll_duration_seconds, respx_mock
 ):
-    from sync.config import DB_CONFIG
-
     event_log_poll_duration_seconds.return_value = 0
 
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
@@ -525,8 +527,7 @@ def test_create_prediction_for_run_event_log_upload_delay(
         return_value=Response(204)
     )
 
-    # TODO - make more robust?
-    ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
+    ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
     ec2_stubber = Stubber(ec2)
     ec2_stubber.add_response("describe_instances", MOCK_INSTANCES)
 

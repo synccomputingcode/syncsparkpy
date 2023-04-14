@@ -2,7 +2,7 @@ import orjson
 
 from sync import __version__
 
-USER_AGENT = f"Sync SDK v{__version__}"
+USER_AGENT = f"Sync Library/v{__version__} (syncsparkpy)"
 
 
 def encode_json(obj: dict) -> tuple[dict, str]:

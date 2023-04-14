@@ -20,7 +20,6 @@ DATABRICKS_CONFIG_FILE = "databrickscfg"
 def json_config_settings_source(path: str) -> Callable[[BaseSettings], dict[str, Any]]:
     def source(settings: BaseSettings) -> dict[str, Any]:
         config_path = _get_config_dir().joinpath(path)
-        print(config_path)
         if config_path.exists():
             with open(config_path) as fobj:
                 return json.load(fobj)
@@ -168,8 +167,7 @@ def __getattr__(name):
             if _db_config is None:
                 try:
                     _db_config = DatabricksConf()
-                except ValueError as e:
-                    print(e)
+                except ValueError:
                     pass
             return _db_config
 

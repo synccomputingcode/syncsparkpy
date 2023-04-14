@@ -48,54 +48,20 @@ class DatabricksClient:
             )
         )
 
-    def get_cluster_events(
-        self, cluster_id: str, start_time_ms: int | None = None, end_time_ms: int | None = None
-    ):
-        """Fetches all ClusterEvents for a given Databricks cluster, optionally within a time window.
-        Pages will be followed and returned as 1 object
+    def get_cluster_events(self, cluster_id: str, **kwargs) -> dict:
+        """Returns a single page of cluster events for the given cluster_id. **kwargs will be passed
+        as-is as query parameters to the Databricks API. Refer to these docs for all possible arguments -
+        https://docs.databricks.com/dev-tools/api/latest/clusters.html#events
         """
-        # https://docs.databricks.com/dev-tools/api/latest/clusters.html#events
-        # Set limit to the maximum allowable value of 500, since we want all the cluster events anyway, and
-        #  we will page if we get back any `next_page` data
-        args = {"cluster_id": cluster_id, "limit": 500}
-        if start_time_ms:
-            args["start_time"] = start_time_ms
+        kwargs["cluster_id"] = cluster_id
 
-        if end_time_ms:
-            args["end_time"] = end_time_ms
+        headers, content = encode_json(kwargs)
 
-        headers, content = encode_json(args)
-
-        response = self._send(
+        return self._send(
             self._client.build_request(
                 "POST", "/api/2.0/clusters/events", headers=headers, content=content
             )
         )
-
-        responses = [response]
-
-        while next_args := response.get("next_page"):
-            headers, content = encode_json(next_args)
-            response = self._send(
-                self._client.build_request(
-                    "POST", "/api/2.0/clusters/events", headers=headers, content=content
-                )
-            )
-
-            responses.append(response)
-
-        all_events = {
-            "events": [],
-            "total_count": responses[0][
-                "total_count"
-            ],  # total_count will be the same for all API responses
-        }
-        for response in responses:
-            # Databricks returns cluster events from most recent --> oldest, so our paginated responses will contain
-            #  older and older events as we get through them.
-            all_events["events"].extend(response["events"])
-
-        return all_events
 
     def get_job(self, job_id: str) -> dict:
         return self._send(
@@ -150,7 +116,5 @@ def get_default_client() -> DatabricksClient:
     global _sync_client
     if not _sync_client:
         conf = DB_CONFIG
-        print(conf.host)
         _sync_client = DatabricksClient(conf.host, conf.token)
-        print(_sync_client)
     return _sync_client

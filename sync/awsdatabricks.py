@@ -808,6 +808,33 @@ def _get_eventlog(cluster_description: dict, run_end_time_millis: int) -> Respon
         )
 
 
+def _get_all_cluster_events(cluster_id: str):
+    """Fetches all ClusterEvents for a given Databricks cluster, optionally within a time window.
+    Pages will be followed and returned as 1 object
+    """
+
+    # Set limit to the maximum allowable value of 500 since we want to fetch all events anyway
+    response = get_default_client().get_cluster_events(cluster_id, limit=500)
+    responses = [response]
+
+    while next_args := response.get("next_page"):
+        response = get_default_client().get_cluster_events(cluster_id, **next_args)
+        responses.append(response)
+
+    all_events = {
+        "events": [],
+        "total_count": responses[0][
+            "total_count"
+        ],  # total_count will be the same for all API responses
+    }
+    for response in responses:
+        # Databricks returns cluster events from most recent --> oldest, so our paginated responses will contain
+        #  older and older events as we get through them.
+        all_events["events"].extend(response["events"])
+
+    return all_events
+
+
 KeyType = TypeVar("KeyType")
 
 

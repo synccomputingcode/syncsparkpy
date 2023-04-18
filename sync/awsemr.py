@@ -378,17 +378,17 @@ def create_prediction_for_cluster(cluster_id: str, region_name: str = None) -> R
     return cluster_report
 
 
-def get_cluster_report(cluster_id: str, region: str = None) -> Response[dict]:
+def get_cluster_report(cluster_id: str, region_name: str = None) -> Response[dict]:
     """Get the cluster configuration required for Sync prediction
 
     :param cluster_id: cluster ID
     :type cluster_id: str
-    :param region: AWS region name, defaults to AWS configuration
-    :type region: str, optional
+    :param region_name: AWS region name, defaults to AWS configuration
+    :type region_name: str, optional
     :return: cluster configuration
     :rtype: Response[dict]
     """
-    emr = boto.client("emr", region_name=region)
+    emr = boto.client("emr", region_name=region_name)
 
     cluster = emr.describe_cluster(ClusterId=cluster_id)["Cluster"]
 
@@ -417,7 +417,7 @@ def get_cluster_report(cluster_id: str, region: str = None) -> Response[dict]:
             "Cluster": cluster,
             "Instances": emr.list_instances(ClusterId=cluster_id)["Instances"],
             "Steps": emr.list_steps(ClusterId=cluster_id)["Steps"],
-            "Region": region or emr.meta.region_name,
+            "Region": region_name or emr.meta.region_name,
         }
     )
 

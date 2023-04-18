@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+import boto3 as boto
 from pydantic import BaseSettings, Field, validator
 
 from .models import Preference
@@ -63,6 +64,7 @@ class Configuration(BaseSettings):
 class DatabricksConf(BaseSettings):
     host: str = Field(..., env="DATABRICKS_HOST")
     token: str = Field(..., env="DATABRICKS_TOKEN")
+    aws_region_name: str = Field(boto.client("s3").meta.region_name, env="DATABRICKS_AWS_REGION")
 
     @validator("host")
     def validate_host(cls, host):

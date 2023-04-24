@@ -252,7 +252,6 @@ def get_prediction_job(
         job = get_default_client().get_job(job_id)
         if "error_code" in job:
             return Response(error=DatabricksAPIError(**job))
-
         job_settings = job["settings"]
         if tasks := job_settings.get("tasks", []):
             cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
@@ -260,12 +259,14 @@ def get_prediction_job(
                 prediction_cluster = _deep_update(
                     cluster, prediction["solutions"][preference]["configuration"]
                 )
-                cluster_key = tasks[0]["job_cluster_key"]
-                job_settings["job_clusters"] = [
-                    j
-                    for j in job_settings["job_clusters"]
-                    if j.get("job_cluster_key") != cluster_key
-                ] + [{"job_cluster_key": cluster_key, "new_cluster": prediction_cluster}]
+                if cluster_key := tasks[0].get("job_cluster_key"):
+                    job_settings["job_clusters"] = [
+                        j
+                        for j in job_settings["job_clusters"]
+                        if j.get("job_cluster_key") != cluster_key
+                    ] + [{"job_cluster_key": cluster_key, "new_cluster": prediction_cluster}]
+                else:
+                    tasks[0]["new_cluster"] = prediction_cluster
                 return Response(result=job)
             return cluster_response
         return Response(error=DatabricksError(message="No task found in job"))
@@ -299,12 +300,15 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
             project_settings_response = get_project_cluster_settings(project_id, region_name)
             if project_cluster_settings := project_settings_response.result:
                 project_cluster = _deep_update(cluster, project_cluster_settings)
-                cluster_key = tasks[0]["job_cluster_key"]
-                job_settings["job_clusters"] = [
-                    j
-                    for j in job_settings["job_clusters"]
-                    if j.get("job_cluster_key") != cluster_key
-                ] + [{"job_cluster_key": cluster_key, "new_cluster": project_cluster}]
+                if cluster_key := tasks[0].get("job_cluster_key"):
+                    job_settings["job_clusters"] = [
+                        j
+                        for j in job_settings["job_clusters"]
+                        if j.get("job_cluster_key") != cluster_key
+                    ] + [{"job_cluster_key": cluster_key, "new_cluster": project_cluster}]
+                else:
+                    tasks[0]["new_cluster"] = project_cluster
+
                 return Response(result=job)
             return project_settings_response
         return cluster_response
@@ -739,7 +743,7 @@ def _s3_contents_have_all_rollover_logs(contents: list[dict], run_end_time_secon
         # can proceed with the upload + prediction. If this proves to be finicky in some way, we can always
         # wait for the full 5 minutes after the run_end_time_seconds
         final_rollover_log
-        and final_rollover_log["LastModified"].timestamp() >= run_end_time_seconds
+        and final_rollover_log["LastModified"].timestamp() >= (run_end_time_seconds - 15)
     )
 
 
@@ -808,7 +812,7 @@ def _get_eventlog(cluster_description: dict, run_end_time_millis: int) -> Respon
         )
 
 
-def _get_all_cluster_events(cluster_id: str):
+def get_all_cluster_events(cluster_id: str):
     """Fetches all ClusterEvents for a given Databricks cluster, optionally within a time window.
     Pages will be followed and returned as 1 object
     """

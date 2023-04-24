@@ -182,8 +182,7 @@ def get_cluster_report(
 
     # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
     #  uploading all the event log data before we start checking for it
-    cluster_events = get_default_client().get_cluster_events(cluster_id)
-
+    cluster_events = _get_all_cluster_events(cluster_id)
     aws_region_name = DB_CONFIG.aws_region_name
     ec2 = boto.client("ec2", region_name=aws_region_name)
 
@@ -743,7 +742,7 @@ def _s3_contents_have_all_rollover_logs(contents: list[dict], run_end_time_secon
         # can proceed with the upload + prediction. If this proves to be finicky in some way, we can always
         # wait for the full 5 minutes after the run_end_time_seconds
         final_rollover_log
-        and final_rollover_log["LastModified"].timestamp() >= (run_end_time_seconds - 15)
+        and final_rollover_log["LastModified"].timestamp() >= run_end_time_seconds
     )
 
 
@@ -812,7 +811,7 @@ def _get_eventlog(cluster_description: dict, run_end_time_millis: int) -> Respon
         )
 
 
-def get_all_cluster_events(cluster_id: str):
+def _get_all_cluster_events(cluster_id: str):
     """Fetches all ClusterEvents for a given Databricks cluster, optionally within a time window.
     Pages will be followed and returned as 1 object
     """

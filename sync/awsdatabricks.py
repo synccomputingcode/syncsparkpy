@@ -138,7 +138,7 @@ def create_prediction_for_run(
     if cluster_id := cluster_id_response.result:
         # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
         #  uploading all the event log data before we start checking for it
-        cluster_report_response = get_cluster_report(cluster_id, plan_type, compute_type)
+        cluster_report_response = _get_cluster_report(cluster_id, plan_type, compute_type)
         if cluster_report := cluster_report_response.result:
 
             cluster = cluster_report.cluster
@@ -161,19 +161,36 @@ def create_prediction_for_run(
 
 
 def get_cluster_report(
-    cluster_id: str, plan_type: str, compute_type: str
+    run_id: str, plan_type: str, compute_type: str
 ) -> Response[DatabricksClusterReport]:
     """Fetches the cluster information required to create a Sync prediction
 
-    :param cluster_id: Databricks cluster ID
-    :type cluster_id: str
+    :param run_id: Databricks run ID
+    :type run_id: str
     :param plan_type: Databricks Pricing Plan, e.g. "Standard"
     :type plan_type: str
     :param compute_type: Cluster compute type, e.g. "Jobs Compute"
     :type compute_type: str
-    :return: cluster configuration
-    :rtype: Response[dict]
+    :return: cluster report
+    :rtype: Response[DatabricksClusterReport]
     """
+    run = get_default_client().get_run(run_id)
+    if "error_code" in run:
+        return Response(error=DatabricksAPIError(**run))
+
+    if run["state"].get("result_state") != "SUCCESS":
+        return Response(error=DatabricksError(message="Run did not successfully complete"))
+
+    cluster_id_response = _get_run_cluster_id(run["tasks"])
+    if cluster_id := cluster_id_response.result:
+        return _get_cluster_report(cluster_id, plan_type, compute_type)
+
+    return cluster_id_response
+
+
+def _get_cluster_report(
+    cluster_id: str, plan_type: str, compute_type: str
+) -> Response[DatabricksClusterReport]:
     cluster = get_default_client().get_cluster(cluster_id)
     if "error_code" in cluster:
         return Response(error=DatabricksAPIError(**cluster))

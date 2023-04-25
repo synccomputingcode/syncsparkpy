@@ -87,7 +87,8 @@ def get_cluster_report(cluster_id: str, plan: DatabricksPlanType, compute: Datab
     if config := config_response.result:
         click.echo(
             orjson.dumps(
-                config, option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_UTC_Z
+                config.dict(exclude_none=True),
+                option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_UTC_Z,
             )
         )
     else:

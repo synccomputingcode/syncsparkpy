@@ -134,8 +134,6 @@ def create_prediction_for_run(
     if run["state"].get("result_state") != "SUCCESS":
         return Response(error=DatabricksError(message="Run did not successfully complete"))
 
-    run_end_time = run.get("end_time")
-
     cluster_id_response = _get_run_cluster_id(run["tasks"])
     if cluster_id := cluster_id_response.result:
         # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
@@ -144,7 +142,7 @@ def create_prediction_for_run(
         if cluster_report := cluster_report_response.result:
 
             cluster = cluster_report.cluster
-            eventlog_response = _get_eventlog(cluster, run_end_time)
+            eventlog_response = _get_eventlog(cluster, run.get("end_time"))
 
             if eventlog := eventlog_response.result:
                 return create_prediction(

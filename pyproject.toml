@@ -1,5 +1,12 @@
 [build-system]
-requires = ["hatchling"]
+# NOTE - versions of Hatchling more recent than 1.8.0 have a dependency on pathspec >= 0.10.1. However,
+#  Databricks Runtime versions only have pathspec==0.9.0 installed, and so attempting to `pip install ...`
+#  syncsparkpy will fail with an `AttributeError`. Pinning Hatching to this version, which is the most
+#  recent version to only require pathspec >= 0.9.0, resolves that issue without asking the user to
+#  install pathspec >= 0.10.1 on their Databricks clusters. We should only ever upgrade this version once
+#  most/all Databricks Runtime LTS releases support pathspec >= 0.10.1, which may be a while...
+# See here for DBR release notes - https://docs.databricks.com/release-notes/runtime/releases.html
+requires = ["hatchling==1.8.0"]
 build-backend = "hatchling.build"
 
 [project]

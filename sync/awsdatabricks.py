@@ -197,8 +197,7 @@ def _get_cluster_report(
 
     # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
     #  uploading all the event log data before we start checking for it
-    cluster_events = get_default_client().get_cluster_events(cluster_id)
-
+    cluster_events = _get_all_cluster_events(cluster_id)
     aws_region_name = DB_CONFIG.aws_region_name
     ec2 = boto.client("ec2", region_name=aws_region_name)
 
@@ -275,12 +274,14 @@ def get_prediction_job(
                 prediction_cluster = _deep_update(
                     cluster, prediction["solutions"][preference]["configuration"]
                 )
-                cluster_key = tasks[0]["job_cluster_key"]
-                job_settings["job_clusters"] = [
-                    j
-                    for j in job_settings["job_clusters"]
-                    if j.get("job_cluster_key") != cluster_key
-                ] + [{"job_cluster_key": cluster_key, "new_cluster": prediction_cluster}]
+                if cluster_key := tasks[0].get("job_cluster_key"):
+                    job_settings["job_clusters"] = [
+                        j
+                        for j in job_settings["job_clusters"]
+                        if j.get("job_cluster_key") != cluster_key
+                    ] + [{"job_cluster_key": cluster_key, "new_cluster": prediction_cluster}]
+                else:
+                    tasks[0]["new_cluster"] = prediction_cluster
                 return Response(result=job)
             return cluster_response
         return Response(error=DatabricksError(message="No task found in job"))
@@ -314,12 +315,15 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
             project_settings_response = get_project_cluster_settings(project_id, region_name)
             if project_cluster_settings := project_settings_response.result:
                 project_cluster = _deep_update(cluster, project_cluster_settings)
-                cluster_key = tasks[0]["job_cluster_key"]
-                job_settings["job_clusters"] = [
-                    j
-                    for j in job_settings["job_clusters"]
-                    if j.get("job_cluster_key") != cluster_key
-                ] + [{"job_cluster_key": cluster_key, "new_cluster": project_cluster}]
+                if cluster_key := tasks[0].get("job_cluster_key"):
+                    job_settings["job_clusters"] = [
+                        j
+                        for j in job_settings["job_clusters"]
+                        if j.get("job_cluster_key") != cluster_key
+                    ] + [{"job_cluster_key": cluster_key, "new_cluster": project_cluster}]
+                else:
+                    tasks[0]["new_cluster"] = project_cluster
+
                 return Response(result=job)
             return project_settings_response
         return cluster_response

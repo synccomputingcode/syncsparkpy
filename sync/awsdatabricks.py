@@ -251,7 +251,7 @@ def get_prediction_job(
         job = get_default_client().get_job(job_id)
         if "error_code" in job:
             return Response(error=DatabricksAPIError(**job))
-        
+
         job_settings = job["settings"]
         if tasks := job_settings.get("tasks", []):
             cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))

@@ -74,20 +74,21 @@ def create_prediction(
 
 
 @aws_databricks.command
-@click.argument("cluster-id")
+@click.argument("run-id")
 @click.option("--plan", type=click.Choice(DatabricksPlanType), default=DatabricksPlanType.STANDARD)
 @click.option(
     "--compute",
     type=click.Choice(DatabricksComputeType),
     default=DatabricksComputeType.JOBS_COMPUTE,
 )
-def get_cluster_report(cluster_id: str, plan: DatabricksPlanType, compute: DatabricksComputeType):
+def get_cluster_report(run_id: str, plan: DatabricksPlanType, compute: DatabricksComputeType):
     """Get a cluster report"""
-    config_response = awsdatabricks.get_cluster_report(cluster_id, plan, compute)
+    config_response = awsdatabricks.get_cluster_report(run_id, plan, compute)
     if config := config_response.result:
         click.echo(
             orjson.dumps(
-                config, option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_UTC_Z
+                config.dict(exclude_none=True),
+                option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_UTC_Z,
             )
         )
     else:

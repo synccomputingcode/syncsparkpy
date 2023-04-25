@@ -26,10 +26,7 @@ def predictions():
 
 
 @predictions.command
-@click.argument(
-    "platform",
-    type=click.Choice(platform for platform in Platform if platform is not Platform.AWS_DATABRICKS),
-)
+@click.argument("platform", type=click.Choice(Platform))
 @click.option("-e", "--event-log", metavar="URL/PATH", required=True)
 @click.option("-r", "--report", metavar="URL/PATH", required=True)
 @click.option("--project", callback=validate_project, help="project/app ID")

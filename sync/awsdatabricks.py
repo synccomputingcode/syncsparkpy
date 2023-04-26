@@ -389,6 +389,8 @@ def run_job_object(job: dict) -> Response[str]:
 
     if cluster := cluster_response.result:
         if len(tasks) == 1:
+            # For `new_cluster` definitions, Databricks will automatically assign the newly created cluster a name,
+            #  and will reject any run submissions where the `cluster_name` is pre-populated
             if "cluster_name" in cluster:
                 del cluster["cluster_name"]
 

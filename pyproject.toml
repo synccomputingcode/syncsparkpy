@@ -54,7 +54,7 @@ path = "sync/__init__.py"
 sync-cli = "sync.__main__:main"
 
 [project.urls]
-Home = "https://github.com/synccomputingcode/sync_sdk"
+Home = "https://github.com/synccomputingcode/syncsparkpy"
 
 [tool.black]
 line-length = 100

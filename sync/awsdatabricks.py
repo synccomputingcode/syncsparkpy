@@ -283,9 +283,6 @@ def get_prediction_job(
 
                 prediction_cluster = _deep_update(cluster, prediction["solutions"][preference]["configuration"])
 
-                if "cluster_name" in prediction_cluster:
-                    del prediction_cluster["cluster_name"]
-
                 if cluster_key := tasks[0].get("job_cluster_key"):
                     job_settings["job_clusters"] = [
                         j
@@ -392,9 +389,18 @@ def run_job_object(job: dict) -> Response[str]:
 
     if cluster := cluster_response.result:
         if len(tasks) == 1:
+            if "cluster_name" in cluster:
+                del cluster["cluster_name"]
+
             tasks[0]["new_cluster"] = cluster
             del tasks[0]["job_cluster_key"]
         else:
+            # If the original Job has a pre-existing Policy, we want to remove this from the `create_cluster` payload,
+            #  since we are not allowed to create clusters with certain policies via that endpoint, e.g. we cannot
+            #  create a `Job Compute` cluster via this endpoint.
+            if "policy_id" in cluster:
+                del cluster["policy_id"]
+
             # Create an "All-Purpose Compute" cluster
             cluster["cluster_name"] = cluster["cluster_name"] or job["settings"]["name"]
             cluster["autotermination_minutes"] = 10  # 10 minutes is the minimum

@@ -271,9 +271,21 @@ def get_prediction_job(
         if tasks := job_settings.get("tasks", []):
             cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
             if cluster := cluster_response.result:
-                prediction_cluster = _deep_update(
-                    cluster, prediction["solutions"][preference]["configuration"]
-                )
+                # num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
+                #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster
+                #  with `num_workers`) for a cluster that was originally autoscaled, we want to make sure to remove this
+                #  prior configuration
+                if "num_workers" in cluster:
+                    del cluster["num_workers"]
+
+                if "autoscale" in cluster:
+                    del cluster["autoscale"]
+
+                prediction_cluster = _deep_update(cluster, prediction["solutions"][preference]["configuration"])
+
+                if "cluster_name" in prediction_cluster:
+                    del prediction_cluster["cluster_name"]
+
                 if cluster_key := tasks[0].get("job_cluster_key"):
                     job_settings["job_clusters"] = [
                         j

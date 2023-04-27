@@ -271,9 +271,18 @@ def get_prediction_job(
         if tasks := job_settings.get("tasks", []):
             cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
             if cluster := cluster_response.result:
-                prediction_cluster = _deep_update(
-                    cluster, prediction["solutions"][preference]["configuration"]
-                )
+                # num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
+                #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster
+                #  with `num_workers`) for a cluster that was originally autoscaled, we want to make sure to remove this
+                #  prior configuration
+                if "num_workers" in cluster:
+                    del cluster["num_workers"]
+
+                if "autoscale" in cluster:
+                    del cluster["autoscale"]
+
+                prediction_cluster = _deep_update(cluster, prediction["solutions"][preference]["configuration"])
+
                 if cluster_key := tasks[0].get("job_cluster_key"):
                     job_settings["job_clusters"] = [
                         j
@@ -380,9 +389,20 @@ def run_job_object(job: dict) -> Response[str]:
 
     if cluster := cluster_response.result:
         if len(tasks) == 1:
+            # For `new_cluster` definitions, Databricks will automatically assign the newly created cluster a name,
+            #  and will reject any run submissions where the `cluster_name` is pre-populated
+            if "cluster_name" in cluster:
+                del cluster["cluster_name"]
+
             tasks[0]["new_cluster"] = cluster
             del tasks[0]["job_cluster_key"]
         else:
+            # If the original Job has a pre-existing Policy, we want to remove this from the `create_cluster` payload,
+            #  since we are not allowed to create clusters with certain policies via that endpoint, e.g. we cannot
+            #  create a `Job Compute` cluster via this endpoint.
+            if "policy_id" in cluster:
+                del cluster["policy_id"]
+
             # Create an "All-Purpose Compute" cluster
             cluster["cluster_name"] = cluster["cluster_name"] or job["settings"]["name"]
             cluster["autotermination_minutes"] = 10  # 10 minutes is the minimum

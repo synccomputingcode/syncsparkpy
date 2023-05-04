@@ -2,6 +2,7 @@ import logging
 from typing import Generator
 
 import httpx
+from tenacity import RetryError, Retrying, stop_after_attempt, wait_fixed
 
 from ..config import API_KEY, CONFIG, APIKey
 from . import USER_AGENT, encode_json
@@ -109,7 +110,16 @@ class SyncClient:
         return self._send(self._client.build_request("DELETE", f"/v1/projects/{project_id}"))
 
     def _send(self, request: httpx.Request) -> dict:
-        response = self._client.send(request)
+        try:
+            for attempt in Retrying(stop=stop_after_attempt(3), wait=wait_fixed(5)):
+                with attempt:
+                    response = self._client.send(request)
+                    if response.status_code == httpx.codes.SERVICE_UNAVAILABLE:
+                        # Doesn't need to be any particular exception, this is just to trigger the retry
+                        raise Exception()
+        except RetryError:
+            # If we max out on retries, then just bail and log the error we got
+            pass
 
         if response.status_code >= 200 and response.status_code < 300:
             return response.json()

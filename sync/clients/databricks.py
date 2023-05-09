@@ -98,7 +98,7 @@ class DatabricksClient(RetryableHTTPClient):
     def _send(self, request: httpx.Request) -> dict:
         response = self._send_request(request)
 
-        if response.status_code >= 200 and response.status_code < 300:
+        if 200 <= response.status_code < 300:
             return response.json()
 
         if response.headers.get("Content-Type", "").startswith("application/json"):

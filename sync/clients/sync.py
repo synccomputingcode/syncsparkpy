@@ -2,10 +2,9 @@ import logging
 from typing import Generator
 
 import httpx
-from tenacity import RetryError, Retrying, TryAgain, stop_after_attempt, wait_exponential_jitter
 
 from ..config import API_KEY, CONFIG, APIKey
-from . import DEFAULT_RETRYABLE_STATUS_CODES, USER_AGENT, RetryableHTTPClient, encode_json
+from . import USER_AGENT, RetryableHTTPClient, encode_json
 
 logger = logging.getLogger(__name__)
 
@@ -189,9 +188,9 @@ class ASyncClient(RetryableHTTPClient):
         return await self._send(self._client.build_request("DELETE", f"/v1/projects/{project_id}"))
 
     async def _send(self, request: httpx.Request) -> dict:
-        response = self._send_re
+        response = await self._send_request_async(request)
 
-        if response.status_code >= 200 and response.status_code < 300:
+        if 200 <= response.status_code < 300:
             return response.json()
 
         if response.headers.get("Content-Type", "").startswith("application/json"):

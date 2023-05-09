@@ -221,7 +221,8 @@ def _get_cluster_report(
     if not instances["Reservations"]:
         no_instances_message = (
             f"Unable to find any active or recently terminated instances for cluster `{cluster_id}` in `{aws_region_name}`. "
-            + "Please refer to the following documentation for options on how to address this - <some link>"
+            + "Please refer to the following documentation for options on how to address this - "
+            + "https://synccomputingcode.github.io/syncsparkpy/reference/awsdatabricks.html"
         )
         if allow_incomplete:
             logger.warning(no_instances_message)

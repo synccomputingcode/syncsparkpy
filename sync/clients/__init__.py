@@ -1,6 +1,6 @@
 import httpx
 import orjson
-from tenacity import RetryError, Retrying, TryAgain, stop_after_attempt, wait_exponential_jitter
+from tenacity import Retrying, TryAgain, stop_after_attempt, wait_exponential_jitter
 
 from sync import __version__
 
@@ -42,12 +42,13 @@ class RetryableHTTPClient:
             for attempt in Retrying(
                 stop=stop_after_attempt(3),
                 wait=wait_exponential_jitter(initial=2, max=10, jitter=2),
+                reraise=True,
             ):
                 with attempt:
                     response = self._client.send(request)
                     if response.status_code in self._DEFAULT_RETRYABLE_STATUS_CODES:
-                        raise TryAgain
-        except RetryError:
+                        raise TryAgain()
+        except TryAgain:
             # If we max out on retries, then return the bad response back to the caller to handle as appropriate
             pass
 
@@ -58,12 +59,13 @@ class RetryableHTTPClient:
             for attempt in Retrying(
                 stop=stop_after_attempt(3),
                 wait=wait_exponential_jitter(initial=2, max=10, jitter=2),
+                reraise=True,
             ):
                 with attempt:
                     response = await self._client.send(request)
                     if response.status_code in self._DEFAULT_RETRYABLE_STATUS_CODES:
-                        raise TryAgain
-        except RetryError:
+                        raise TryAgain()
+        except TryAgain:
             # If we max out on retries, then return the bad response back to the caller to handle as appropriate
             pass
 

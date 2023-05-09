@@ -1,0 +1,92 @@
+name: Release new library version
+
+# Controls when the workflow will run
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+
+  release-latest:
+
+    permissions:
+      id-token: write   # to verify the deployment originates from an appropriate source
+      contents: write   # To allow pushing tags/etc.
+
+    # Specify runner + deployment step
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: pip install .
+      - name: version-tag
+        # Grab the current version of the library and create a tag like `v{version}`
+        run: |
+          echo "$(python -m sync --version)" |
+          sed -nE 's/^.*version ([0-9]+\.[0-9]+\.[0-9]+)/\1/p' |
+          awk '{print "tag_version=v"$1}' >> "$GITHUB_ENV"
+      - name: Release version
+        run: echo "${{ env.tag_version }}"
+        # TODO - we may find it necessary to override this check at some point in order to "hotfix" a version, but it
+        #  seems prudent even in that scenario to simply release a new version
+      - name: Check release version doesn't yet exist
+        run: |
+          if [ $(git tag -l '${{ env.tag_version }}') ]; then echo "Release already found - aborting" && exit 1; else echo "Continuing with release"; fi
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.tag_version }}
+          generate_release_notes: true
+      - name: Run latest-tag
+        uses: EndBug/latest-tag@latest
+
+  build-docs:
+    # Only publish docs if we were able to successfully create a release
+    needs: release-latest
+
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: pip install .[dev]
+      - name: Build docs
+        run: make html
+        working-directory: docs
+      - uses: actions/upload-pages-artifact@v1
+        with:
+          path: docs/_build/html
+
+  release-docs:
+
+    # Add a dependency to the build job
+    needs: build-docs
+
+    # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
+    permissions:
+      pages: write      # to deploy to Pages
+      id-token: write   # to verify the deployment originates from an appropriate source
+
+    # Deploy to the github-pages environment
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    # Specify runner + deployment step
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v1

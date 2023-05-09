@@ -4,7 +4,7 @@ from typing import Generator
 import httpx
 
 from ..config import DB_CONFIG
-from . import USER_AGENT, encode_json
+from . import USER_AGENT, RetryableHTTPClient, encode_json
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +19,14 @@ class DatabricksAuth(httpx.Auth):
         yield request
 
 
-class DatabricksClient:
+class DatabricksClient(RetryableHTTPClient):
     def __init__(self, base_url: str, access_token: str):
-        self._client = httpx.Client(
-            base_url=base_url, headers={"User-Agent": USER_AGENT}, auth=DatabricksAuth(access_token)
+        super().__init__(
+            client=httpx.Client(
+                base_url=base_url,
+                headers={"User-Agent": USER_AGENT},
+                auth=DatabricksAuth(access_token),
+            )
         )
 
     def create_cluster(self, config: dict) -> dict:
@@ -92,9 +96,9 @@ class DatabricksClient:
         )
 
     def _send(self, request: httpx.Request) -> dict:
-        response = self._client.send(request)
+        response = self._send_request(request)
 
-        if response.status_code >= 200 and response.status_code < 300:
+        if 200 <= response.status_code < 300:
             return response.json()
 
         if response.headers.get("Content-Type", "").startswith("application/json"):

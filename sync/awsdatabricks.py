@@ -112,7 +112,11 @@ def get_cluster(cluster_id: str) -> Response[dict]:
 
 # TODO - Databricks configuration documentation
 def create_prediction_for_run(
-    run_id: str, plan_type: str, compute_type: str, project_id: str = None
+    run_id: str,
+    plan_type: str,
+    compute_type: str,
+    project_id: str = None,
+    allow_incomplete_cluster_report: bool = False,
 ) -> Response[str]:
     """Create a prediction for the specified Databricks run.
 
@@ -124,6 +128,8 @@ def create_prediction_for_run(
     :type compute_type: str
     :param project_id: Sync project ID, defaults to None
     :type project_id: str, optional
+    :param allow_incomplete_cluster_report: Whether creating a prediction with incomplete cluster report data should be allowable
+    :type allow_incomplete_cluster_report: bool, optional, defaults to False
     :return: prediction ID
     :rtype: Response[str]
     """
@@ -138,7 +144,9 @@ def create_prediction_for_run(
     if cluster_id := cluster_id_response.result:
         # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
         #  uploading all the event log data before we start checking for it
-        cluster_report_response = _get_cluster_report(cluster_id, plan_type, compute_type)
+        cluster_report_response = _get_cluster_report(
+            cluster_id, plan_type, compute_type, allow_incomplete_cluster_report
+        )
         if cluster_report := cluster_report_response.result:
 
             cluster = cluster_report.cluster
@@ -161,7 +169,7 @@ def create_prediction_for_run(
 
 
 def get_cluster_report(
-    run_id: str, plan_type: str, compute_type: str
+    run_id: str, plan_type: str, compute_type: str, allow_incomplete: bool = False
 ) -> Response[DatabricksClusterReport]:
     """Fetches the cluster information required to create a Sync prediction
 
@@ -171,6 +179,8 @@ def get_cluster_report(
     :type plan_type: str
     :param compute_type: Cluster compute type, e.g. "Jobs Compute"
     :type compute_type: str
+    :param allow_incomplete: Whether creating a cluster report with incomplete data should be allowable
+    :type allow_incomplete: bool, optional, defaults to False
     :return: cluster report
     :rtype: Response[DatabricksClusterReport]
     """
@@ -183,13 +193,13 @@ def get_cluster_report(
 
     cluster_id_response = _get_run_cluster_id(run["tasks"])
     if cluster_id := cluster_id_response.result:
-        return _get_cluster_report(cluster_id, plan_type, compute_type)
+        return _get_cluster_report(cluster_id, plan_type, compute_type, allow_incomplete)
 
     return cluster_id_response
 
 
 def _get_cluster_report(
-    cluster_id: str, plan_type: str, compute_type: str
+    cluster_id: str, plan_type: str, compute_type: str, allow_incomplete: bool
 ) -> Response[DatabricksClusterReport]:
     cluster = get_default_client().get_cluster(cluster_id)
     if "error_code" in cluster:
@@ -209,11 +219,15 @@ def _get_cluster_report(
         ]
     )
     if not instances["Reservations"]:
-        return Response(
-            error=DatabricksError(
-                message=f"Unable to find any active or recently terminated instances for cluster `{cluster_id}` in `{aws_region_name}`"
-            )
+        no_instances_message = (
+            f"Unable to find any active or recently terminated instances for cluster `{cluster_id}` in `{aws_region_name}`. "
+            + "Please refer to the following documentation for options on how to address this - "
+            + "https://synccomputingcode.github.io/syncsparkpy/reference/awsdatabricks.html"
         )
+        if allow_incomplete:
+            logger.warning(no_instances_message)
+        else:
+            return Response(error=DatabricksError(message=no_instances_message))
 
     return Response(
         result=DatabricksClusterReport(
@@ -281,7 +295,9 @@ def get_prediction_job(
                 if "autoscale" in cluster:
                     del cluster["autoscale"]
 
-                prediction_cluster = _deep_update(cluster, prediction["solutions"][preference]["configuration"])
+                prediction_cluster = _deep_update(
+                    cluster, prediction["solutions"][preference]["configuration"]
+                )
 
                 if cluster_key := tasks[0].get("job_cluster_key"):
                     job_settings["job_clusters"] = [

@@ -4,7 +4,7 @@ from typing import Generator
 import httpx
 
 from ..config import API_KEY, CONFIG, APIKey
-from . import USER_AGENT, encode_json
+from . import USER_AGENT, RetryableHTTPClient, encode_json
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +48,15 @@ class SyncAuth(httpx.Auth):
             logger.error(f"{response.status_code}: Failed to authenticate")
 
 
-class SyncClient:
+class SyncClient(RetryableHTTPClient):
     def __init__(self, api_url, api_key):
-        self._client = httpx.Client(
-            base_url=api_url,
-            headers={"User-Agent": USER_AGENT},
-            auth=SyncAuth(api_url, api_key),
-            timeout=60.0,
+        super().__init__(
+            client=httpx.Client(
+                base_url=api_url,
+                headers={"User-Agent": USER_AGENT},
+                auth=SyncAuth(api_url, api_key),
+                timeout=60.0,
+            )
         )
 
     def get_products(self) -> dict:
@@ -109,9 +111,9 @@ class SyncClient:
         return self._send(self._client.build_request("DELETE", f"/v1/projects/{project_id}"))
 
     def _send(self, request: httpx.Request) -> dict:
-        response = self._client.send(request)
+        response = self._send_request(request)
 
-        if response.status_code >= 200 and response.status_code < 300:
+        if 200 <= response.status_code < 300:
             return response.json()
 
         if response.headers.get("Content-Type", "").startswith("application/json"):
@@ -126,13 +128,15 @@ class SyncClient:
         return {"error": {"code": "Sync API Error", "message": "Transaction failure"}}
 
 
-class ASyncClient:
+class ASyncClient(RetryableHTTPClient):
     def __init__(self, api_url, api_key):
-        self._client = httpx.AsyncClient(
-            base_url=api_url,
-            headers={"User-Agent": USER_AGENT},
-            auth=SyncAuth(api_url, api_key),
-            timeout=60.0,
+        super().__init__(
+            client=httpx.AsyncClient(
+                base_url=api_url,
+                headers={"User-Agent": USER_AGENT},
+                auth=SyncAuth(api_url, api_key),
+                timeout=60.0,
+            )
         )
 
     async def create_prediction(self, prediction: dict) -> dict:
@@ -184,9 +188,9 @@ class ASyncClient:
         return await self._send(self._client.build_request("DELETE", f"/v1/projects/{project_id}"))
 
     async def _send(self, request: httpx.Request) -> dict:
-        response = await self._client.send(request)
+        response = await self._send_request_async(request)
 
-        if response.status_code >= 200 and response.status_code < 300:
+        if 200 <= response.status_code < 300:
             return response.json()
 
         if response.headers.get("Content-Type", "").startswith("application/json"):

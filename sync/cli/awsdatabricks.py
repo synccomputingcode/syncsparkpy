@@ -60,12 +60,22 @@ def run_job(
     default=DatabricksComputeType.JOBS_COMPUTE,
 )
 @click.option("--project", callback=validate_project)
+@click.option(
+    "--allow-incomplete",
+    is_flag=True,
+    default=False,
+    help="Force creation of a prediction even with incomplete cluster data.",
+)
 def create_prediction(
-    run_id: str, plan: DatabricksPlanType, compute: DatabricksComputeType, project: dict = None
+    run_id: str,
+    plan: DatabricksPlanType,
+    compute: DatabricksComputeType,
+    project: dict = None,
+    allow_incomplete: bool = False,
 ):
     """Create a prediction for a job run"""
     prediction_response = awsdatabricks.create_prediction_for_run(
-        run_id, plan, compute, project["id"]
+        run_id, plan, compute, project["id"], allow_incomplete
     )
     if prediction := prediction_response.result:
         click.echo(f"Prediction ID: {prediction}")
@@ -81,9 +91,20 @@ def create_prediction(
     type=click.Choice(DatabricksComputeType),
     default=DatabricksComputeType.JOBS_COMPUTE,
 )
-def get_cluster_report(run_id: str, plan: DatabricksPlanType, compute: DatabricksComputeType):
+@click.option(
+    "--allow-incomplete",
+    is_flag=True,
+    default=False,
+    help="Force creation of a cluster report even if some data is missing.",
+)
+def get_cluster_report(
+    run_id: str,
+    plan: DatabricksPlanType,
+    compute: DatabricksComputeType,
+    allow_incomplete: bool = False,
+):
     """Get a cluster report"""
-    config_response = awsdatabricks.get_cluster_report(run_id, plan, compute)
+    config_response = awsdatabricks.get_cluster_report(run_id, plan, compute, allow_incomplete)
     if config := config_response.result:
         click.echo(
             orjson.dumps(

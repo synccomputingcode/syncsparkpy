@@ -111,7 +111,6 @@ def get_cluster(cluster_id: str) -> Response[dict]:
     return Response(result=cluster)
 
 
-# TODO - Databricks configuration documentation
 def create_prediction_for_run(
     run_id: str,
     plan_type: str,
@@ -258,7 +257,14 @@ def _get_cluster_report(
     )
 
 
-def record_run(run_id: str, plan_type: str, compute_type: str, project_id: str) -> Response[str]:
+def record_run(
+    run_id: str,
+    plan_type: str,
+    compute_type: str,
+    project_id: str,
+    allow_incomplete_cluster_report: bool = False,
+    exclude_tasks: Collection[str] | None = None,
+) -> Response[str]:
     """See :py:func:`~create_prediction_for_run`
 
     :param run_id: Databricks run ID
@@ -268,11 +274,17 @@ def record_run(run_id: str, plan_type: str, compute_type: str, project_id: str) 
     :param compute_type: e.g. "Jobs Compute"
     :type compute_type: str
     :param project_id: Sync project ID, defaults to None
-    :type project_id: str, optional
+    :type project_id: str
+    :param allow_incomplete_cluster_report: Whether creating a prediction with incomplete cluster report data should be allowable
+    :type allow_incomplete_cluster_report: bool, optional, defaults to False
+    :param exclude_tasks: Keys of tasks (task names) to exclude
+    :type exclude_tasks: Collection[str], optional, defaults to None
     :return: prediction ID
     :rtype: Response[str]
     """
-    return create_prediction_for_run(run_id, plan_type, compute_type, project_id)
+    return create_prediction_for_run(
+        run_id, plan_type, compute_type, project_id, allow_incomplete_cluster_report, exclude_tasks
+    )
 
 
 def get_prediction_job(

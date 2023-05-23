@@ -4,6 +4,7 @@ Utilities for interacting with Databricks
 import io
 import logging
 import zipfile
+from collections.abc import Collection
 from pathlib import Path
 from time import sleep
 from typing import Any, TypeVar
@@ -117,6 +118,7 @@ def create_prediction_for_run(
     compute_type: str,
     project_id: str = None,
     allow_incomplete_cluster_report: bool = False,
+    exclude_tasks: Collection[str] | None = None,
 ) -> Response[str]:
     """Create a prediction for the specified Databricks run.
 
@@ -130,6 +132,8 @@ def create_prediction_for_run(
     :type project_id: str, optional
     :param allow_incomplete_cluster_report: Whether creating a prediction with incomplete cluster report data should be allowable
     :type allow_incomplete_cluster_report: bool, optional, defaults to False
+    :param exclude_tasks: Keys of tasks (task names) to exclude from the prediction
+    :type exclude_tasks: Collection[str], optional, defaults to None
     :return: prediction ID
     :rtype: Response[str]
     """
@@ -137,10 +141,14 @@ def create_prediction_for_run(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    if run["state"].get("result_state") != "SUCCESS":
-        return Response(error=DatabricksError(message="Run did not successfully complete"))
+    tasks = [
+        task for task in run["tasks"] if not exclude_tasks or task["task_key"] not in exclude_tasks
+    ]
 
-    cluster_id_response = _get_run_cluster_id(run["tasks"])
+    if any(task["state"].get("result_state") != "SUCCESS" for task in tasks):
+        return Response(error=DatabricksError(message="Tasks did not complete successfully"))
+
+    cluster_id_response = _get_run_cluster_id(tasks)
     if cluster_id := cluster_id_response.result:
         # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
         #  uploading all the event log data before we start checking for it
@@ -169,7 +177,11 @@ def create_prediction_for_run(
 
 
 def get_cluster_report(
-    run_id: str, plan_type: str, compute_type: str, allow_incomplete: bool = False
+    run_id: str,
+    plan_type: str,
+    compute_type: str,
+    allow_incomplete: bool = False,
+    exclude_tasks: Collection[str] | None = None,
 ) -> Response[DatabricksClusterReport]:
     """Fetches the cluster information required to create a Sync prediction
 
@@ -181,6 +193,8 @@ def get_cluster_report(
     :type compute_type: str
     :param allow_incomplete: Whether creating a cluster report with incomplete data should be allowable
     :type allow_incomplete: bool, optional, defaults to False
+    :param exclude_tasks: Keys of tasks (task names) to exclude from the report
+    :type exclude_tasks: Collection[str], optional, defaults to None
     :return: cluster report
     :rtype: Response[DatabricksClusterReport]
     """
@@ -188,10 +202,14 @@ def get_cluster_report(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    if run["state"].get("result_state") != "SUCCESS":
-        return Response(error=DatabricksError(message="Run did not successfully complete"))
+    tasks = [
+        task for task in run["tasks"] if not exclude_tasks or task["task_key"] not in exclude_tasks
+    ]
 
-    cluster_id_response = _get_run_cluster_id(run["tasks"])
+    if any(task["state"].get("result_state") != "SUCCESS" for task in tasks):
+        return Response(error=DatabricksError(message="Tasks did not complete successfully"))
+
+    cluster_id_response = _get_run_cluster_id(tasks)
     if cluster_id := cluster_id_response.result:
         return _get_cluster_report(cluster_id, plan_type, compute_type, allow_incomplete)
 

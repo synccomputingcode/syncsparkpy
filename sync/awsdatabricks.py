@@ -3,6 +3,7 @@ Utilities for interacting with Databricks
 """
 import io
 import logging
+import time
 import zipfile
 from collections.abc import Collection
 from pathlib import Path
@@ -218,9 +219,13 @@ def get_cluster_report(
 def _get_cluster_report(
     cluster_id: str, plan_type: str, compute_type: str, allow_incomplete: bool
 ) -> Response[DatabricksClusterReport]:
-    cluster = get_default_client().get_cluster(cluster_id)
-    if "error_code" in cluster:
-        return Response(error=DatabricksAPIError(**cluster))
+    # Cluster `terminated_time` can be a few seconds after the start of the next task in which
+    # this may be executing.
+    cluster_response = _wait_for_cluster_termination(cluster_id, timeout_seconds=60, poll_seconds=5)
+    if cluster_response.error:
+        return cluster_response
+
+    cluster = cluster_response.result
 
     # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
     #  uploading all the event log data before we start checking for it
@@ -743,25 +748,51 @@ def wait_for_run_and_cluster(run_id: str) -> Response[str]:
 
 
 def terminate_cluster(cluster_id: str) -> Response[str]:
-    """Terminates Databricks cluster and waits to return final state.
+    """Terminate Databricks cluster and wait to return final state.
 
     :param cluster_id: Databricks cluster ID
     :type cluster_id: str
-    :return: terminal state: "TERMINATED"
+    :return: Databricks cluster object with state: "TERMINATED"
     :rtype: Response[str]
     """
+    cluster = get_default_client().get_cluster(cluster_id)
+    if "error_code" not in cluster:
+        state = cluster.get("state")
+        match state:
+            case "TERMINATED":
+                return Response(result=cluster)
+            case "TERMINATING":
+                return _wait_for_cluster_termination(cluster_id)
+            case "PENDING" | "RUNNING" | "RESTARTING" | "RESIZING":
+                get_default_client().delete_cluster(cluster_id)
+                return _wait_for_cluster_termination(cluster_id)
+            case _:
+                return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
+
+    return Response(error=DatabricksAPIError(**cluster))
+
+
+def _wait_for_cluster_termination(
+    cluster_id: str, timeout_seconds=300, poll_seconds=10
+) -> Response[str]:
+    start_seconds = time.time()
     cluster = get_default_client().get_cluster(cluster_id)
     while "error_code" not in cluster:
         state = cluster.get("state")
         match state:
             case "TERMINATED":
-                return Response(result=state)
+                return Response(result=cluster)
             case "TERMINATING":
-                sleep(30)
-            case "PENDING" | "RUNNING" | "RESTARTING" | "RESIZING":
-                get_default_client().delete_cluster(cluster_id)
+                sleep(poll_seconds)
             case _:
                 return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
+
+        if time.time() - start_seconds > timeout_seconds:
+            return Response(
+                error=DatabricksError(
+                    message=f"Cluster failed to terminate after waiting {timeout_seconds} seconds"
+                )
+            )
 
         cluster = get_default_client().get_cluster(cluster_id)
 

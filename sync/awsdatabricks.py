@@ -816,6 +816,15 @@ def monitor_cluster(cluster_id: str) -> None:
     parsed_log_url = urlparse(log_url)
     stripped_path = parsed_log_url.path.strip("/")
 
+    # TODO - we may want to grab the Driver instance first by looking for an instance matching the $DB_DRIVER_IP.
+    #  Given the tags on the instance, we can then look for further worker instances.
+
+    # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
+    #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
+    #  we make sure to re-strip our final Prefix
+    file_key = f"{stripped_path}/{cluster_id}/sync_data/cluster_instances.json".strip("/")
+    previous_instances = None
+
     while True:
         instances = ec2.describe_instances(
             Filters=[
@@ -825,11 +834,46 @@ def monitor_cluster(cluster_id: str) -> None:
             ]
         )
 
-        # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
-        #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
-        #  we make sure to re-strip our final Prefix
-        file_key = f"{stripped_path}/{cluster_id}/sync_data/{datetime.datetime.now()}.json".strip("/")
+        if previous_instances:
+            logger.info("Merging instances....")
+            # TODO
+            new_instances = [res for res in instances['Reservations']]
+            new_instance_id_to_reservation = dict(zip(
+                [res['Instances'][0]['InstanceId'] for res in new_instances],
+                new_instances
+            ))
+
+            old_instances = [res for res in previous_instances['Reservations']]
+            old_instance_id_to_reservation = dict(zip(
+                [res['Instances'][0]['InstanceId'] for res in old_instances],
+                old_instances
+            ))
+
+            old_instance_ids = set(old_instance_id_to_reservation.keys())
+            new_instance_ids = set(new_instance_id_to_reservation.keys())
+
+            # If we have the exact same set of instances, prefer the new set...
+            if old_instance_ids == new_instance_ids:
+                instances = {
+                    'Reservations': new_instances
+                }
+            else:
+                # Otherwise, update old references and include any new instances in the list
+                newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
+                updated_instance_ids = newly_added_instance_ids.intersection(old_instance_ids)
+                removed_instance_ids = old_instance_ids.difference(updated_instance_ids)
+
+                removed_instances = [old_instance_id_to_reservation[id] for id in removed_instance_ids]
+                updated_instances = [new_instance_id_to_reservation[id] for id in updated_instance_ids]
+                new_instances = [new_instance_id_to_reservation[id] for id in newly_added_instance_ids]
+
+                instances = {
+                    'Reservations': [*removed_instances, *updated_instances, *new_instances]
+                }
+
         s3.put_object(Bucket=parsed_log_url.netloc, Key=file_key, Body=orjson.dumps(instances))
+
+        previous_instances = instances
 
         sleep(30)
 

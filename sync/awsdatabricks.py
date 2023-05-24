@@ -1,6 +1,7 @@
 """
 Utilities for interacting with Databricks
 """
+import datetime
 import io
 import logging
 import time
@@ -12,6 +13,7 @@ from typing import Any, TypeVar
 from urllib.parse import urlparse
 
 import boto3 as boto
+from orjson import orjson
 
 from sync.api.predictions import create_prediction_with_eventlog_bytes, get_prediction
 from sync.api.projects import get_project
@@ -336,10 +338,11 @@ def get_prediction_job(
 
                 if cluster_key := tasks[0].get("job_cluster_key"):
                     job_settings["job_clusters"] = [
-                        j
-                        for j in job_settings["job_clusters"]
-                        if j.get("job_cluster_key") != cluster_key
-                    ] + [{"job_cluster_key": cluster_key, "new_cluster": prediction_cluster}]
+                                                       j
+                                                       for j in job_settings["job_clusters"]
+                                                       if j.get("job_cluster_key") != cluster_key
+                                                   ] + [{"job_cluster_key": cluster_key,
+                                                         "new_cluster": prediction_cluster}]
                 else:
                     tasks[0]["new_cluster"] = prediction_cluster
                 return Response(result=job)
@@ -377,10 +380,11 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
                 project_cluster = _deep_update(cluster, project_cluster_settings)
                 if cluster_key := tasks[0].get("job_cluster_key"):
                     job_settings["job_clusters"] = [
-                        j
-                        for j in job_settings["job_clusters"]
-                        if j.get("job_cluster_key") != cluster_key
-                    ] + [{"job_cluster_key": cluster_key, "new_cluster": project_cluster}]
+                                                       j
+                                                       for j in job_settings["job_clusters"]
+                                                       if j.get("job_cluster_key") != cluster_key
+                                                   ] + [
+                                                       {"job_cluster_key": cluster_key, "new_cluster": project_cluster}]
                 else:
                     tasks[0]["new_cluster"] = project_cluster
 
@@ -797,6 +801,37 @@ def _wait_for_cluster_termination(
         cluster = get_default_client().get_cluster(cluster_id)
 
     return Response(error=DatabricksAPIError(**cluster))
+
+
+def monitor_cluster(cluster_id: str) -> None:
+    s3 = boto.client("s3")
+    aws_region_name = DB_CONFIG.aws_region_name
+    ec2 = boto.client("ec2", region_name=aws_region_name)
+
+    cluster = get_default_client().get_cluster(cluster_id)
+    logger.warn(cluster)
+
+    log_url = cluster.get("cluster_log_conf", {}).get("s3", {}).get("destination")
+
+    parsed_log_url = urlparse(log_url)
+    stripped_path = parsed_log_url.path.strip("/")
+
+    while True:
+        instances = ec2.describe_instances(
+            Filters=[
+                {"Name": "tag:Vendor", "Values": ["Databricks"]},
+                {"Name": "tag:ClusterId", "Values": [cluster_id]},
+                # {'Name': 'tag:JobId', 'Values': []}
+            ]
+        )
+
+        # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
+        #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
+        #  we make sure to re-strip our final Prefix
+        file_key = f"{stripped_path}/{cluster_id}/sync_data/{datetime.datetime.now()}.json".strip("/")
+        s3.put_object(Bucket=parsed_log_url.netloc, Key=file_key, Body=orjson.dumps(instances))
+
+        sleep(30)
 
 
 def _get_job_cluster(tasks: list[dict], job_clusters: list) -> Response[dict]:

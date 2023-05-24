@@ -12,6 +12,7 @@ from time import sleep
 from typing import Any, TypeVar
 from urllib.parse import urlparse
 
+from botocore.exceptions import ClientError
 import boto3 as boto
 from orjson import orjson
 
@@ -229,30 +230,14 @@ def _get_cluster_report(
 
     cluster = cluster_response.result
 
-    # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
-    #  uploading all the event log data before we start checking for it
-    cluster_events = _get_all_cluster_events(cluster_id)
-    aws_region_name = DB_CONFIG.aws_region_name
-    ec2 = boto.client("ec2", region_name=aws_region_name)
-
-    instances = ec2.describe_instances(
-        Filters=[
-            {"Name": "tag:Vendor", "Values": ["Databricks"]},
-            {"Name": "tag:ClusterId", "Values": [cluster_id]},
-            # {'Name': 'tag:JobId', 'Values': []}
-        ]
-    )
-    if not instances["Reservations"]:
-        no_instances_message = (
-            f"Unable to find any active or recently terminated instances for cluster `{cluster_id}` in `{aws_region_name}`. "
-            + "Please refer to the following documentation for options on how to address this - "
-            + "https://synccomputingcode.github.io/syncsparkpy/reference/awsdatabricks.html"
-        )
+    instances = _get_cluster_instances(cluster)
+    if isinstance(instances, DatabricksError):
         if allow_incomplete:
-            logger.warning(no_instances_message)
+            logger.warning(instances.message)
         else:
-            return Response(error=DatabricksError(message=no_instances_message))
+            return Response(error=instances)
 
+    cluster_events = _get_all_cluster_events(cluster_id)
     return Response(
         result=DatabricksClusterReport(
             plan_type=plan_type,
@@ -262,6 +247,67 @@ def _get_cluster_report(
             instances=instances,
         )
     )
+
+def _get_cluster_instances(cluster: dict) -> dict | DatabricksError:
+    cluster_instances = None
+    aws_region_name = DB_CONFIG.aws_region_name
+
+    cluster_id = cluster['cluster_id']
+    cluster_log_dest = _cluster_log_destination(cluster)
+
+    if cluster_log_dest:
+        s3 = boto.client("s3")
+        (_, bucket, base_prefix) = cluster_log_dest
+        cluster_instances_file_key = f"{base_prefix}/sync_data/cluster_instances.json"
+
+        try:
+            cluster_instances_file_response = s3.get_object(Bucket=bucket, Key=cluster_instances_file_key)
+            cluster_instances = orjson.loads(cluster_instances_file_response["Body"].read())
+        except ClientError as ex:
+            if ex.response['Error']['Code'] == 'NoSuchKey':
+                logger.warning(f"Could not find sync_data/cluster_instances.json for cluster: {cluster_id}")
+            else:
+                logger.error(
+                    f"Unexpected error encountered while attempting to fetch sync_data/cluster_instances.json: {ex}")
+
+    # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
+    #  are associated with this cluster
+    if cluster_instances is None:
+        ec2 = boto.client("ec2", region_name=aws_region_name)
+        cluster_instances = ec2.describe_instances(
+            Filters=[
+                {"Name": "tag:Vendor", "Values": ["Databricks"]},
+                {"Name": "tag:ClusterId", "Values": [cluster_id]},
+                # {'Name': 'tag:JobId', 'Values': []}
+            ]
+        )
+
+    if not cluster_instances["Reservations"]:
+        no_instances_message = (
+            f"Unable to find any active or recently terminated instances for cluster `{cluster_id}` in `{aws_region_name}`. "
+            + "Please refer to the following documentation for options on how to address this - "
+            + "https://synccomputingcode.github.io/syncsparkpy/reference/awsdatabricks.html"
+        )
+        return DatabricksError(message=no_instances_message)
+
+    return cluster_instances
+
+
+def _cluster_log_destination(cluster: dict) -> tuple[str, str, str] | None:
+    log_url = cluster.get("cluster_log_conf", {}).get("s3", {}).get("destination")
+    if log_url:
+        parsed_log_url = urlparse(log_url)
+        bucket = parsed_log_url.netloc
+        stripped_path = parsed_log_url.path.strip("/")
+
+        # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
+        #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
+        #  we make sure to re-strip our final Prefix
+        base_cluster_filepath_prefix = f"{stripped_path}/{cluster['cluster_id']}".strip("/")
+
+        return log_url, bucket, base_cluster_filepath_prefix
+
+    return None
 
 
 def record_run(
@@ -803,79 +849,79 @@ def _wait_for_cluster_termination(
     return Response(error=DatabricksAPIError(**cluster))
 
 
-def monitor_cluster(cluster_id: str) -> None:
-    s3 = boto.client("s3")
-    aws_region_name = DB_CONFIG.aws_region_name
-    ec2 = boto.client("ec2", region_name=aws_region_name)
+# _CLUSTER_INSTANCES_
 
+def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
-    logger.warn(cluster)
+    logger.warning(cluster)
 
-    log_url = cluster.get("cluster_log_conf", {}).get("s3", {}).get("destination")
+    cluster_log_dest = _cluster_log_destination(cluster)
+    if cluster_log_dest:
+        (_, bucket, base_prefix) = cluster_log_dest
 
-    parsed_log_url = urlparse(log_url)
-    stripped_path = parsed_log_url.path.strip("/")
+        aws_region_name = DB_CONFIG.aws_region_name
+        ec2 = boto.client("ec2", region_name=aws_region_name)
+        s3 = boto.client("s3")
 
-    # TODO - we may want to grab the Driver instance first by looking for an instance matching the $DB_DRIVER_IP.
-    #  Given the tags on the instance, we can then look for further worker instances.
+        # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
+        #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
+        #  we make sure to re-strip our final Prefix
+        file_key = f"{base_prefix}/sync_data/cluster_instances.json".strip("/")
+        previous_instances = None
 
-    # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
-    #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
-    #  we make sure to re-strip our final Prefix
-    file_key = f"{stripped_path}/{cluster_id}/sync_data/cluster_instances.json".strip("/")
-    previous_instances = None
+        while True:
+            try:
+                instances = ec2.describe_instances(
+                    Filters=[
+                        {"Name": "tag:Vendor", "Values": ["Databricks"]},
+                        {"Name": "tag:ClusterId", "Values": [cluster_id]},
+                        # {'Name': 'tag:JobId', 'Values': []}
+                    ]
+                )
 
-    while True:
-        instances = ec2.describe_instances(
-            Filters=[
-                {"Name": "tag:Vendor", "Values": ["Databricks"]},
-                {"Name": "tag:ClusterId", "Values": [cluster_id]},
-                # {'Name': 'tag:JobId', 'Values': []}
-            ]
-        )
+                if previous_instances:
+                    logger.info("Merging instances....")
+                    new_instances = [res for res in instances['Reservations']]
+                    new_instance_id_to_reservation = dict(zip(
+                        [res['Instances'][0]['InstanceId'] for res in new_instances],
+                        new_instances
+                    ))
 
-        if previous_instances:
-            logger.info("Merging instances....")
-            # TODO
-            new_instances = [res for res in instances['Reservations']]
-            new_instance_id_to_reservation = dict(zip(
-                [res['Instances'][0]['InstanceId'] for res in new_instances],
-                new_instances
-            ))
+                    old_instances = [res for res in previous_instances['Reservations']]
+                    old_instance_id_to_reservation = dict(zip(
+                        [res['Instances'][0]['InstanceId'] for res in old_instances],
+                        old_instances
+                    ))
 
-            old_instances = [res for res in previous_instances['Reservations']]
-            old_instance_id_to_reservation = dict(zip(
-                [res['Instances'][0]['InstanceId'] for res in old_instances],
-                old_instances
-            ))
+                    old_instance_ids = set(old_instance_id_to_reservation.keys())
+                    new_instance_ids = set(new_instance_id_to_reservation.keys())
 
-            old_instance_ids = set(old_instance_id_to_reservation.keys())
-            new_instance_ids = set(new_instance_id_to_reservation.keys())
+                    # If we have the exact same set of instances, prefer the new set...
+                    if old_instance_ids == new_instance_ids:
+                        instances = {
+                            'Reservations': new_instances
+                        }
+                    else:
+                        # Otherwise, update old references and include any new instances in the list
+                        newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
+                        updated_instance_ids = newly_added_instance_ids.intersection(old_instance_ids)
+                        removed_instance_ids = old_instance_ids.difference(updated_instance_ids)
 
-            # If we have the exact same set of instances, prefer the new set...
-            if old_instance_ids == new_instance_ids:
-                instances = {
-                    'Reservations': new_instances
-                }
-            else:
-                # Otherwise, update old references and include any new instances in the list
-                newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
-                updated_instance_ids = newly_added_instance_ids.intersection(old_instance_ids)
-                removed_instance_ids = old_instance_ids.difference(updated_instance_ids)
+                        removed_instances = [old_instance_id_to_reservation[id] for id in removed_instance_ids]
+                        updated_instances = [new_instance_id_to_reservation[id] for id in updated_instance_ids]
+                        new_instances = [new_instance_id_to_reservation[id] for id in newly_added_instance_ids]
 
-                removed_instances = [old_instance_id_to_reservation[id] for id in removed_instance_ids]
-                updated_instances = [new_instance_id_to_reservation[id] for id in updated_instance_ids]
-                new_instances = [new_instance_id_to_reservation[id] for id in newly_added_instance_ids]
+                        instances = {
+                            'Reservations': [*removed_instances, *updated_instances, *new_instances]
+                        }
 
-                instances = {
-                    'Reservations': [*removed_instances, *updated_instances, *new_instances]
-                }
+                s3.put_object(Bucket=bucket, Key=file_key, Body=orjson.dumps(instances))
 
-        s3.put_object(Bucket=parsed_log_url.netloc, Key=file_key, Body=orjson.dumps(instances))
+                previous_instances = instances
+            except Exception as e:
+                logger.error(f"Exception encountered while polling cluster: {e}")
 
-        previous_instances = instances
-
-        sleep(30)
+            sleep(polling_period)
 
 
 def _get_job_cluster(tasks: list[dict], job_clusters: list) -> Response[dict]:

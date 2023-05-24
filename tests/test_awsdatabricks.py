@@ -94,6 +94,144 @@ MOCK_RUN = {
     "format": "MULTI_TASK",
 }
 
+MOCK_RUN_WITH_SYNC_TASK = {
+    "job_id": 12345678910,
+    "run_id": 75778,
+    "creator_user_name": "user_name@domain.com",
+    "number_in_job": 75778,
+    "original_attempt_run_id": 75778,
+    "state": {
+        "life_cycle_state": "TERMINATED",
+        "result_state": "SUCCESS",
+        "state_message": "",
+        "user_cancelled_or_timedout": False,
+    },
+    "start_time": 1681249421062,
+    "setup_duration": 237000,
+    "execution_duration": 130000,
+    "cleanup_duration": 0,
+    "end_time": 1681249788433,
+    "trigger": "ONE_TIME",
+    "run_name": "test_job",
+    "run_page_url": "https://dbc-foo-bar.cloud.databricks.com/?o=12345678910#job/10987654321/run/12345",
+    "run_type": "JOB_RUN",
+    "tasks": [
+        {
+            "run_id": 76722,
+            "task_key": "my_task",
+            "notebook_task": {"notebook_path": "/Users/user/notebook", "source": "WORKSPACE"},
+            "job_cluster_key": "my_job_cluster",
+            "state": {
+                "life_cycle_state": "TERMINATED",
+                "result_state": "SUCCESS",
+                "state_message": "",
+                "user_cancelled_or_timedout": False,
+            },
+            "run_page_url": "https://dbc-foo-bar.cloud.databricks.com/?o=12345678910#job/10987654321/run/12345",
+            "start_time": 1681249421074,
+            "setup_duration": 237000,
+            "execution_duration": 130000,
+            "cleanup_duration": 0,
+            "end_time": 1681249788312,
+            "cluster_instance": {
+                "cluster_id": "0101-214342-tpi6qdp2",
+                "spark_context_id": "1443449481634833945",
+            },
+            "attempt_number": 0,
+        },
+        {
+            "run_id": 5541644,
+            "task_key": "sync_task",
+            "depends_on": [{"task_key": "load_all_lending_tables_full"}],
+            "notebook_task": {
+                "notebook_path": "/Users/pete.tamisin@synccomputing.com/sync_task",
+                "base_parameters": {
+                    "DATABRICKS_RUN_ID": "{{run_id}}",
+                    "DATABRICKS_JOB_ID": "{{job_id}}",
+                    "DATABRICKS_PARENT_RUN_ID": "{{parent_run_id}}",
+                    "DATABRICKS_TASK_KEY": "{{task_key}}",
+                },
+                "source": "WORKSPACE",
+            },
+            "job_cluster_key": "Job_cluster",
+            "state": {
+                "life_cycle_state": "RUNNING",
+                "state_message": "In run",
+                "user_cancelled_or_timedout": False,
+            },
+            "run_page_url": "https://dbc-d95d06ca-1d00.cloud.databricks.com/?o=656201176161048#job/1085772780706533/run/5541644",
+            "start_time": 1681249788312,
+            "setup_duration": 1000,
+            "execution_duration": 139000,
+            "cleanup_duration": 0,
+            "end_time": 1681249828312,
+            "cluster_instance": {
+                "cluster_id": "0518-173917-zp8ig48r",
+                "spark_context_id": "5062870523583018788",
+            },
+            "attempt_number": 0,
+        },
+    ],
+    "job_clusters": [
+        {
+            "job_cluster_key": "my_job_cluster",
+            "new_cluster": {
+                "cluster_name": "",
+                "spark_version": "12.2.x-scala2.12",
+                "aws_attributes": {
+                    "first_on_demand": 2,
+                    "availability": "SPOT_WITH_FALLBACK",
+                    "zone_id": "auto",
+                    "instance_profile_arn": "arn:aws:iam::123456789:instance-profile/my-iam-profile",
+                    "spot_bid_price_percent": 100,
+                    "ebs_volume_count": 0,
+                },
+                "node_type_id": "i3.4xlarge",
+                "driver_node_type_id": "i3.xlarge",
+                "cluster_log_conf": {
+                    "s3": {
+                        "destination": "s3://bucket/path/to/logs/",
+                        "region": "us-east-1",
+                        "enable_encryption": True,
+                        "canned_acl": "bucket-owner-full-control",
+                    }
+                },
+                "enable_elastic_disk": True,
+                "policy_id": "9C6308F703005DF2",
+                "data_security_mode": "SINGLE_USER",
+                "runtime_engine": "PHOTON",
+                "num_workers": 1,
+            },
+        },
+        {
+            "job_cluster_key": "sync_cluster",
+            "new_cluster": {
+                "cluster_name": "",
+                "spark_version": "13.1.x-scala2.12",
+                "spark_conf": {
+                    "spark.master": "local[*, 4]",
+                    "spark.databricks.cluster.profile": "singleNode",
+                },
+                "aws_attributes": {
+                    "first_on_demand": 1,
+                    "availability": "SPOT_WITH_FALLBACK",
+                    "zone_id": "us-east-1a",
+                    "instance_profile_arn": "arn:aws:iam::471881062455:instance-profile/databricks-workspace-stack-access-data-buckets",
+                    "spot_bid_price_percent": 100,
+                    "ebs_volume_count": 0,
+                },
+                "node_type_id": "i3.xlarge",
+                "custom_tags": {"ResourceClass": "SingleNode"},
+                "enable_elastic_disk": True,
+                "data_security_mode": "LEGACY_SINGLE_USER_STANDARD",
+                "runtime_engine": "STANDARD",
+                "num_workers": 0,
+            },
+        },
+    ],
+    "format": "MULTI_TASK",
+}
+
 MOCK_CLUSTER = {
     "cluster_id": "0101-214342-tpi6qdp2",
     "creator_user_name": "user_name@domain.com",
@@ -322,7 +460,10 @@ def test_create_prediction_for_failed_run(respx_mock):
     assert result.error
     assert isinstance(result.error, DatabricksAPIError)
 
-    failure_response = {"state": {"result_state": "FAILED"}}
+    failure_response = {
+        "state": {"result_state": "FAILED"},
+        "tasks": [{"task_key": "tpcds_2000GB_group_q76_q80", "state": {"result_state": "FAILED"}}],
+    }
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=failure_response)
     )
@@ -482,6 +623,88 @@ def test_create_prediction_for_run_success(respx_mock):
     with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
         mock_aws_client.side_effect = client_patch
         result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
+
+    assert not result.error
+    assert result.result
+
+
+@patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
+def test_create_prediction_for_run_with_pending_task(respx_mock):
+    respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
+        return_value=Response(200, json=MOCK_RUN_WITH_SYNC_TASK)
+    )
+
+    respx_mock.get(
+        "https://*.cloud.databricks.com/api/2.0/clusters/get?cluster_id=0101-214342-tpi6qdp2"
+    ).mock(return_value=Response(200, json=MOCK_CLUSTER))
+
+    respx_mock.post("https://*.cloud.databricks.com/api/2.0/clusters/events").mock(
+        return_value=Response(200, json={"events": [], "total_count": 0})
+    )
+
+    respx_mock.post("/v1/auth/token").mock(
+        return_value=Response(
+            200,
+            json={
+                "result": {
+                    "access_token": "notarealtoken",
+                    "expires_at_utc": "2022-09-01T20:54:48Z",
+                }
+            },
+        )
+    )
+
+    respx_mock.post("/v1/autotuner/predictions").mock(
+        return_value=Response(200, json=MOCK_PREDICTION_CREATION_RESPONSE)
+    )
+
+    respx_mock.post(MOCK_PREDICTION_CREATION_RESPONSE["result"]["upload_details"]["url"]).mock(
+        return_value=Response(204)
+    )
+
+    ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
+    ec2_stubber = Stubber(ec2)
+    ec2_stubber.add_response("describe_instances", MOCK_INSTANCES)
+
+    s3_file_prefix = "path/to/logs/0101-214342-tpi6qdp2/eventlog/0101-214342-tpi6qdp2"
+
+    s3 = boto.client("s3")
+    s3_stubber = Stubber(s3)
+    s3_stubber.add_response(
+        "list_objects_v2",
+        {
+            "Contents": [
+                {
+                    "Key": f"{s3_file_prefix}/eventlog",
+                    "LastModified": datetime.utcfromtimestamp(1681249791560 / 1000),
+                }
+            ]
+        },
+        {"Bucket": "bucket", "Prefix": s3_file_prefix},
+    )
+    s3_stubber.add_response(
+        "get_object",
+        {
+            "ContentType": "application/octet-stream",
+            "ContentLength": 0,
+            "Body": StreamingBody(io.BytesIO(), 0),
+        },
+        {"Bucket": "bucket", "Key": f"{s3_file_prefix}/eventlog"},
+    )
+
+    def client_patch(name, **kwargs):
+        match name:
+            case "s3":
+                return s3
+            case "ec2":
+                return ec2
+
+    with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
+        mock_aws_client.side_effect = client_patch
+        result = create_prediction_for_run(
+            "75778", "Premium", "Jobs Compute", "my-project-id", exclude_tasks=["sync_task"]
+        )
 
     assert not result.error
     assert result.result

@@ -3,7 +3,9 @@ Utilities for interacting with Databricks
 """
 import io
 import logging
+import time
 import zipfile
+from collections.abc import Collection
 from pathlib import Path
 from time import sleep
 from typing import Any, TypeVar
@@ -110,13 +112,13 @@ def get_cluster(cluster_id: str) -> Response[dict]:
     return Response(result=cluster)
 
 
-# TODO - Databricks configuration documentation
 def create_prediction_for_run(
     run_id: str,
     plan_type: str,
     compute_type: str,
     project_id: str = None,
     allow_incomplete_cluster_report: bool = False,
+    exclude_tasks: Collection[str] | None = None,
 ) -> Response[str]:
     """Create a prediction for the specified Databricks run.
 
@@ -130,6 +132,8 @@ def create_prediction_for_run(
     :type project_id: str, optional
     :param allow_incomplete_cluster_report: Whether creating a prediction with incomplete cluster report data should be allowable
     :type allow_incomplete_cluster_report: bool, optional, defaults to False
+    :param exclude_tasks: Keys of tasks (task names) to exclude from the prediction
+    :type exclude_tasks: Collection[str], optional, defaults to None
     :return: prediction ID
     :rtype: Response[str]
     """
@@ -137,10 +141,14 @@ def create_prediction_for_run(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    if run["state"].get("result_state") != "SUCCESS":
-        return Response(error=DatabricksError(message="Run did not successfully complete"))
+    tasks = [
+        task for task in run["tasks"] if not exclude_tasks or task["task_key"] not in exclude_tasks
+    ]
 
-    cluster_id_response = _get_run_cluster_id(run["tasks"])
+    if any(task["state"].get("result_state") != "SUCCESS" for task in tasks):
+        return Response(error=DatabricksError(message="Tasks did not complete successfully"))
+
+    cluster_id_response = _get_run_cluster_id(tasks)
     if cluster_id := cluster_id_response.result:
         # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
         #  uploading all the event log data before we start checking for it
@@ -169,7 +177,11 @@ def create_prediction_for_run(
 
 
 def get_cluster_report(
-    run_id: str, plan_type: str, compute_type: str, allow_incomplete: bool = False
+    run_id: str,
+    plan_type: str,
+    compute_type: str,
+    allow_incomplete: bool = False,
+    exclude_tasks: Collection[str] | None = None,
 ) -> Response[DatabricksClusterReport]:
     """Fetches the cluster information required to create a Sync prediction
 
@@ -181,6 +193,8 @@ def get_cluster_report(
     :type compute_type: str
     :param allow_incomplete: Whether creating a cluster report with incomplete data should be allowable
     :type allow_incomplete: bool, optional, defaults to False
+    :param exclude_tasks: Keys of tasks (task names) to exclude from the report
+    :type exclude_tasks: Collection[str], optional, defaults to None
     :return: cluster report
     :rtype: Response[DatabricksClusterReport]
     """
@@ -188,10 +202,14 @@ def get_cluster_report(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    if run["state"].get("result_state") != "SUCCESS":
-        return Response(error=DatabricksError(message="Run did not successfully complete"))
+    tasks = [
+        task for task in run["tasks"] if not exclude_tasks or task["task_key"] not in exclude_tasks
+    ]
 
-    cluster_id_response = _get_run_cluster_id(run["tasks"])
+    if any(task["state"].get("result_state") != "SUCCESS" for task in tasks):
+        return Response(error=DatabricksError(message="Tasks did not complete successfully"))
+
+    cluster_id_response = _get_run_cluster_id(tasks)
     if cluster_id := cluster_id_response.result:
         return _get_cluster_report(cluster_id, plan_type, compute_type, allow_incomplete)
 
@@ -201,9 +219,13 @@ def get_cluster_report(
 def _get_cluster_report(
     cluster_id: str, plan_type: str, compute_type: str, allow_incomplete: bool
 ) -> Response[DatabricksClusterReport]:
-    cluster = get_default_client().get_cluster(cluster_id)
-    if "error_code" in cluster:
-        return Response(error=DatabricksAPIError(**cluster))
+    # Cluster `terminated_time` can be a few seconds after the start of the next task in which
+    # this may be executing.
+    cluster_response = _wait_for_cluster_termination(cluster_id, timeout_seconds=60, poll_seconds=5)
+    if cluster_response.error:
+        return cluster_response
+
+    cluster = cluster_response.result
 
     # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
     #  uploading all the event log data before we start checking for it
@@ -240,7 +262,14 @@ def _get_cluster_report(
     )
 
 
-def record_run(run_id: str, plan_type: str, compute_type: str, project_id: str) -> Response[str]:
+def record_run(
+    run_id: str,
+    plan_type: str,
+    compute_type: str,
+    project_id: str,
+    allow_incomplete_cluster_report: bool = False,
+    exclude_tasks: Collection[str] | None = None,
+) -> Response[str]:
     """See :py:func:`~create_prediction_for_run`
 
     :param run_id: Databricks run ID
@@ -250,11 +279,17 @@ def record_run(run_id: str, plan_type: str, compute_type: str, project_id: str) 
     :param compute_type: e.g. "Jobs Compute"
     :type compute_type: str
     :param project_id: Sync project ID, defaults to None
-    :type project_id: str, optional
+    :type project_id: str
+    :param allow_incomplete_cluster_report: Whether creating a prediction with incomplete cluster report data should be allowable
+    :type allow_incomplete_cluster_report: bool, optional, defaults to False
+    :param exclude_tasks: Keys of tasks (task names) to exclude
+    :type exclude_tasks: Collection[str], optional, defaults to None
     :return: prediction ID
     :rtype: Response[str]
     """
-    return create_prediction_for_run(run_id, plan_type, compute_type, project_id)
+    return create_prediction_for_run(
+        run_id, plan_type, compute_type, project_id, allow_incomplete_cluster_report, exclude_tasks
+    )
 
 
 def get_prediction_job(
@@ -713,25 +748,51 @@ def wait_for_run_and_cluster(run_id: str) -> Response[str]:
 
 
 def terminate_cluster(cluster_id: str) -> Response[str]:
-    """Terminates Databricks cluster and waits to return final state.
+    """Terminate Databricks cluster and wait to return final state.
 
     :param cluster_id: Databricks cluster ID
     :type cluster_id: str
-    :return: terminal state: "TERMINATED"
+    :return: Databricks cluster object with state: "TERMINATED"
     :rtype: Response[str]
     """
+    cluster = get_default_client().get_cluster(cluster_id)
+    if "error_code" not in cluster:
+        state = cluster.get("state")
+        match state:
+            case "TERMINATED":
+                return Response(result=cluster)
+            case "TERMINATING":
+                return _wait_for_cluster_termination(cluster_id)
+            case "PENDING" | "RUNNING" | "RESTARTING" | "RESIZING":
+                get_default_client().delete_cluster(cluster_id)
+                return _wait_for_cluster_termination(cluster_id)
+            case _:
+                return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
+
+    return Response(error=DatabricksAPIError(**cluster))
+
+
+def _wait_for_cluster_termination(
+    cluster_id: str, timeout_seconds=300, poll_seconds=10
+) -> Response[str]:
+    start_seconds = time.time()
     cluster = get_default_client().get_cluster(cluster_id)
     while "error_code" not in cluster:
         state = cluster.get("state")
         match state:
             case "TERMINATED":
-                return Response(result=state)
+                return Response(result=cluster)
             case "TERMINATING":
-                sleep(30)
-            case "PENDING" | "RUNNING" | "RESTARTING" | "RESIZING":
-                get_default_client().delete_cluster(cluster_id)
+                sleep(poll_seconds)
             case _:
                 return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
+
+        if time.time() - start_seconds > timeout_seconds:
+            return Response(
+                error=DatabricksError(
+                    message=f"Cluster failed to terminate after waiting {timeout_seconds} seconds"
+                )
+            )
 
         cluster = get_default_client().get_cluster(cluster_id)
 

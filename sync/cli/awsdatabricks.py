@@ -118,7 +118,5 @@ def get_cluster_report(
 
 @aws_databricks.command
 @click.argument("cluster-id")
-def monitor_cluster(
-    cluster_id: str,
-):
+def monitor_cluster(cluster_id: str):
     awsdatabricks.monitor_cluster(cluster_id)

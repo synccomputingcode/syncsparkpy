@@ -12,8 +12,8 @@ from time import sleep
 from typing import Any, TypeVar
 from urllib.parse import urlparse
 
-from botocore.exceptions import ClientError
 import boto3 as boto
+from botocore.exceptions import ClientError
 from orjson import orjson
 
 from sync.api.predictions import create_prediction_with_eventlog_bytes, get_prediction
@@ -221,7 +221,7 @@ def get_cluster_report(
 
 def _get_cluster_report(
     cluster_id: str, plan_type: str, compute_type: str, allow_incomplete: bool
-) -> Response[DatabricksClusterReport]:
+) -> Response[DatabricksClusterReport | dict]:
     # Cluster `terminated_time` can be a few seconds after the start of the next task in which
     # this may be executing.
     cluster_response = _wait_for_cluster_termination(cluster_id, timeout_seconds=60, poll_seconds=5)
@@ -248,11 +248,12 @@ def _get_cluster_report(
         )
     )
 
+
 def _get_cluster_instances(cluster: dict) -> dict | DatabricksError:
     cluster_instances = None
     aws_region_name = DB_CONFIG.aws_region_name
 
-    cluster_id = cluster['cluster_id']
+    cluster_id = cluster["cluster_id"]
     cluster_log_dest = _cluster_log_destination(cluster)
 
     if cluster_log_dest:
@@ -261,14 +262,19 @@ def _get_cluster_instances(cluster: dict) -> dict | DatabricksError:
         cluster_instances_file_key = f"{base_prefix}/sync_data/cluster_instances.json"
 
         try:
-            cluster_instances_file_response = s3.get_object(Bucket=bucket, Key=cluster_instances_file_key)
+            cluster_instances_file_response = s3.get_object(
+                Bucket=bucket, Key=cluster_instances_file_key
+            )
             cluster_instances = orjson.loads(cluster_instances_file_response["Body"].read())
         except ClientError as ex:
-            if ex.response['Error']['Code'] == 'NoSuchKey':
-                logger.warning(f"Could not find sync_data/cluster_instances.json for cluster: {cluster_id}")
+            if ex.response["Error"]["Code"] == "NoSuchKey":
+                logger.warning(
+                    f"Could not find sync_data/cluster_instances.json for cluster: {cluster_id}"
+                )
             else:
                 logger.error(
-                    f"Unexpected error encountered while attempting to fetch sync_data/cluster_instances.json: {ex}")
+                    f"Unexpected error encountered while attempting to fetch sync_data/cluster_instances.json: {ex}"
+                )
 
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
@@ -384,11 +390,10 @@ def get_prediction_job(
 
                 if cluster_key := tasks[0].get("job_cluster_key"):
                     job_settings["job_clusters"] = [
-                                                       j
-                                                       for j in job_settings["job_clusters"]
-                                                       if j.get("job_cluster_key") != cluster_key
-                                                   ] + [{"job_cluster_key": cluster_key,
-                                                         "new_cluster": prediction_cluster}]
+                        j
+                        for j in job_settings["job_clusters"]
+                        if j.get("job_cluster_key") != cluster_key
+                    ] + [{"job_cluster_key": cluster_key, "new_cluster": prediction_cluster}]
                 else:
                     tasks[0]["new_cluster"] = prediction_cluster
                 return Response(result=job)
@@ -426,11 +431,10 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
                 project_cluster = _deep_update(cluster, project_cluster_settings)
                 if cluster_key := tasks[0].get("job_cluster_key"):
                     job_settings["job_clusters"] = [
-                                                       j
-                                                       for j in job_settings["job_clusters"]
-                                                       if j.get("job_cluster_key") != cluster_key
-                                                   ] + [
-                                                       {"job_cluster_key": cluster_key, "new_cluster": project_cluster}]
+                        j
+                        for j in job_settings["job_clusters"]
+                        if j.get("job_cluster_key") != cluster_key
+                    ] + [{"job_cluster_key": cluster_key, "new_cluster": project_cluster}]
                 else:
                     tasks[0]["new_cluster"] = project_cluster
 
@@ -797,7 +801,7 @@ def wait_for_run_and_cluster(run_id: str) -> Response[str]:
     return Response(error=DatabricksAPIError(**run))
 
 
-def terminate_cluster(cluster_id: str) -> Response[str]:
+def terminate_cluster(cluster_id: str) -> Response[dict]:
     """Terminate Databricks cluster and wait to return final state.
 
     :param cluster_id: Databricks cluster ID
@@ -824,7 +828,7 @@ def terminate_cluster(cluster_id: str) -> Response[str]:
 
 def _wait_for_cluster_termination(
     cluster_id: str, timeout_seconds=300, poll_seconds=10
-) -> Response[str]:
+) -> Response[dict]:
     start_seconds = time.time()
     cluster = get_default_client().get_cluster(cluster_id)
     while "error_code" not in cluster:
@@ -849,12 +853,8 @@ def _wait_for_cluster_termination(
     return Response(error=DatabricksAPIError(**cluster))
 
 
-# _CLUSTER_INSTANCES_
-
 def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
-    logger.warning(cluster)
-
     cluster_log_dest = _cluster_log_destination(cluster)
     if cluster_log_dest:
         (_, bucket, base_prefix) = cluster_log_dest
@@ -881,38 +881,48 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
 
                 if previous_instances:
                     logger.info("Merging instances....")
-                    new_instances = [res for res in instances['Reservations']]
-                    new_instance_id_to_reservation = dict(zip(
-                        [res['Instances'][0]['InstanceId'] for res in new_instances],
-                        new_instances
-                    ))
+                    new_instances = [res for res in instances["Reservations"]]
+                    new_instance_id_to_reservation = dict(
+                        zip(
+                            [res["Instances"][0]["InstanceId"] for res in new_instances],
+                            new_instances,
+                        )
+                    )
 
-                    old_instances = [res for res in previous_instances['Reservations']]
-                    old_instance_id_to_reservation = dict(zip(
-                        [res['Instances'][0]['InstanceId'] for res in old_instances],
-                        old_instances
-                    ))
+                    old_instances = [res for res in previous_instances["Reservations"]]
+                    old_instance_id_to_reservation = dict(
+                        zip(
+                            [res["Instances"][0]["InstanceId"] for res in old_instances],
+                            old_instances,
+                        )
+                    )
 
                     old_instance_ids = set(old_instance_id_to_reservation.keys())
                     new_instance_ids = set(new_instance_id_to_reservation.keys())
 
                     # If we have the exact same set of instances, prefer the new set...
                     if old_instance_ids == new_instance_ids:
-                        instances = {
-                            'Reservations': new_instances
-                        }
+                        instances = {"Reservations": new_instances}
                     else:
                         # Otherwise, update old references and include any new instances in the list
                         newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
-                        updated_instance_ids = newly_added_instance_ids.intersection(old_instance_ids)
+                        updated_instance_ids = newly_added_instance_ids.intersection(
+                            old_instance_ids
+                        )
                         removed_instance_ids = old_instance_ids.difference(updated_instance_ids)
 
-                        removed_instances = [old_instance_id_to_reservation[id] for id in removed_instance_ids]
-                        updated_instances = [new_instance_id_to_reservation[id] for id in updated_instance_ids]
-                        new_instances = [new_instance_id_to_reservation[id] for id in newly_added_instance_ids]
+                        removed_instances = [
+                            old_instance_id_to_reservation[id] for id in removed_instance_ids
+                        ]
+                        updated_instances = [
+                            new_instance_id_to_reservation[id] for id in updated_instance_ids
+                        ]
+                        new_instances = [
+                            new_instance_id_to_reservation[id] for id in newly_added_instance_ids
+                        ]
 
                         instances = {
-                            'Reservations': [*removed_instances, *updated_instances, *new_instances]
+                            "Reservations": [*removed_instances, *updated_instances, *new_instances]
                         }
 
                 s3.put_object(Bucket=bucket, Key=file_key, Body=orjson.dumps(instances))
@@ -922,6 +932,8 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
                 logger.error(f"Exception encountered while polling cluster: {e}")
 
             sleep(polling_period)
+    else:
+        logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
 
 
 def _get_job_cluster(tasks: list[dict], job_clusters: list) -> Response[dict]:

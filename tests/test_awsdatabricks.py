@@ -5,6 +5,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 import boto3 as boto
+import orjson
 from botocore.response import StreamingBody
 from botocore.stub import Stubber
 from httpx import Response
@@ -527,12 +528,18 @@ def test_create_prediction_for_run_no_instances_found(respx_mock):
     ec2_stubber = Stubber(ec2)
     ec2_stubber.add_response("describe_instances", {"Reservations": []})
 
+    s3 = boto.client("s3")
+    s3_stubber = Stubber(s3)
+    s3_stubber.add_client_error("get_object", "NoSuchKey")
+
     def client_patch(name, **kwargs):
         match name:
             case "ec2":
                 return ec2
+            case "s3":
+                return s3
 
-    with ec2_stubber, patch("boto3.client") as mock_aws_client:
+    with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
         mock_aws_client.side_effect = client_patch
         result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
 
@@ -550,7 +557,6 @@ MOCK_PREDICTION_CREATION_RESPONSE = {
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
 @patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
 def test_create_prediction_for_run_success(respx_mock):
-
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=MOCK_RUN)
     )
@@ -587,21 +593,23 @@ def test_create_prediction_for_run_success(respx_mock):
     ec2_stubber = Stubber(ec2)
     ec2_stubber.add_response("describe_instances", MOCK_INSTANCES)
 
-    s3_file_prefix = "path/to/logs/0101-214342-tpi6qdp2/eventlog/0101-214342-tpi6qdp2"
+    base_prefix = "path/to/logs/0101-214342-tpi6qdp2"
+    eventlog_file_prefix = f"{base_prefix}/eventlog/0101-214342-tpi6qdp2"
 
     s3 = boto.client("s3")
     s3_stubber = Stubber(s3)
+    s3_stubber.add_client_error("get_object", "NoSuchKey")
     s3_stubber.add_response(
         "list_objects_v2",
         {
             "Contents": [
                 {
-                    "Key": f"{s3_file_prefix}/eventlog",
+                    "Key": f"{eventlog_file_prefix}/eventlog",
                     "LastModified": datetime.utcfromtimestamp(1681249791560 / 1000),
                 }
             ]
         },
-        {"Bucket": "bucket", "Prefix": s3_file_prefix},
+        {"Bucket": "bucket", "Prefix": eventlog_file_prefix},
     )
     s3_stubber.add_response(
         "get_object",
@@ -610,7 +618,106 @@ def test_create_prediction_for_run_success(respx_mock):
             "ContentLength": 0,
             "Body": StreamingBody(io.BytesIO(), 0),
         },
-        {"Bucket": "bucket", "Key": f"{s3_file_prefix}/eventlog"},
+        {"Bucket": "bucket", "Key": f"{eventlog_file_prefix}/eventlog"},
+    )
+
+    def client_patch(name, **kwargs):
+        match name:
+            case "s3":
+                return s3
+            case "ec2":
+                return ec2
+
+    with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
+        mock_aws_client.side_effect = client_patch
+        result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
+
+    assert not result.error
+    assert result.result
+
+
+@patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
+def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock):
+    respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
+        return_value=Response(200, json=MOCK_RUN)
+    )
+
+    respx_mock.get(
+        "https://*.cloud.databricks.com/api/2.0/clusters/get?cluster_id=0101-214342-tpi6qdp2"
+    ).mock(return_value=Response(200, json=MOCK_CLUSTER))
+
+    respx_mock.post("https://*.cloud.databricks.com/api/2.0/clusters/events").mock(
+        return_value=Response(200, json={"events": [], "total_count": 0})
+    )
+
+    respx_mock.post("/v1/auth/token").mock(
+        return_value=Response(
+            200,
+            json={
+                "result": {
+                    "access_token": "notarealtoken",
+                    "expires_at_utc": "2022-09-01T20:54:48Z",
+                }
+            },
+        )
+    )
+
+    respx_mock.post("/v1/autotuner/predictions").mock(
+        return_value=Response(200, json=MOCK_PREDICTION_CREATION_RESPONSE)
+    )
+
+    respx_mock.post(MOCK_PREDICTION_CREATION_RESPONSE["result"]["upload_details"]["url"]).mock(
+        return_value=Response(204)
+    )
+
+    base_prefix = "path/to/logs/0101-214342-tpi6qdp2"
+    eventlog_file_prefix = f"{base_prefix}/eventlog/0101-214342-tpi6qdp2"
+    cluster_instances_file_key = f"{base_prefix}/sync_data/cluster_instances.json"
+
+    # Don't add any responses for this one as we expect all the instance data we need to be available
+    #  in the cluster_instances.json file
+    ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
+    ec2_stubber = Stubber(ec2)
+
+    s3 = boto.client("s3")
+    s3_stubber = Stubber(s3)
+    mock_instances_bytes = orjson.dumps(
+        MOCK_INSTANCES,
+        option=orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS | orjson.OPT_NAIVE_UTC,
+    )
+    s3_stubber.add_response(
+        "get_object",
+        {
+            "ContentType": "application/octet-stream",
+            "ContentLength": len(mock_instances_bytes),
+            "Body": StreamingBody(
+                io.BytesIO(mock_instances_bytes),
+                len(mock_instances_bytes),
+            ),
+        },
+        {"Bucket": "bucket", "Key": cluster_instances_file_key},
+    )
+    s3_stubber.add_response(
+        "list_objects_v2",
+        {
+            "Contents": [
+                {
+                    "Key": f"{eventlog_file_prefix}/eventlog",
+                    "LastModified": datetime.utcfromtimestamp(1681249791560 / 1000),
+                }
+            ]
+        },
+        {"Bucket": "bucket", "Prefix": eventlog_file_prefix},
+    )
+    s3_stubber.add_response(
+        "get_object",
+        {
+            "ContentType": "application/octet-stream",
+            "ContentLength": 0,
+            "Body": StreamingBody(io.BytesIO(), 0),
+        },
+        {"Bucket": "bucket", "Key": f"{eventlog_file_prefix}/eventlog"},
     )
 
     def client_patch(name, **kwargs):
@@ -671,6 +778,7 @@ def test_create_prediction_for_run_with_pending_task(respx_mock):
 
     s3 = boto.client("s3")
     s3_stubber = Stubber(s3)
+    s3_stubber.add_client_error("get_object", "NoSuchKey")
     s3_stubber.add_response(
         "list_objects_v2",
         {
@@ -758,6 +866,7 @@ def test_create_prediction_for_run_event_log_upload_delay(
 
     s3 = boto.client("s3")
     s3_stubber = Stubber(s3)
+    s3_stubber.add_client_error("get_object", "NoSuchKey")
 
     # Test no event log files present yet
     s3_stubber.add_response(

@@ -1,7 +1,6 @@
 """
 Utilities for interacting with Databricks
 """
-import datetime
 import io
 import logging
 import time

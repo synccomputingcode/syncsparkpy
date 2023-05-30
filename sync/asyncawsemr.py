@@ -36,12 +36,14 @@ async def create_prediction_for_cluster(cluster_id: str, region_name: str = None
     :rtype: Response[str]
     """
     report_response = get_cluster_report(cluster_id, region_name)
-    if cluster_report := report_response.result:
+    cluster_report = report_response.result
+    if cluster_report:
         eventlog_response = _get_eventlog_url_from_cluster_report(cluster_report)
         if eventlog_response.error:
             return eventlog_response
 
-        if eventlog_http_url := eventlog_response.result:
+        eventlog_http_url = eventlog_response.result
+        if eventlog_http_url:
             return await create_prediction(Platform.AWS_EMR, cluster_report, eventlog_http_url)
 
         return eventlog_response

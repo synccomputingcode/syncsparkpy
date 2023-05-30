@@ -8,7 +8,7 @@ import zipfile
 from collections.abc import Collection
 from pathlib import Path
 from time import sleep
-from typing import Any, TypeVar
+from typing import Any, TypeVar, Union, Tuple
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -120,7 +120,7 @@ def create_prediction_for_run(
     compute_type: str,
     project_id: str = None,
     allow_incomplete_cluster_report: bool = False,
-    exclude_tasks: Collection[str] | None = None,
+    exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[str]:
     """Create a prediction for the specified Databricks run.
 
@@ -183,7 +183,7 @@ def get_cluster_report(
     plan_type: str,
     compute_type: str,
     allow_incomplete: bool = False,
-    exclude_tasks: Collection[str] | None = None,
+    exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[DatabricksClusterReport]:
     """Fetches the cluster information required to create a Sync prediction
 
@@ -220,7 +220,7 @@ def get_cluster_report(
 
 def _get_cluster_report(
     cluster_id: str, plan_type: str, compute_type: str, allow_incomplete: bool
-) -> Response[DatabricksClusterReport | dict]:
+) -> Response[Union[DatabricksClusterReport, dict]]:
     # Cluster `terminated_time` can be a few seconds after the start of the next task in which
     # this may be executing.
     cluster_response = _wait_for_cluster_termination(cluster_id, timeout_seconds=60, poll_seconds=5)
@@ -248,7 +248,7 @@ def _get_cluster_report(
     )
 
 
-def _get_cluster_instances(cluster: dict) -> dict | DatabricksError:
+def _get_cluster_instances(cluster: dict) -> Union[dict, DatabricksError]:
     cluster_instances = None
     aws_region_name = DB_CONFIG.aws_region_name
 
@@ -298,7 +298,7 @@ def _get_cluster_instances(cluster: dict) -> dict | DatabricksError:
     return cluster_instances
 
 
-def _cluster_log_destination(cluster: dict) -> tuple[str, str, str] | None:
+def _cluster_log_destination(cluster: dict) -> Union[Tuple[str, str, str], None]:
     log_url = cluster.get("cluster_log_conf", {}).get("s3", {}).get("destination")
     if log_url:
         parsed_log_url = urlparse(log_url)
@@ -321,7 +321,7 @@ def record_run(
     compute_type: str,
     project_id: str,
     allow_incomplete_cluster_report: bool = False,
-    exclude_tasks: Collection[str] | None = None,
+    exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[str]:
     """See :py:func:`~create_prediction_for_run`
 

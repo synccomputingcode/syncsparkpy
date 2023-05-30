@@ -4,7 +4,7 @@ Utilities providing configuration to the SDK
 
 import json
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Union
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -39,8 +39,8 @@ class APIKey(BaseSettings):
 
 
 class Configuration(BaseSettings):
-    default_project_url: str | None = Field(description="default location for Sync project data")
-    default_prediction_preference: Preference | None = Preference.BALANCED
+    default_project_url: Union[str, None] = Field(description="default location for Sync project data")
+    default_prediction_preference: Union[Preference, None] = Preference.BALANCED
     api_url: str = Field("https://api.synccomputing.com", env="SYNC_API_URL")
 
     @validator("default_project_url")

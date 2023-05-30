@@ -533,11 +533,10 @@ def test_create_prediction_for_run_no_instances_found(respx_mock):
     s3_stubber.add_client_error("get_object", "NoSuchKey")
 
     def client_patch(name, **kwargs):
-        match name:
-            case "ec2":
-                return ec2
-            case "s3":
-                return s3
+        if name == "ec2":
+            return ec2
+        elif name == "s3":
+            return s3
 
     with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
         mock_aws_client.side_effect = client_patch
@@ -622,11 +621,10 @@ def test_create_prediction_for_run_success(respx_mock):
     )
 
     def client_patch(name, **kwargs):
-        match name:
-            case "s3":
-                return s3
-            case "ec2":
-                return ec2
+        if name == "ec2":
+            return ec2
+        elif name == "s3":
+            return s3
 
     with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
         mock_aws_client.side_effect = client_patch
@@ -721,11 +719,10 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
     )
 
     def client_patch(name, **kwargs):
-        match name:
-            case "s3":
-                return s3
-            case "ec2":
-                return ec2
+        if name == "ec2":
+            return ec2
+        elif name == "s3":
+            return s3
 
     with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
         mock_aws_client.side_effect = client_patch
@@ -802,11 +799,10 @@ def test_create_prediction_for_run_with_pending_task(respx_mock):
     )
 
     def client_patch(name, **kwargs):
-        match name:
-            case "s3":
-                return s3
-            case "ec2":
-                return ec2
+        if name == "ec2":
+            return ec2
+        elif name == "s3":
+            return s3
 
     with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
         mock_aws_client.side_effect = client_patch
@@ -944,11 +940,10 @@ def test_create_prediction_for_run_event_log_upload_delay(
     )
 
     def client_patch(name, **kwargs):
-        match name:
-            case "s3":
-                return s3
-            case "ec2":
-                return ec2
+        if name == "ec2":
+            return ec2
+        elif name == "s3":
+            return s3
 
     with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
         mock_aws_client.side_effect = client_patch

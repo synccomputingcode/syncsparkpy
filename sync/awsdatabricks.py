@@ -811,16 +811,15 @@ def terminate_cluster(cluster_id: str) -> Response[dict]:
     cluster = get_default_client().get_cluster(cluster_id)
     if "error_code" not in cluster:
         state = cluster.get("state")
-        match state:
-            case "TERMINATED":
-                return Response(result=cluster)
-            case "TERMINATING":
-                return _wait_for_cluster_termination(cluster_id)
-            case "PENDING" | "RUNNING" | "RESTARTING" | "RESIZING":
-                get_default_client().delete_cluster(cluster_id)
-                return _wait_for_cluster_termination(cluster_id)
-            case _:
-                return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
+        if state == "TERMINATED":
+            return Response(result=cluster)
+        elif state == "TERMINATING":
+            return _wait_for_cluster_termination(cluster_id)
+        elif state in {"PENDING", "RUNNING", "RESTARTING", "RESIZING"}:
+            get_default_client().delete_cluster(cluster_id)
+            return _wait_for_cluster_termination(cluster_id)
+        else:
+            return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
 
     return Response(error=DatabricksAPIError(**cluster))
 
@@ -832,13 +831,12 @@ def _wait_for_cluster_termination(
     cluster = get_default_client().get_cluster(cluster_id)
     while "error_code" not in cluster:
         state = cluster.get("state")
-        match state:
-            case "TERMINATED":
-                return Response(result=cluster)
-            case "TERMINATING":
-                sleep(poll_seconds)
-            case _:
-                return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
+        if state == "TERMINATED":
+            return Response(result=cluster)
+        elif state == "TERMINATING":
+            sleep(poll_seconds)
+        else:
+            return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
 
         if time.time() - start_seconds > timeout_seconds:
             return Response(
@@ -951,13 +949,14 @@ def _get_job_cluster(tasks: list[dict], job_clusters: list) -> Response[dict]:
 
 def _get_run_cluster_id(tasks: list[dict]) -> Response[str]:
     cluster_ids = {task["cluster_instance"]["cluster_id"] for task in tasks}
-    match len(cluster_ids):
-        case 1:
-            return Response(result=cluster_ids.pop())
-        case 0:
-            return Response(error=DatabricksError(message="No cluster found for tasks"))
-        case _:
-            return Response(error=DatabricksError(message="More than 1 cluster found for tasks"))
+    num_ids = len(cluster_ids)
+
+    if num_ids == 1:
+        return Response(result=cluster_ids.pop())
+    elif num_ids == 0:
+        return Response(error=DatabricksError(message="No cluster found for tasks"))
+    else:
+        return Response(error=DatabricksError(message="More than 1 cluster found for tasks"))
 
 
 def _get_task_cluster(task: dict, clusters: list) -> Response[dict]:

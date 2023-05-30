@@ -148,30 +148,29 @@ _db_config = None
 
 
 def __getattr__(name):
-    match name:
-        case "CONFIG":
-            global _config
-            if _config is None:
-                _config = Configuration()
-            return _config
-        case "API_KEY":
-            global _api_key
-            if _api_key is None:
-                try:
-                    _api_key = APIKey()
-                except ValueError:
-                    pass
-            return _api_key
-        case "DB_CONFIG":
-            global _db_config
-            if _db_config is None:
-                try:
-                    _db_config = DatabricksConf()
-                except ValueError:
-                    pass
-            return _db_config
-
-    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+    if name == "CONFIG":
+        global _config
+        if _config is None:
+            _config = Configuration()
+        return _config
+    elif name == "API_KEY":
+        global _api_key
+        if _api_key is None:
+            try:
+                _api_key = APIKey()
+            except ValueError:
+                pass
+        return _api_key
+    elif name == "DB_CONFIG":
+        global _db_config
+        if _db_config is None:
+            try:
+                _db_config = DatabricksConf()
+            except ValueError:
+                pass
+        return _db_config
+    else:
+        raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
 def _get_config_dir() -> Path:

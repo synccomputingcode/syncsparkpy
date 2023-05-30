@@ -46,30 +46,26 @@ def generate(
 ):
     """Create and retrieve a prediction"""
     parsed_report_arg = urlparse(report)
-    match parsed_report_arg.scheme:
-        case "":
-            with open(report) as report_fobj:
-                report = orjson.loads(report_fobj.read())
-        case "s3":
-            s3 = boto.client("s3")
-            report_io = io.BytesIO()
-            s3.download_fileobj(
-                parsed_report_arg.netloc, parsed_report_arg.path.lstrip("/"), report_io
-            )
-            report = orjson.loads(report_io.getvalue())
-        case _:
-            ctx.fail("Unsupported report argument")
+    if parsed_report_arg.scheme == "":
+        with open(report) as report_fobj:
+            report = orjson.loads(report_fobj.read())
+    elif parsed_report_arg.scheme == "s3":
+        s3 = boto.client("s3")
+        report_io = io.BytesIO()
+        s3.download_fileobj(parsed_report_arg.netloc, parsed_report_arg.path.lstrip("/"), report_io)
+        report = orjson.loads(report_io.getvalue())
+    else:
+        ctx.fail("Unsupported report argument")
 
     parsed_event_log_loc = urlparse(event_log)
     event_log_path = None
     event_log_url = None
-    match parsed_event_log_loc.scheme:
-        case "":
-            event_log_path = Path(event_log)
-        case "s3" | "http" | "https":
-            event_log_url = event_log
-        case _:
-            ctx.fail("Unsupported event log argument")
+    if parsed_event_log_loc.scheme == "":
+        event_log_path = Path(event_log)
+    elif parsed_event_log_loc.scheme in {"s3", "http", "https"}:
+        event_log_url = event_log
+    else:
+        ctx.fail("Unsupported event log argument")
 
     if event_log_url:
         response = create_prediction(platform, report, event_log_url, project["id"])
@@ -108,30 +104,27 @@ def generate(
 def create(ctx: click.Context, platform: Platform, event_log: str, report: str, project: str):
     """Create a prediction"""
     parsed_report_arg = urlparse(report)
-    match parsed_report_arg.scheme:
-        case "":
-            with open(report) as report_fobj:
-                report = orjson.loads(report_fobj.read())
-        case "s3":
-            s3 = boto.client("s3")
-            report_io = io.BytesIO()
-            s3.download_fileobj(
-                parsed_report_arg.netloc, parsed_report_arg.path.lstrip("/"), report_io
-            )
-            report = orjson.loads(report_io.getvalue())
-        case _:
-            ctx.fail("Unsupported report argument")
+    if parsed_report_arg.scheme == "":
+        with open(report) as report_fobj:
+            report = orjson.loads(report_fobj.read())
+    elif parsed_report_arg.scheme == "s3":
+        s3 = boto.client("s3")
+        report_io = io.BytesIO()
+        s3.download_fileobj(parsed_report_arg.netloc, parsed_report_arg.path.lstrip("/"), report_io)
+        report = orjson.loads(report_io.getvalue())
+    else:
+        ctx.fail("Unsupported report argument")
 
     parsed_event_log_loc = urlparse(event_log)
     event_log_path = None
     event_log_url = None
-    match parsed_event_log_loc.scheme:
-        case "":
-            event_log_path = Path(event_log)
-        case "s3" | "http" | "https":
-            event_log_url = event_log
-        case _:
-            ctx.fail("Unsupported event log argument")
+
+    if parsed_event_log_loc.scheme == "":
+        event_log_path = Path(event_log)
+    elif parsed_event_log_loc.scheme in {"s3", "http", "https"}:
+        event_log_url = event_log
+    else:
+        ctx.fail("Unsupported event log argument")
 
     if event_log_url:
         response = create_prediction(platform, report, event_log_url, project["id"])

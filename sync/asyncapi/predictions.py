@@ -141,16 +141,17 @@ async def create_prediction(
     :return: prediction ID
     :rtype: Response[str]
     """
-    match urlparse(eventlog_url).scheme:
-        case "s3":
-            response = generate_presigned_url(eventlog_url)
-            if response.error:
-                return response
-            eventlog_http_url = response.result
-        case "http" | "https":
-            eventlog_http_url = eventlog_url
-        case _:
-            return Response(error=PredictionError(message="Unsupported event log URL scheme"))
+    scheme = urlparse(eventlog_url).scheme
+
+    if scheme == "s3":
+        response = generate_presigned_url(eventlog_url)
+        if response.error:
+            return response
+        eventlog_http_url = response.result
+    elif scheme in {"http", "https"}:
+        eventlog_http_url = eventlog_url
+    else:
+        return Response(error=PredictionError(message="Unsupported event log URL scheme"))
 
     response = await get_default_async_client().create_prediction(
         {

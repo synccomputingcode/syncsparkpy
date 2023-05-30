@@ -184,11 +184,10 @@ def test_get_project_report(get_project, get_cluster_report):
     )
 
     def client_patch(name, **kwargs):
-        match name:
-            case "s3":
-                return s3
-            case "emr":
-                return emr
+        if name == "s3":
+            return s3
+        elif name == "emr":
+            return emr
 
     with s3_stubber, emr_stubber, patch("boto3.client") as mock_client:
         mock_client.side_effect = client_patch

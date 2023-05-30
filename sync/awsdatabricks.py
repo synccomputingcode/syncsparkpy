@@ -8,7 +8,7 @@ import zipfile
 from collections.abc import Collection
 from pathlib import Path
 from time import sleep
-from typing import Any, TypeVar, Union, Tuple
+from typing import Any, TypeVar, Union, Tuple, Dict, List
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -933,7 +933,7 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
 
 
-def _get_job_cluster(tasks: list[dict], job_clusters: list) -> Response[dict]:
+def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
     if len(tasks) == 1:
         return _get_task_cluster(tasks[0], job_clusters)
 
@@ -947,7 +947,7 @@ def _get_job_cluster(tasks: list[dict], job_clusters: list) -> Response[dict]:
     return Response(error=DatabricksError(message="Not all tasks use the same cluster"))
 
 
-def _get_run_cluster_id(tasks: list[dict]) -> Response[str]:
+def _get_run_cluster_id(tasks: List[dict]) -> Response[str]:
     cluster_ids = {task["cluster_instance"]["cluster_id"] for task in tasks}
     num_ids = len(cluster_ids)
 
@@ -974,7 +974,7 @@ def _get_task_cluster(task: dict, clusters: list) -> Response[dict]:
     return Response(result=cluster)
 
 
-def _s3_contents_have_all_rollover_logs(contents: list[dict], run_end_time_seconds: float):
+def _s3_contents_have_all_rollover_logs(contents: List[dict], run_end_time_seconds: float):
     final_rollover_log = contents and next(
         (
             content
@@ -1090,8 +1090,8 @@ KeyType = TypeVar("KeyType")
 
 
 def _deep_update(
-    mapping: dict[KeyType, Any], *updating_mappings: dict[KeyType, Any]
-) -> dict[KeyType, Any]:
+    mapping: Dict[KeyType, Any], *updating_mappings: Dict[KeyType, Any]
+) -> Dict[KeyType, Any]:
     updated_mapping = mapping.copy()
     for updating_mapping in updating_mappings:
         for k, v in updating_mapping.items():

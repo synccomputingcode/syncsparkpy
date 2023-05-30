@@ -2,6 +2,7 @@ from io import TextIOWrapper
 
 import click
 import orjson
+from typing import Dict
 
 from sync import awsemr
 from sync.api.predictions import get_prediction
@@ -79,7 +80,7 @@ def create_prediction(cluster_id: str, region: str = None):
 @click.argument("project", callback=validate_project)
 @click.option("-r", "--run-id")
 @click.option("-r", "--region")
-def create_project_prediction(project: dict[str, str], run_id: str = None, region: str = None):
+def create_project_prediction(project: Dict[str, str], run_id: str = None, region: str = None):
     """Create prediction for the latest project cluster or one specified by --run-id"""
     prediction_response = awsemr.create_project_prediction(project["id"], run_id, region)
     if prediction := prediction_response.result:

@@ -4,7 +4,7 @@ Utilities providing configuration to the SDK
 
 import json
 from pathlib import Path
-from typing import Any, Callable, Union
+from typing import Any, Callable, Union, Dict
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -17,8 +17,8 @@ CONFIG_FILE = "config"
 DATABRICKS_CONFIG_FILE = "databrickscfg"
 
 
-def json_config_settings_source(path: str) -> Callable[[BaseSettings], dict[str, Any]]:
-    def source(settings: BaseSettings) -> dict[str, Any]:
+def json_config_settings_source(path: str) -> Callable[[BaseSettings], Dict[str, Any]]:
+    def source(settings: BaseSettings) -> Dict[str, Any]:
         config_path = _get_config_dir().joinpath(path)
         if config_path.exists():
             with open(config_path) as fobj:

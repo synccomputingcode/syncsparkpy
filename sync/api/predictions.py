@@ -43,7 +43,8 @@ def generate_prediction(
     """
     response = create_prediction(platform, cluster_report, eventlog_url)
 
-    if prediction_id := response.result:
+    prediction_id = response.result
+    if prediction_id:
         return wait_for_prediction(prediction_id, preference)
 
     return response
@@ -60,8 +61,8 @@ def wait_for_prediction(prediction_id: str, preference: str = None) -> Response[
     :rtype: Response[dict]
     """
     response = wait_for_final_prediction_status(prediction_id)
-
-    if result := response.result:
+    result = response.result
+    if result:
         if result == "SUCCESS":
             return get_prediction(prediction_id, preference)
 
@@ -84,7 +85,8 @@ def get_prediction(prediction_id: str, preference: str = None) -> Response[dict]
         prediction_id, {"preference": preference} if preference else None
     )
 
-    if result := response.get("result"):
+    result = response.get("result")
+    if result:
         return Response(result=result)
 
     return Response(**response)
@@ -100,7 +102,8 @@ def get_status(prediction_id: str) -> Response[str]:
     """
     response = get_default_client().get_prediction_status(prediction_id)
 
-    if result := response.get("result"):
+    result = response.get("result")
+    if result:
         return Response(result=result["status"])
 
     return Response(**response)
@@ -144,8 +147,10 @@ def wait_for_final_prediction_status(prediction_id: str) -> Response[str]:
     :return: prediction status, e.g. "SUCCESS"
     :rtype: Response[str]
     """
-    while response := get_default_client().get_prediction_status(prediction_id):
-        if result := response.get("result"):
+    response = get_default_client().get_prediction_status(prediction_id)
+    while response:
+        result = response.get("result")
+        if result:
             if result["status"] in ("SUCCESS", "FAILURE"):
                 return Response(result=result["status"])
         else:
@@ -153,6 +158,8 @@ def wait_for_final_prediction_status(prediction_id: str) -> Response[str]:
 
         logger.info("Waiting for prediction")
         sleep(10)
+
+        response = get_default_client().get_prediction_status(prediction_id)
 
     return Response(error=PredictionError(message="Failed to get prediction status"))
 

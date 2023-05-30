@@ -30,7 +30,8 @@ def run_job_flow(job_flow: TextIOWrapper, project: dict = None, region: str = No
     run_response = awsemr.run_and_record_job_flow(
         job_flow_obj, project["id"] if project else None, region
     )
-    if prediction_id := run_response.result:
+    prediction_id = run_response.result
+    if prediction_id:
         click.echo(f"Run complete. Prediction ID: {prediction_id}")
     else:
         click.echo(str(run_response.error), err=True)
@@ -48,13 +49,14 @@ def run_job_flow(job_flow: TextIOWrapper, project: dict = None, region: str = No
 def run_prediction(prediction_id: str, preference: Preference, region: str = None):
     """Execute a prediction"""
     prediction_response = get_prediction(prediction_id, preference.value)
-
-    if prediction := prediction_response.result:
+    prediction = prediction_response.result
+    if prediction:
         config = prediction["solutions"][preference.value]["configuration"]
 
         if prediction["product_code"] == Platform.AWS_EMR:
             cluster_response = awsemr.run_job_flow(config, prediction.get("project_id"), region)
-            if cluster_id := cluster_response.result:
+            cluster_id = cluster_response.result
+            if cluster_id:
                 click.echo(f"EMR cluster ID: {cluster_id}")
             else:
                 click.echo(str(cluster_response.error), err=True)
@@ -70,7 +72,8 @@ def run_prediction(prediction_id: str, preference: Preference, region: str = Non
 def create_prediction(cluster_id: str, region: str = None):
     """Create prediction for a cluster"""
     prediction_response = awsemr.create_prediction_for_cluster(cluster_id, region)
-    if prediction := prediction_response.result:
+    prediction = prediction_response.result
+    if prediction:
         click.echo(f"Prediction ID: {prediction}")
     else:
         click.echo(f"Failed to create prediction. {prediction_response.error}", err=True)
@@ -83,7 +86,8 @@ def create_prediction(cluster_id: str, region: str = None):
 def create_project_prediction(project: Dict[str, str], run_id: str = None, region: str = None):
     """Create prediction for the latest project cluster or one specified by --run-id"""
     prediction_response = awsemr.create_project_prediction(project["id"], run_id, region)
-    if prediction := prediction_response.result:
+    prediction = prediction_response.result
+    if prediction:
         click.echo(f"Prediction ID: {prediction}")
     else:
         click.echo(f"Failed to create prediction. {prediction_response.error}", err=True)
@@ -95,7 +99,8 @@ def create_project_prediction(project: Dict[str, str], run_id: str = None, regio
 def get_cluster_report(cluster_id: str, region: str = None):
     """Get a cluster report"""
     config_response = awsemr.get_cluster_report(cluster_id, region)
-    if config := config_response.result:
+    config = config_response.result
+    if config:
         click.echo(
             orjson.dumps(
                 config, option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_UTC_Z
@@ -112,7 +117,8 @@ def get_cluster_report(cluster_id: str, region: str = None):
 def record_run(cluster_id: str, project: str, region: str = None):
     """Record a project run"""
     response = awsemr.record_run(cluster_id, project["id"], region)
-    if prediction_id := response.result:
+    prediction_id = response.result
+    if prediction_id:
         click.echo(f"Prediction ID: {prediction_id}")
     else:
         click.echo(str(response.error), err=True)

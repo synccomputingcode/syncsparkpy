@@ -151,18 +151,21 @@ def create_prediction_for_run(
         return Response(error=DatabricksError(message="Tasks did not complete successfully"))
 
     cluster_id_response = _get_run_cluster_id(tasks)
-    if cluster_id := cluster_id_response.result:
+    cluster_id = cluster_id_response.result
+    if cluster_id:
         # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
         #  uploading all the event log data before we start checking for it
         cluster_report_response = _get_cluster_report(
             cluster_id, plan_type, compute_type, allow_incomplete_cluster_report
         )
-        if cluster_report := cluster_report_response.result:
+        cluster_report = cluster_report_response.result
+        if cluster_report:
 
             cluster = cluster_report.cluster
             eventlog_response = _get_eventlog(cluster, run.get("end_time"))
 
-            if eventlog := eventlog_response.result:
+            eventlog = eventlog_response.result
+            if eventlog:
                 return create_prediction(
                     plan_type=cluster_report.plan_type.value,
                     compute_type=cluster_report.compute_type.value,
@@ -212,7 +215,8 @@ def get_cluster_report(
         return Response(error=DatabricksError(message="Tasks did not complete successfully"))
 
     cluster_id_response = _get_run_cluster_id(tasks)
-    if cluster_id := cluster_id_response.result:
+    cluster_id = cluster_id_response.result
+    if cluster_id:
         return _get_cluster_report(cluster_id, plan_type, compute_type, allow_incomplete)
 
     return cluster_id_response
@@ -364,15 +368,18 @@ def get_prediction_job(
     :rtype: Response[dict]
     """
     prediction_response = get_prediction(prediction_id)
-    if prediction := prediction_response.result:
+    prediction = prediction_response.result
+    if prediction:
         job = get_default_client().get_job(job_id)
         if "error_code" in job:
             return Response(error=DatabricksAPIError(**job))
 
         job_settings = job["settings"]
-        if tasks := job_settings.get("tasks", []):
+        tasks = job_settings.get("tasks", [])
+        if tasks:
             cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
-            if cluster := cluster_response.result:
+            cluster = cluster_response.result
+            if cluster:
                 # num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
                 #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster
                 #  with `num_workers`) for a cluster that was originally autoscaled, we want to make sure to remove this
@@ -387,7 +394,8 @@ def get_prediction_job(
                     cluster, prediction["solutions"][preference]["configuration"]
                 )
 
-                if cluster_key := tasks[0].get("job_cluster_key"):
+                cluster_key = tasks[0].get("job_cluster_key")
+                if cluster_key:
                     job_settings["job_clusters"] = [
                         j
                         for j in job_settings["job_clusters"]
@@ -422,13 +430,17 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
         return Response(error=DatabricksAPIError(**job))
 
     job_settings = job["settings"]
-    if tasks := job_settings.get("tasks", []):
+    tasks = job_settings.get("tasks", [])
+    if tasks:
         cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
-        if cluster := cluster_response.result:
+        cluster = cluster_response.result
+        if cluster:
             project_settings_response = get_project_cluster_settings(project_id, region_name)
-            if project_cluster_settings := project_settings_response.result:
+            project_cluster_settings = project_settings_response.result
+            if project_cluster_settings:
                 project_cluster = _deep_update(cluster, project_cluster_settings)
-                if cluster_key := tasks[0].get("job_cluster_key"):
+                cluster_key = tasks[0].get("job_cluster_key")
+                if cluster_key:
                     job_settings["job_clusters"] = [
                         j
                         for j in job_settings["job_clusters"]
@@ -457,13 +469,16 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
     :rtype: Response[dict]
     """
     project_response = get_project(project_id)
-    if project := project_response.result:
+    project = project_response.result
+    if project:
         result = {
             "custom_tags": {
                 "sync:project-id": project_id,
             }
         }
-        if s3_url := project.get("s3_url"):
+
+        s3_url = project.get("s3_url")
+        if s3_url:
             result.update(
                 {
                     "cluster_log_conf": {
@@ -491,7 +506,8 @@ def run_job_object(job: dict) -> Response[str]:
     tasks = job["settings"]["tasks"]
     cluster_response = _get_job_cluster(tasks, job["settings"].get("job_clusters", []))
 
-    if cluster := cluster_response.result:
+    cluster = cluster_response.result
+    if cluster:
         if len(tasks) == 1:
             # For `new_cluster` definitions, Databricks will automatically assign the newly created cluster a name,
             #  and will reject any run submissions where the `cluster_name` is pre-populated
@@ -545,7 +561,8 @@ def run_prediction(job_id: str, prediction_id: str, preference: str) -> Response
     :rtype: Response[str]
     """
     prediction_job_response = get_prediction_job(job_id, prediction_id, preference)
-    if prediction_job := prediction_job_response.result:
+    prediction_job = prediction_job_response.result
+    if prediction_job:
         return run_job_object(prediction_job)
     return prediction_job_response
 
@@ -594,7 +611,8 @@ def run_and_record_prediction_job(
     :rtype: Response[str]
     """
     prediction_job_response = get_prediction_job(job_id, prediction_id, preference)
-    if prediction_job := prediction_job_response.result:
+    prediction_job = prediction_job_response.result
+    if prediction_job:
         return run_and_record_job_object(prediction_job, plan_type, compute_type, project_id)
     return prediction_job_response
 
@@ -620,7 +638,8 @@ def run_and_record_project_job(
     :rtype: Response[str]
     """
     project_job_response = get_project_job(job_id, project_id, region_name)
-    if project_job := project_job_response.result:
+    project_job = project_job_response.result
+    if project_job:
         return run_and_record_job_object(project_job, plan_type, compute_type, project_id)
     return project_job_response
 
@@ -672,9 +691,11 @@ def run_and_record_job_object(
     :rtype: Response[str]
     """
     run_response = run_job_object(job)
-    if run_id := run_response.result:
+    run_id = run_response.result
+    if run_id:
         wait_response = wait_for_run_and_cluster(run_id)
-        if result_state := wait_response.result:
+        result_state = wait_response.result
+        if result_state:
             if result_state == "SUCCESS":
                 return record_run(run_id, plan_type, compute_type, project_id)
             return Response(
@@ -704,7 +725,8 @@ def create_and_record_run(
     :rtype: Response[str]
     """
     run_response = create_run(run)
-    if run_id := run_response.result:
+    run_id = run_response.result
+    if run_id:
         return wait_for_and_record_run(run_id, plan_type, compute_type, project_id)
     return run_response
 
@@ -729,7 +751,8 @@ def wait_for_and_record_run(
     :rtype: Response[str]
     """
     wait_response = wait_for_final_run_status(run_id)
-    if result_state := wait_response.result:
+    result_state = wait_response.result
+    if result_state:
         if result_state == "SUCCESS":
             return record_run(run_id, plan_type, compute_type, project_id)
         return Response(
@@ -963,11 +986,12 @@ def _get_task_cluster(task: dict, clusters: list) -> Response[dict]:
     cluster = task.get("new_cluster")
 
     if not cluster:
-        if cluster_matches := [
+        cluster_matches = [
             candidate
             for candidate in clusters
             if candidate["job_cluster_key"] == task.get("job_cluster_key")
-        ]:
+        ]
+        if cluster_matches:
             cluster = cluster_matches[0]["new_cluster"]
         else:
             return Response(error=DatabricksError(message="No cluster found for task"))
@@ -1068,9 +1092,11 @@ def _get_all_cluster_events(cluster_id: str):
     response = get_default_client().get_cluster_events(cluster_id, limit=500)
     responses = [response]
 
-    while next_args := response.get("next_page"):
+    next_args = response.get("next_page")
+    while next_args:
         response = get_default_client().get_cluster_events(cluster_id, **next_args)
         responses.append(response)
+        next_args = response.get("next_page")
 
     all_events = {
         "events": [],

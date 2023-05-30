@@ -5,10 +5,9 @@ import io
 import logging
 import time
 import zipfile
-from collections.abc import Collection
 from pathlib import Path
 from time import sleep
-from typing import Any, TypeVar, Union, Tuple, Dict, List
+from typing import Any, Dict, List, Tuple, TypeVar, Union, Collection
 from urllib.parse import urlparse
 
 import boto3 as boto

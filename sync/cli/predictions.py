@@ -75,11 +75,13 @@ def generate(
                 platform, report, event_log_path.name, event_log_fobj.read(), project["id"]
             )
 
-    if prediction_id := response.result:
+    prediction_id = response.result
+    if prediction_id:
         click.echo(f"Prediction ID: {prediction_id}")
         click.echo("Waiting for result...")
         prediction_response = wait_for_prediction(prediction_id, preference.value)
-        if prediction := prediction_response.result:
+        prediction = prediction_response.result
+        if prediction:
             click.echo(
                 orjson.dumps(
                     prediction,
@@ -134,7 +136,8 @@ def create(ctx: click.Context, platform: Platform, event_log: str, report: str, 
                 platform, report, event_log_path.name, event_log_fobj.read(), project["id"]
             )
 
-    if prediction_id := response.result:
+    prediction_id = response.result
+    if prediction_id:
         click.echo(f"Prediction ID: {prediction_id}")
     else:
         click.echo(str(response.error), err=True)
@@ -177,7 +180,8 @@ def list(platform: Platform, project: dict = None):
     response = get_predictions(
         product=platform.value if platform else None, project_id=project["id"]
     )
-    if predictions := response.result:
+    predictions = response.result
+    if predictions:
         click.echo_via_pager(
             f"{p['created_at']} {p['prediction_id']} ({p.get('project_id', 'not part of a project'):^36}): {p['application_name']}\n"
             for p in predictions

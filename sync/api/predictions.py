@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import boto3 as boto
 import httpx
+from typing import List
 
 from sync.clients.sync import get_default_client
 from sync.models import Platform, PredictionError, Response
@@ -15,7 +16,7 @@ from sync.models import Platform, PredictionError, Response
 logger = logging.getLogger(__name__)
 
 
-def get_products() -> Response[list[str]]:
+def get_products() -> Response[List[str]]:
     """Get supported platforms
 
     :return: list of platform names
@@ -111,7 +112,7 @@ def get_status(prediction_id: str) -> Response[str]:
 
 def get_predictions(
     product: str = None, project_id: str = None, preference: str = None
-) -> Response[list[dict]]:
+) -> Response[List[dict]]:
     """Get predictions
 
     :param product: platform to filter by, e.g. "aws-emr", defaults to None

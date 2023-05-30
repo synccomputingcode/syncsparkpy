@@ -1,5 +1,5 @@
 import logging
-from typing import Generator
+from typing import Generator, List
 
 import httpx
 
@@ -40,7 +40,8 @@ class SyncAuth(httpx.Auth):
             auth = response.json()
             self._access_token = auth["result"]["access_token"]
         elif response.headers.get("Content-Type", "").startswith("application/json"):
-            if error := response.json().get("error"):
+            error = response.json().get("error")
+            if error:
                 logger.error(f"{error['code']}: {error['message']}")
             else:
                 logger.error(f"{response.status_code}: Failed to authenticate")
@@ -77,7 +78,7 @@ class SyncClient(RetryableHTTPClient):
             )
         )
 
-    def get_predictions(self, params: dict = None) -> list[dict]:
+    def get_predictions(self, params: dict = None) -> List[dict]:
         return self._send(
             self._client.build_request("GET", "/v1/autotuner/predictions", params=params)
         )

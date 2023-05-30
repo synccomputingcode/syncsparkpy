@@ -13,6 +13,7 @@ from uuid import uuid4
 import boto3 as boto
 import orjson
 from dateutil.parser import parse as dateparse
+from typing import Tuple
 
 from sync import TIME_FORMAT
 from sync.api.predictions import create_prediction, wait_for_prediction
@@ -47,7 +48,8 @@ def get_project_job_flow(job_flow: dict, project_id: str) -> Response[dict]:
     """
     result_job_flow = deepcopy(job_flow)
     project_response = get_project(project_id)
-    if _project := project_response.result:
+    _project = project_response.result
+    if _project:
         # Add project ID tag
         run_id = str(uuid4())
         tags = {tag["Key"]: tag["Value"] for tag in result_job_flow.get("Tags", [])}
@@ -55,7 +57,8 @@ def get_project_job_flow(job_flow: dict, project_id: str) -> Response[dict]:
         tags["sync:run-id"] = run_id
         result_job_flow["Tags"] = [{"Key": tag[0], "Value": tag[1]} for tag in tags.items()]
 
-        if s3_url := _project.get("s3_url"):
+        s3_url = _project.get("s3_url")
+        if s3_url:
             parsed_project_url = urlparse(f"{s3_url.strip('/')}/{project_id}")
             eventlog_props = {
                 "spark.eventLog.dir": f"s3a://{parsed_project_url.netloc}/{parsed_project_url.path.strip('/')}/{datetime.datetime.utcnow().strftime(TIME_FORMAT)}/{run_id}/eventlog/",
@@ -118,7 +121,8 @@ def run_project_prediction(
     :rtype: Response[str]
     """
     project_response = get_project(project_id)
-    if project := project_response.result:
+    project = project_response.result
+    if project:
         response = get_project_prediction(
             project_id,
             run_id,
@@ -153,8 +157,10 @@ def record_run(cluster_id: str, project_id: str, region_name: str = None) -> Res
 
     cluster_report = report_response.result
 
-    if eventlog_url := _get_eventlog_url_from_cluster_report(cluster_report).result:
-        if run_dir := _get_existing_run_dir_from_cluster_config(cluster_report, project_id).result:
+    eventlog_url = _get_eventlog_url_from_cluster_report(cluster_report).result
+    if eventlog_url:
+        run_dir = _get_existing_run_dir_from_cluster_config(cluster_report, project_id).result
+        if run_dir:
             if _upload_object(
                 cluster_report,
                 f"{run_dir}/emr-cluster-report.json",
@@ -194,7 +200,7 @@ def create_project_prediction(
 
 def get_project_cluster_report(  # noqa: C901
     project_id: str, run_id: str = None, region_name: str = None
-) -> Response[tuple[dict, str]]:
+) -> Response[Tuple[dict, str]]:
     """Gets the report and event log URL for the latest cluster in the project or the one identified by the `run_id` if provided.
 
     The project must be configured with an S3 URL.
@@ -206,19 +212,22 @@ def get_project_cluster_report(  # noqa: C901
     :param region_name: AWS region name, defaults to AWS configuration
     :type region_name: str, optional
     :return: a tuple containing the cluster configuration and an event log URL
-    :rtype: Response[tuple[dict, str]]
+    :rtype: Response[Tuple[dict, str]]
     """
     project_response = get_project(project_id)
 
-    if project := project_response.result:
-        if project_url := project.get("s3_url"):
+    project = project_response.result
+    if project:
+        project_url = project.get("s3_url")
+        if project_url:
             parsed_project_url = urlparse(f"{project_url}/{project['id']}")
             project_prefix = parsed_project_url.path.strip("/")
 
             s3 = boto.client("s3")
-            if contents := s3.list_objects_v2(
+            contents = s3.list_objects_v2(
                 Bucket=parsed_project_url.netloc, Prefix=project_prefix + "/"
-            ).get("Contents"):
+            ).get("Contents")
+            if contents:
                 eventlog_pattern = re.compile(
                     rf"{project_prefix}/(?P<timestamp>\d{{4}}-[^/]+)/(?P<run_id>{run_id or '[a-zA-Z0-9-]+'})/eventlog/application_[\d_]+$"
                 )
@@ -249,12 +258,15 @@ def get_project_cluster_report(  # noqa: C901
                         created_after=dateparse(log_match.group("timestamp")),
                         region_name=region_name,
                     )
-                    if cluster := response.result:
+                    cluster = response.result
+                    if cluster:
                         response = get_cluster_report(cluster["Id"], region_name)
-                        if config := response.result:
-                            if error := _upload_object(
+                        config = response.result
+                        if config:
+                            error = _upload_object(
                                 config, f"s3://{parsed_project_url.netloc}/{config_key}"
-                            ).error:
+                            ).error
+                            if error:
                                 logger.warning(f"Failed to save prediction config: {error.message}")
                             return Response(
                                 result=(config, f"s3://{parsed_project_url.netloc}/{log_key}")
@@ -303,20 +315,22 @@ def run_job_flow(job_flow: dict, project_id: str = None, region_name: str = None
             return project_response
         project = project_response.result
         if project.get("s3_url"):
-            if match := re.match(
+            match = re.match(
                 RUN_DIR_PATTERN_TEMPLATE.format(
                     project_prefix=project["s3_url"], project_id=project_id, run_id=run_id
                 ),
                 event_log_response.result or "",
-            ):
+            )
+            if match:
                 run_dir = match.group()
             else:
                 run_dir = f"{project['s3_url']}/{project['id']}/{datetime.datetime.utcnow().strftime(TIME_FORMAT)}/{run_id}"
 
-            if error := _upload_object(
+            error = _upload_object(
                 job_flow,
                 f"{run_dir}/job-flow.json",
-            ).error:
+            ).error
+            if error:
                 logger.warning(f"Failed to save job flow: {error.message}")
 
     emr = boto.client("emr", region_name=region_name)
@@ -365,12 +379,14 @@ def create_prediction_for_cluster(cluster_id: str, region_name: str = None) -> R
     :rtype: Response[str]
     """
     report_response = get_cluster_report(cluster_id, region_name)
-    if cluster_report := report_response.result:
+    cluster_report = report_response.result
+    if cluster_report:
         eventlog_response = _get_eventlog_url_from_cluster_report(cluster_report)
         if eventlog_response.error:
             return eventlog_response
 
-        if eventlog_http_url := eventlog_response.result:
+        eventlog_http_url = eventlog_response.result
+        if eventlog_http_url:
             return create_prediction(Platform.AWS_EMR, cluster_report, eventlog_http_url)
 
         return eventlog_response
@@ -432,9 +448,11 @@ def create_s3_event_log_dir(job_flow: dict) -> Response[str]:
     """
     for config in job_flow["Configurations"]:
         if config["Classification"] == "spark-defaults":
-            if (eventlog_dir := config["Properties"].get("spark.eventLog.dir")) and config[
-                "Properties"
-            ].get("spark.eventLog.enabled", "false").lower() == "true":
+            eventlog_dir = config["Properties"].get("spark.eventLog.dir")
+            if (
+                eventlog_dir
+                and config["Properties"].get("spark.eventLog.enabled", "false").lower() == "true"
+            ):
                 parsed_eventlog_dir = urlparse(eventlog_dir)
                 if parsed_eventlog_dir.scheme == "s3a":
                     try:
@@ -499,8 +517,10 @@ def _get_existing_run_dir(
     project_id: str, run_id: str, cluster_start_time: datetime.datetime = None
 ) -> Response[str]:
     project_response = get_project(project_id)
-    if project := project_response.result:
-        if s3_url := project.get("s3_url"):
+    project = project_response.result
+    if project:
+        s3_url = project.get("s3_url")
+        if s3_url:
             parsed_s3_url = urlparse(s3_url)
             s3 = boto.client("s3")
             run_dir_pattern = re.compile(
@@ -521,7 +541,8 @@ def _get_existing_run_dir(
             pages_left = 5
             while pages_left and contents:
                 for content in contents:
-                    if match := run_dir_pattern.match(content["Key"]):
+                    match = run_dir_pattern.match(content["Key"])
+                    if match:
                         return Response(
                             result=f"s3://{parsed_s3_url.netloc}/{match.group().rstrip('/')}"
                         )

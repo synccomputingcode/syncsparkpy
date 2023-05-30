@@ -3,7 +3,7 @@ Models used throughout this SDK
 """
 
 from enum import Enum, unique
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, Union
 
 from pydantic import BaseModel, Field, root_validator, validator
 from pydantic.generics import GenericModel
@@ -27,9 +27,9 @@ class Project(BaseModel):
         ...,
         description="a string that uniquely identifies an application to the owner of that application",
     )
-    description: str | None = Field(description="Additional information on the app, or project")
-    s3_url: str | None = Field(description="location of data from runs of the application")
-    prediction_preference: Preference | None = Field(description="preferred prediction to apply")
+    description: Union[str, None] = Field(description="Additional information on the app, or project")
+    s3_url: Union[str, None] = Field(description="location of data from runs of the application")
+    prediction_preference: Union[Preference, None] = Field(description="preferred prediction to apply")
 
 
 class Error(BaseModel):
@@ -92,8 +92,8 @@ DataType = TypeVar("DataType")
 
 
 class Response(GenericModel, Generic[DataType]):
-    result: DataType | None
-    error: Error | None
+    result: Union[DataType, None]
+    error: Union[Error, None]
 
     @validator("error", always=True)
     def check_consistency(cls, err, values):

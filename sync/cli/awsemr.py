@@ -1,8 +1,8 @@
 from io import TextIOWrapper
+from typing import Dict
 
 import click
 import orjson
-from typing import Dict
 
 from sync import awsemr
 from sync.api.predictions import get_prediction

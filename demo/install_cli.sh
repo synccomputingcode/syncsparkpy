@@ -7,7 +7,7 @@ function find_python() {
   local python_candidate
 
   while read python_candidate; do
-    if [[ $("$python_candidate" --version 2>/dev/null) =~ (^|[^[:digit:].])3.10(\.|$) ]]; then
+    if [[ $("$python_candidate" --version 2>/dev/null) =~ (^|[^[:digit:].])3.[7,8,9,10,11](\.|$) ]]; then
       echo $python_candidate
       return
     fi

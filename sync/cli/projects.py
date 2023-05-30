@@ -24,7 +24,8 @@ def projects():
 def list():
     """List projects"""
     response = get_projects()
-    if projects := response.result:
+    projects = response.result
+    if projects:
         click.echo_via_pager(f"{p['updated_at']} {p['id']}: {p['app_id']}\n" for p in projects)
     else:
         click.echo(str(response.error), err=True)
@@ -37,7 +38,8 @@ def get(project: dict):
 
     PROJECT is either a project ID or application name"""
     response = get_project(project["id"])
-    if project := response.result:
+    project = response.result
+    if project:
         click.echo(
             orjson.dumps(
                 project,
@@ -65,7 +67,8 @@ def create(
 
     APP_ID is a name that uniquely identifies an application"""
     response = create_project(app_id, description, location, preference)
-    if project := response.result:
+    project = response.result
+    if project:
         click.echo(f"Project ID: {project['id']}")
     else:
         click.echo(str(response.error), err=True)
@@ -115,7 +118,8 @@ def delete(project: dict):
 def get_latest_prediction(project: dict, preference: Preference):
     """Get the latest prediction in a project"""
     prediction_response = get_prediction(project["id"], preference)
-    if prediction := prediction_response.result:
+    prediction = prediction_response.result
+    if prediction:
         click.echo(
             orjson.dumps(
                 prediction,

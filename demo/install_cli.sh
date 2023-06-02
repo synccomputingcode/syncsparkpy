@@ -18,7 +18,7 @@ function install_sync() {
   local SYNC_PYTHON="$(find_python)"
 
   if [[ -z $SYNC_PYTHON ]]; then
-    >&2 echo "Python 3.10 is required"
+    >&2 echo "Python 3.7+ is required"
     return 1
   fi
 

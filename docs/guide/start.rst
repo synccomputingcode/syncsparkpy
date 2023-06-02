@@ -5,7 +5,7 @@ Requirements
 ------------
 
 1. Currently only linux-based systems are supported.
-2. Python 3.10.x
+2. Python 3.7.x and above
 
 Installation
 ------------
@@ -14,7 +14,7 @@ Install this library and CLI the same way you'd install a Python package. With a
 
 .. code-block:: shell
 
-  pip install https://github.com/synccomputingcode/syncsparkpy/archive/main.tar.gz
+  pip install https://github.com/synccomputingcode/syncsparkpy/archive/latest.tar.gz
 
 Configuration
 -------------

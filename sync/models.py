@@ -71,7 +71,7 @@ class DatabricksClusterReport(BaseModel):
     compute_type: DatabricksComputeType
     cluster: dict
     cluster_events: dict
-    instances: dict
+    instances: Union[dict, None]
 
 
 class DatabricksError(Error):

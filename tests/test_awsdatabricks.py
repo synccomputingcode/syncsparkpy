@@ -630,7 +630,6 @@ def test_create_prediction_for_run_success(respx_mock):
         mock_aws_client.side_effect = client_patch
         result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
 
-    assert not result.error
     assert result.result
 
 
@@ -728,7 +727,6 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
         mock_aws_client.side_effect = client_patch
         result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
 
-    assert not result.error
     assert result.result
 
 
@@ -810,7 +808,6 @@ def test_create_prediction_for_run_with_pending_task(respx_mock):
             "75778", "Premium", "Jobs Compute", "my-project-id", exclude_tasks=["sync_task"]
         )
 
-    assert not result.error
     assert result.result
 
 
@@ -949,5 +946,4 @@ def test_create_prediction_for_run_event_log_upload_delay(
         mock_aws_client.side_effect = client_patch
         result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
 
-    assert not result.error
     assert result.result

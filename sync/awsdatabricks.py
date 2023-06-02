@@ -223,7 +223,7 @@ def get_cluster_report(
 
 def _get_cluster_report(
     cluster_id: str, plan_type: str, compute_type: str, allow_incomplete: bool
-) -> Response[Union[DatabricksClusterReport, dict]]:
+) -> Response[DatabricksClusterReport]:
     # Cluster `terminated_time` can be a few seconds after the start of the next task in which
     # this may be executing.
     cluster_response = _wait_for_cluster_termination(cluster_id, timeout_seconds=60, poll_seconds=5)
@@ -233,11 +233,11 @@ def _get_cluster_report(
     cluster = cluster_response.result
 
     instances = _get_cluster_instances(cluster)
-    if isinstance(instances, DatabricksError):
+    if instances.error:
         if allow_incomplete:
-            logger.warning(instances.message)
+            logger.warning(instances.error)
         else:
-            return Response(error=instances)
+            return instances
 
     cluster_events = _get_all_cluster_events(cluster_id)
     return Response(
@@ -246,12 +246,12 @@ def _get_cluster_report(
             compute_type=compute_type,
             cluster=cluster,
             cluster_events=cluster_events,
-            instances=instances,
+            instances=instances.result,
         )
     )
 
 
-def _get_cluster_instances(cluster: dict) -> Union[dict, DatabricksError]:
+def _get_cluster_instances(cluster: dict) -> Response[dict]:
     cluster_instances = None
     aws_region_name = DB_CONFIG.aws_region_name
 
@@ -296,9 +296,9 @@ def _get_cluster_instances(cluster: dict) -> Union[dict, DatabricksError]:
             + "Please refer to the following documentation for options on how to address this - "
             + "https://synccomputingcode.github.io/syncsparkpy/reference/awsdatabricks.html"
         )
-        return DatabricksError(message=no_instances_message)
+        return Response(error=DatabricksError(message=no_instances_message))
 
-    return cluster_instances
+    return Response(result=cluster_instances)
 
 
 def _cluster_log_destination(cluster: dict) -> Union[Tuple[str, str, str], None]:
@@ -903,7 +903,7 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
                     new_instances = [res for res in instances["Reservations"]]
                     new_instance_id_to_reservation = dict(
                         zip(
-                            [res["Instances"][0]["InstanceId"] for res in new_instances],
+                            (res["Instances"][0]["InstanceId"] for res in new_instances),
                             new_instances,
                         )
                     )
@@ -911,13 +911,13 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
                     old_instances = [res for res in previous_instances["Reservations"]]
                     old_instance_id_to_reservation = dict(
                         zip(
-                            [res["Instances"][0]["InstanceId"] for res in old_instances],
+                            (res["Instances"][0]["InstanceId"] for res in old_instances),
                             old_instances,
                         )
                     )
 
-                    old_instance_ids = set(old_instance_id_to_reservation.keys())
-                    new_instance_ids = set(new_instance_id_to_reservation.keys())
+                    old_instance_ids = set(old_instance_id_to_reservation)
+                    new_instance_ids = set(new_instance_id_to_reservation)
 
                     # If we have the exact same set of instances, prefer the new set...
                     if old_instance_ids == new_instance_ids:

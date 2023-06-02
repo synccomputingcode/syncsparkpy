@@ -13,7 +13,7 @@ build-backend = "hatchling.build"
 name = "syncsparkpy"
 authors = [{"name" = "Sync Computing"}]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.7"
 classifiers = [
   "Intended Audience :: Information Technology",
   "Intended Audience :: System Administrators",
@@ -43,7 +43,7 @@ dev = [
   "pytest==7.2.0",
   "pytest-env==0.8.1",
   "pytest-asyncio==0.21.0",
-  "Sphinx==5.3.0",
+  "Sphinx==4.3.0",
   "respx==0.20.1",
   "deepdiff==6.3.0",
 ]
@@ -59,7 +59,7 @@ Home = "https://github.com/synccomputingcode/syncsparkpy"
 
 [tool.black]
 line-length = 100
-target-version = ['py310']
+target-version = ['py37']
 
 [tool.isort]
 profile = "black"

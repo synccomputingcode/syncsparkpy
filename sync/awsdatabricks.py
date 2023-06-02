@@ -5,10 +5,9 @@ import io
 import logging
 import time
 import zipfile
-from collections.abc import Collection
 from pathlib import Path
 from time import sleep
-from typing import Any, TypeVar
+from typing import Any, Dict, List, Tuple, TypeVar, Union, Collection
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -120,7 +119,7 @@ def create_prediction_for_run(
     compute_type: str,
     project_id: str = None,
     allow_incomplete_cluster_report: bool = False,
-    exclude_tasks: Collection[str] | None = None,
+    exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[str]:
     """Create a prediction for the specified Databricks run.
 
@@ -151,18 +150,21 @@ def create_prediction_for_run(
         return Response(error=DatabricksError(message="Tasks did not complete successfully"))
 
     cluster_id_response = _get_run_cluster_id(tasks)
-    if cluster_id := cluster_id_response.result:
+    cluster_id = cluster_id_response.result
+    if cluster_id:
         # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
         #  uploading all the event log data before we start checking for it
         cluster_report_response = _get_cluster_report(
             cluster_id, plan_type, compute_type, allow_incomplete_cluster_report
         )
-        if cluster_report := cluster_report_response.result:
+        cluster_report = cluster_report_response.result
+        if cluster_report:
 
             cluster = cluster_report.cluster
             eventlog_response = _get_eventlog(cluster, run.get("end_time"))
 
-            if eventlog := eventlog_response.result:
+            eventlog = eventlog_response.result
+            if eventlog:
                 return create_prediction(
                     plan_type=cluster_report.plan_type.value,
                     compute_type=cluster_report.compute_type.value,
@@ -183,7 +185,7 @@ def get_cluster_report(
     plan_type: str,
     compute_type: str,
     allow_incomplete: bool = False,
-    exclude_tasks: Collection[str] | None = None,
+    exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[DatabricksClusterReport]:
     """Fetches the cluster information required to create a Sync prediction
 
@@ -212,7 +214,8 @@ def get_cluster_report(
         return Response(error=DatabricksError(message="Tasks did not complete successfully"))
 
     cluster_id_response = _get_run_cluster_id(tasks)
-    if cluster_id := cluster_id_response.result:
+    cluster_id = cluster_id_response.result
+    if cluster_id:
         return _get_cluster_report(cluster_id, plan_type, compute_type, allow_incomplete)
 
     return cluster_id_response
@@ -220,7 +223,7 @@ def get_cluster_report(
 
 def _get_cluster_report(
     cluster_id: str, plan_type: str, compute_type: str, allow_incomplete: bool
-) -> Response[DatabricksClusterReport | dict]:
+) -> Response[DatabricksClusterReport]:
     # Cluster `terminated_time` can be a few seconds after the start of the next task in which
     # this may be executing.
     cluster_response = _wait_for_cluster_termination(cluster_id, timeout_seconds=60, poll_seconds=5)
@@ -230,11 +233,11 @@ def _get_cluster_report(
     cluster = cluster_response.result
 
     instances = _get_cluster_instances(cluster)
-    if isinstance(instances, DatabricksError):
+    if instances.error:
         if allow_incomplete:
-            logger.warning(instances.message)
+            logger.warning(instances.error)
         else:
-            return Response(error=instances)
+            return instances
 
     cluster_events = _get_all_cluster_events(cluster_id)
     return Response(
@@ -243,12 +246,12 @@ def _get_cluster_report(
             compute_type=compute_type,
             cluster=cluster,
             cluster_events=cluster_events,
-            instances=instances,
+            instances=instances.result,
         )
     )
 
 
-def _get_cluster_instances(cluster: dict) -> dict | DatabricksError:
+def _get_cluster_instances(cluster: dict) -> Response[dict]:
     cluster_instances = None
     aws_region_name = DB_CONFIG.aws_region_name
 
@@ -293,12 +296,12 @@ def _get_cluster_instances(cluster: dict) -> dict | DatabricksError:
             + "Please refer to the following documentation for options on how to address this - "
             + "https://synccomputingcode.github.io/syncsparkpy/reference/awsdatabricks.html"
         )
-        return DatabricksError(message=no_instances_message)
+        return Response(error=DatabricksError(message=no_instances_message))
 
-    return cluster_instances
+    return Response(result=cluster_instances)
 
 
-def _cluster_log_destination(cluster: dict) -> tuple[str, str, str] | None:
+def _cluster_log_destination(cluster: dict) -> Union[Tuple[str, str, str], None]:
     log_url = cluster.get("cluster_log_conf", {}).get("s3", {}).get("destination")
     if log_url:
         parsed_log_url = urlparse(log_url)
@@ -321,7 +324,7 @@ def record_run(
     compute_type: str,
     project_id: str,
     allow_incomplete_cluster_report: bool = False,
-    exclude_tasks: Collection[str] | None = None,
+    exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[str]:
     """See :py:func:`~create_prediction_for_run`
 
@@ -364,15 +367,18 @@ def get_prediction_job(
     :rtype: Response[dict]
     """
     prediction_response = get_prediction(prediction_id)
-    if prediction := prediction_response.result:
+    prediction = prediction_response.result
+    if prediction:
         job = get_default_client().get_job(job_id)
         if "error_code" in job:
             return Response(error=DatabricksAPIError(**job))
 
         job_settings = job["settings"]
-        if tasks := job_settings.get("tasks", []):
+        tasks = job_settings.get("tasks", [])
+        if tasks:
             cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
-            if cluster := cluster_response.result:
+            cluster = cluster_response.result
+            if cluster:
                 # num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
                 #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster
                 #  with `num_workers`) for a cluster that was originally autoscaled, we want to make sure to remove this
@@ -387,7 +393,8 @@ def get_prediction_job(
                     cluster, prediction["solutions"][preference]["configuration"]
                 )
 
-                if cluster_key := tasks[0].get("job_cluster_key"):
+                cluster_key = tasks[0].get("job_cluster_key")
+                if cluster_key:
                     job_settings["job_clusters"] = [
                         j
                         for j in job_settings["job_clusters"]
@@ -422,13 +429,17 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
         return Response(error=DatabricksAPIError(**job))
 
     job_settings = job["settings"]
-    if tasks := job_settings.get("tasks", []):
+    tasks = job_settings.get("tasks", [])
+    if tasks:
         cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
-        if cluster := cluster_response.result:
+        cluster = cluster_response.result
+        if cluster:
             project_settings_response = get_project_cluster_settings(project_id, region_name)
-            if project_cluster_settings := project_settings_response.result:
+            project_cluster_settings = project_settings_response.result
+            if project_cluster_settings:
                 project_cluster = _deep_update(cluster, project_cluster_settings)
-                if cluster_key := tasks[0].get("job_cluster_key"):
+                cluster_key = tasks[0].get("job_cluster_key")
+                if cluster_key:
                     job_settings["job_clusters"] = [
                         j
                         for j in job_settings["job_clusters"]
@@ -457,13 +468,16 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
     :rtype: Response[dict]
     """
     project_response = get_project(project_id)
-    if project := project_response.result:
+    project = project_response.result
+    if project:
         result = {
             "custom_tags": {
                 "sync:project-id": project_id,
             }
         }
-        if s3_url := project.get("s3_url"):
+
+        s3_url = project.get("s3_url")
+        if s3_url:
             result.update(
                 {
                     "cluster_log_conf": {
@@ -491,7 +505,8 @@ def run_job_object(job: dict) -> Response[str]:
     tasks = job["settings"]["tasks"]
     cluster_response = _get_job_cluster(tasks, job["settings"].get("job_clusters", []))
 
-    if cluster := cluster_response.result:
+    cluster = cluster_response.result
+    if cluster:
         if len(tasks) == 1:
             # For `new_cluster` definitions, Databricks will automatically assign the newly created cluster a name,
             #  and will reject any run submissions where the `cluster_name` is pre-populated
@@ -545,7 +560,8 @@ def run_prediction(job_id: str, prediction_id: str, preference: str) -> Response
     :rtype: Response[str]
     """
     prediction_job_response = get_prediction_job(job_id, prediction_id, preference)
-    if prediction_job := prediction_job_response.result:
+    prediction_job = prediction_job_response.result
+    if prediction_job:
         return run_job_object(prediction_job)
     return prediction_job_response
 
@@ -594,7 +610,8 @@ def run_and_record_prediction_job(
     :rtype: Response[str]
     """
     prediction_job_response = get_prediction_job(job_id, prediction_id, preference)
-    if prediction_job := prediction_job_response.result:
+    prediction_job = prediction_job_response.result
+    if prediction_job:
         return run_and_record_job_object(prediction_job, plan_type, compute_type, project_id)
     return prediction_job_response
 
@@ -620,7 +637,8 @@ def run_and_record_project_job(
     :rtype: Response[str]
     """
     project_job_response = get_project_job(job_id, project_id, region_name)
-    if project_job := project_job_response.result:
+    project_job = project_job_response.result
+    if project_job:
         return run_and_record_job_object(project_job, plan_type, compute_type, project_id)
     return project_job_response
 
@@ -672,9 +690,11 @@ def run_and_record_job_object(
     :rtype: Response[str]
     """
     run_response = run_job_object(job)
-    if run_id := run_response.result:
+    run_id = run_response.result
+    if run_id:
         wait_response = wait_for_run_and_cluster(run_id)
-        if result_state := wait_response.result:
+        result_state = wait_response.result
+        if result_state:
             if result_state == "SUCCESS":
                 return record_run(run_id, plan_type, compute_type, project_id)
             return Response(
@@ -704,7 +724,8 @@ def create_and_record_run(
     :rtype: Response[str]
     """
     run_response = create_run(run)
-    if run_id := run_response.result:
+    run_id = run_response.result
+    if run_id:
         return wait_for_and_record_run(run_id, plan_type, compute_type, project_id)
     return run_response
 
@@ -729,7 +750,8 @@ def wait_for_and_record_run(
     :rtype: Response[str]
     """
     wait_response = wait_for_final_run_status(run_id)
-    if result_state := wait_response.result:
+    result_state = wait_response.result
+    if result_state:
         if result_state == "SUCCESS":
             return record_run(run_id, plan_type, compute_type, project_id)
         return Response(
@@ -811,16 +833,15 @@ def terminate_cluster(cluster_id: str) -> Response[dict]:
     cluster = get_default_client().get_cluster(cluster_id)
     if "error_code" not in cluster:
         state = cluster.get("state")
-        match state:
-            case "TERMINATED":
-                return Response(result=cluster)
-            case "TERMINATING":
-                return _wait_for_cluster_termination(cluster_id)
-            case "PENDING" | "RUNNING" | "RESTARTING" | "RESIZING":
-                get_default_client().delete_cluster(cluster_id)
-                return _wait_for_cluster_termination(cluster_id)
-            case _:
-                return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
+        if state == "TERMINATED":
+            return Response(result=cluster)
+        elif state == "TERMINATING":
+            return _wait_for_cluster_termination(cluster_id)
+        elif state in {"PENDING", "RUNNING", "RESTARTING", "RESIZING"}:
+            get_default_client().delete_cluster(cluster_id)
+            return _wait_for_cluster_termination(cluster_id)
+        else:
+            return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
 
     return Response(error=DatabricksAPIError(**cluster))
 
@@ -832,13 +853,12 @@ def _wait_for_cluster_termination(
     cluster = get_default_client().get_cluster(cluster_id)
     while "error_code" not in cluster:
         state = cluster.get("state")
-        match state:
-            case "TERMINATED":
-                return Response(result=cluster)
-            case "TERMINATING":
-                sleep(poll_seconds)
-            case _:
-                return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
+        if state == "TERMINATED":
+            return Response(result=cluster)
+        elif state == "TERMINATING":
+            sleep(poll_seconds)
+        else:
+            return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
 
         if time.time() - start_seconds > timeout_seconds:
             return Response(
@@ -883,7 +903,7 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
                     new_instances = [res for res in instances["Reservations"]]
                     new_instance_id_to_reservation = dict(
                         zip(
-                            [res["Instances"][0]["InstanceId"] for res in new_instances],
+                            (res["Instances"][0]["InstanceId"] for res in new_instances),
                             new_instances,
                         )
                     )
@@ -891,13 +911,13 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
                     old_instances = [res for res in previous_instances["Reservations"]]
                     old_instance_id_to_reservation = dict(
                         zip(
-                            [res["Instances"][0]["InstanceId"] for res in old_instances],
+                            (res["Instances"][0]["InstanceId"] for res in old_instances),
                             old_instances,
                         )
                     )
 
-                    old_instance_ids = set(old_instance_id_to_reservation.keys())
-                    new_instance_ids = set(new_instance_id_to_reservation.keys())
+                    old_instance_ids = set(old_instance_id_to_reservation)
+                    new_instance_ids = set(new_instance_id_to_reservation)
 
                     # If we have the exact same set of instances, prefer the new set...
                     if old_instance_ids == new_instance_ids:
@@ -935,7 +955,7 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
 
 
-def _get_job_cluster(tasks: list[dict], job_clusters: list) -> Response[dict]:
+def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
     if len(tasks) == 1:
         return _get_task_cluster(tasks[0], job_clusters)
 
@@ -949,33 +969,35 @@ def _get_job_cluster(tasks: list[dict], job_clusters: list) -> Response[dict]:
     return Response(error=DatabricksError(message="Not all tasks use the same cluster"))
 
 
-def _get_run_cluster_id(tasks: list[dict]) -> Response[str]:
+def _get_run_cluster_id(tasks: List[dict]) -> Response[str]:
     cluster_ids = {task["cluster_instance"]["cluster_id"] for task in tasks}
-    match len(cluster_ids):
-        case 1:
-            return Response(result=cluster_ids.pop())
-        case 0:
-            return Response(error=DatabricksError(message="No cluster found for tasks"))
-        case _:
-            return Response(error=DatabricksError(message="More than 1 cluster found for tasks"))
+    num_ids = len(cluster_ids)
+
+    if num_ids == 1:
+        return Response(result=cluster_ids.pop())
+    elif num_ids == 0:
+        return Response(error=DatabricksError(message="No cluster found for tasks"))
+    else:
+        return Response(error=DatabricksError(message="More than 1 cluster found for tasks"))
 
 
 def _get_task_cluster(task: dict, clusters: list) -> Response[dict]:
     cluster = task.get("new_cluster")
 
     if not cluster:
-        if cluster_matches := [
+        cluster_matches = [
             candidate
             for candidate in clusters
             if candidate["job_cluster_key"] == task.get("job_cluster_key")
-        ]:
+        ]
+        if cluster_matches:
             cluster = cluster_matches[0]["new_cluster"]
         else:
             return Response(error=DatabricksError(message="No cluster found for task"))
     return Response(result=cluster)
 
 
-def _s3_contents_have_all_rollover_logs(contents: list[dict], run_end_time_seconds: float):
+def _s3_contents_have_all_rollover_logs(contents: List[dict], run_end_time_seconds: float):
     final_rollover_log = contents and next(
         (
             content
@@ -1069,9 +1091,11 @@ def _get_all_cluster_events(cluster_id: str):
     response = get_default_client().get_cluster_events(cluster_id, limit=500)
     responses = [response]
 
-    while next_args := response.get("next_page"):
+    next_args = response.get("next_page")
+    while next_args:
         response = get_default_client().get_cluster_events(cluster_id, **next_args)
         responses.append(response)
+        next_args = response.get("next_page")
 
     all_events = {
         "events": [],
@@ -1091,8 +1115,8 @@ KeyType = TypeVar("KeyType")
 
 
 def _deep_update(
-    mapping: dict[KeyType, Any], *updating_mappings: dict[KeyType, Any]
-) -> dict[KeyType, Any]:
+    mapping: Dict[KeyType, Any], *updating_mappings: Dict[KeyType, Any]
+) -> Dict[KeyType, Any]:
     updated_mapping = mapping.copy()
     for updating_mapping in updating_mappings:
         for k, v in updating_mapping.items():

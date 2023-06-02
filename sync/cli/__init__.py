@@ -89,7 +89,8 @@ def configure():
 def products():
     """List supported products"""
     products_response = get_products()
-    if products := products_response.result:
+    products = products_response.result
+    if products:
         click.echo(", ".join(products))
     else:
         click.echo(str(products_response.error), err=True)

@@ -1,5 +1,5 @@
 import logging
-from typing import Generator
+from typing import Generator, Union
 
 import httpx
 
@@ -113,7 +113,7 @@ class DatabricksClient(RetryableHTTPClient):
         return {"error_code": "UNKNOWN_ERROR", "message": "Transaction failure"}
 
 
-_sync_client: DatabricksClient | None = None
+_sync_client: Union[DatabricksClient, None] = None
 
 
 def get_default_client() -> DatabricksClient:

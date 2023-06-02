@@ -2,6 +2,8 @@ import logging
 from asyncio import sleep
 from urllib.parse import urlparse
 
+from typing import List
+
 from sync.api.predictions import generate_presigned_url
 from sync.clients.sync import get_default_async_client
 from sync.models import Platform, PredictionError, Response
@@ -27,7 +29,8 @@ async def generate_prediction(
     """
     response = await create_prediction(platform, cluster_report, eventlog_url)
 
-    if prediction_id := response.result:
+    prediction_id = response.result
+    if prediction_id:
         return await wait_for_prediction(prediction_id, preference)
 
     return response
@@ -45,7 +48,8 @@ async def wait_for_prediction(prediction_id: str, preference: str) -> Response[d
     """
     response = await wait_for_final_prediction_status(prediction_id)
 
-    if result := response.result:
+    result = response.result
+    if result:
         if result == "SUCCESS":
             return await get_prediction(prediction_id, preference)
 
@@ -68,7 +72,8 @@ async def get_prediction(prediction_id: str, preference: str = None) -> Response
         prediction_id, {"preference": preference} if preference else None
     )
 
-    if result := response.get("result"):
+    result = response.get("result")
+    if result:
         return Response(result=result)
 
     return Response(**response)
@@ -76,7 +81,7 @@ async def get_prediction(prediction_id: str, preference: str = None) -> Response
 
 async def get_predictions(
     product: str = None, project_id: str = None, preference: str = None
-) -> Response[list[dict]]:
+) -> Response[List[dict]]:
     """Get predictions
 
     :param product: platform to filter by, e.g. "aws-emr", defaults to None
@@ -112,8 +117,10 @@ async def wait_for_final_prediction_status(prediction_id: str) -> Response[str]:
     :return: prediction status, e.g. "SUCCESS"
     :rtype: Response[str]
     """
-    while response := await get_default_async_client().get_prediction_status(prediction_id):
-        if result := response.get("result"):
+    response = await get_default_async_client().get_prediction_status(prediction_id)
+    while response:
+        result = response.get("result")
+        if result:
             if result["status"] in ("SUCCESS", "FAILURE"):
                 return Response(result=result["status"])
         else:
@@ -121,6 +128,8 @@ async def wait_for_final_prediction_status(prediction_id: str) -> Response[str]:
 
         logger.info("Waiting for prediction")
         await sleep(10)
+
+        response = await get_default_async_client().get_prediction_status(prediction_id)
 
     return Response(error=PredictionError(message="Failed to get prediction status"))
 
@@ -141,16 +150,17 @@ async def create_prediction(
     :return: prediction ID
     :rtype: Response[str]
     """
-    match urlparse(eventlog_url).scheme:
-        case "s3":
-            response = generate_presigned_url(eventlog_url)
-            if response.error:
-                return response
-            eventlog_http_url = response.result
-        case "http" | "https":
-            eventlog_http_url = eventlog_url
-        case _:
-            return Response(error=PredictionError(message="Unsupported event log URL scheme"))
+    scheme = urlparse(eventlog_url).scheme
+
+    if scheme == "s3":
+        response = generate_presigned_url(eventlog_url)
+        if response.error:
+            return response
+        eventlog_http_url = response.result
+    elif scheme in {"http", "https"}:
+        eventlog_http_url = eventlog_url
+    else:
+        return Response(error=PredictionError(message="Unsupported event log URL scheme"))
 
     response = await get_default_async_client().create_prediction(
         {

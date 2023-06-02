@@ -3,6 +3,8 @@
 
 import logging
 
+from typing import List
+
 from sync.api.predictions import get_predictions
 from sync.clients.sync import get_default_client
 from sync.models import Preference, ProjectError, Response
@@ -21,14 +23,16 @@ def get_prediction(project_id: str, preference: Preference = None) -> Response[d
     :rtype: Response[dict]
     """
     project_response = get_project(project_id)
-    if project := project_response.result:
+    project = project_response.result
+    if project:
         predictions_response = get_predictions(
             project_id=project_id, preference=preference or project.get("preference")
         )
         if predictions_response.error:
             return predictions_response
 
-        if predictions := predictions_response.result:
+        predictions = predictions_response.result
+        if predictions:
             return Response(result=predictions[0])
         return Response(error=ProjectError(message="No predictions in the project"))
     return project_response
@@ -123,13 +127,14 @@ def get_project_by_app_id(app_id: str) -> Response[dict]:
     if response.get("error"):
         return Response(**response)
 
-    if projects := response.get("result"):
+    projects = response.get("result")
+    if projects:
         return Response(result=projects[0])
 
     return Response(error=ProjectError(message=f"No project found for '{app_id}'"))
 
 
-def get_projects(app_id: str = None) -> Response[list[dict]]:
+def get_projects(app_id: str = None) -> Response[List[dict]]:
     """Returns all projects authorized by the API key
 
     :param app_id: app ID to filter by, defaults to None

@@ -25,7 +25,8 @@ def aws_databricks():
 def run_prediction(job_id: str, prediction_id: str, preference: str = None):
     """Apply a prediction to a job and run it"""
     run = awsdatabricks.run_prediction(job_id, prediction_id, preference)
-    if run_id := run.result:
+    run_id = run.result
+    if run_id:
         click.echo(f"Run ID: {run_id}")
     else:
         click.echo(str(run.error), err=True)
@@ -45,7 +46,8 @@ def run_job(
 ):
     """Run a job, wait for it to complete then create a prediction"""
     run_response = awsdatabricks.run_and_record_job(job_id, plan, compute, project["id"])
-    if prediction_id := run_response.result:
+    prediction_id = run_response.result
+    if prediction_id:
         click.echo(f"Prediction ID: {prediction_id}")
     else:
         click.echo(str(run_response.error), err=True)
@@ -77,7 +79,8 @@ def create_prediction(
     prediction_response = awsdatabricks.create_prediction_for_run(
         run_id, plan, compute, project["id"], allow_incomplete
     )
-    if prediction := prediction_response.result:
+    prediction = prediction_response.result
+    if prediction:
         click.echo(f"Prediction ID: {prediction}")
     else:
         click.echo(f"Failed to create prediction. {prediction_response.error}", err=True)
@@ -105,7 +108,8 @@ def get_cluster_report(
 ):
     """Get a cluster report"""
     config_response = awsdatabricks.get_cluster_report(run_id, plan, compute, allow_incomplete)
-    if config := config_response.result:
+    config = config_response.result
+    if config:
         click.echo(
             orjson.dumps(
                 config.dict(exclude_none=True),

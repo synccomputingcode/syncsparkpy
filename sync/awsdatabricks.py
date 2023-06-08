@@ -1,13 +1,14 @@
 """
 Utilities for interacting with Databricks
 """
+import base64
 import io
 import logging
 import time
 import zipfile
 from pathlib import Path
 from time import sleep
-from typing import Any, Dict, List, Tuple, TypeVar, Union, Collection
+from typing import Any, Collection, Dict, List, Tuple, TypeVar, Union
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -151,6 +152,7 @@ def create_prediction_for_run(
 
     cluster_id_response = _get_run_cluster_id(tasks)
     cluster_id = cluster_id_response.result
+
     if cluster_id:
         # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
         #  uploading all the event log data before we start checking for it
@@ -161,7 +163,8 @@ def create_prediction_for_run(
         if cluster_report:
 
             cluster = cluster_report.cluster
-            eventlog_response = _get_eventlog(cluster, run.get("end_time"))
+            spark_context_id = _get_run_spark_context_id(tasks)
+            eventlog_response = _get_eventlog(cluster, spark_context_id.result, run.get("end_time"))
 
             eventlog = eventlog_response.result
             if eventlog:
@@ -226,7 +229,7 @@ def _get_cluster_report(
 ) -> Response[DatabricksClusterReport]:
     # Cluster `terminated_time` can be a few seconds after the start of the next task in which
     # this may be executing.
-    cluster_response = _wait_for_cluster_termination(cluster_id, timeout_seconds=60, poll_seconds=5)
+    cluster_response = _wait_for_cluster_termination(cluster_id, poll_seconds=5)
     if cluster_response.error:
         return cluster_response
 
@@ -259,24 +262,26 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
     cluster_log_dest = _cluster_log_destination(cluster)
 
     if cluster_log_dest:
-        s3 = boto.client("s3")
-        (_, bucket, base_prefix) = cluster_log_dest
-        cluster_instances_file_key = f"{base_prefix}/sync_data/cluster_instances.json"
+        (_, filesystem, bucket, base_prefix) = cluster_log_dest
+        if filesystem == "s3":
+            s3 = boto.client("s3")
 
-        try:
-            cluster_instances_file_response = s3.get_object(
-                Bucket=bucket, Key=cluster_instances_file_key
-            )
-            cluster_instances = orjson.loads(cluster_instances_file_response["Body"].read())
-        except ClientError as ex:
-            if ex.response["Error"]["Code"] == "NoSuchKey":
-                logger.warning(
-                    f"Could not find sync_data/cluster_instances.json for cluster: {cluster_id}"
+            cluster_instances_file_key = f"{base_prefix}/sync_data/cluster_instances.json"
+
+            try:
+                cluster_instances_file_response = s3.get_object(
+                    Bucket=bucket, Key=cluster_instances_file_key
                 )
-            else:
-                logger.error(
-                    f"Unexpected error encountered while attempting to fetch sync_data/cluster_instances.json: {ex}"
-                )
+                cluster_instances = orjson.loads(cluster_instances_file_response["Body"].read())
+            except ClientError as ex:
+                if ex.response["Error"]["Code"] == "NoSuchKey":
+                    logger.warning(
+                        f"Could not find sync_data/cluster_instances.json for cluster: {cluster_id}"
+                    )
+                else:
+                    logger.error(
+                        f"Unexpected error encountered while attempting to fetch sync_data/cluster_instances.json: {ex}"
+                    )
 
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
@@ -299,23 +304,6 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
         return Response(error=DatabricksError(message=no_instances_message))
 
     return Response(result=cluster_instances)
-
-
-def _cluster_log_destination(cluster: dict) -> Union[Tuple[str, str, str], None]:
-    log_url = cluster.get("cluster_log_conf", {}).get("s3", {}).get("destination")
-    if log_url:
-        parsed_log_url = urlparse(log_url)
-        bucket = parsed_log_url.netloc
-        stripped_path = parsed_log_url.path.strip("/")
-
-        # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
-        #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
-        #  we make sure to re-strip our final Prefix
-        base_cluster_filepath_prefix = f"{stripped_path}/{cluster['cluster_id']}".strip("/")
-
-        return log_url, bucket, base_cluster_filepath_prefix
-
-    return None
 
 
 def record_run(
@@ -872,22 +860,56 @@ def _wait_for_cluster_termination(
     return Response(error=DatabricksAPIError(**cluster))
 
 
-def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
-    cluster = get_default_client().get_cluster(cluster_id)
-    cluster_log_dest = _cluster_log_destination(cluster)
-    if cluster_log_dest:
-        (_, bucket, base_prefix) = cluster_log_dest
+def _cluster_log_destination(
+    cluster: dict,
+) -> Union[Tuple[str, str, str, str], Tuple[None, None, None, None]]:
+    cluster_log_conf = cluster.get("cluster_log_conf", {})
+    s3_log_url = cluster_log_conf.get("s3", {}).get("destination")
+    dbfs_log_url = cluster_log_conf.get("dbfs", {}).get("destination")
 
-        aws_region_name = DB_CONFIG.aws_region_name
-        ec2 = boto.client("ec2", region_name=aws_region_name)
-        s3 = boto.client("s3")
+    log_url = s3_log_url or dbfs_log_url
+
+    if log_url:
+        parsed_log_url = urlparse(log_url)
+        bucket = parsed_log_url.netloc
+        stripped_path = parsed_log_url.path.strip("/")
 
         # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
         #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
         #  we make sure to re-strip our final Prefix
-        file_key = f"{base_prefix}/sync_data/cluster_instances.json".strip("/")
-        previous_instances = None
+        base_cluster_filepath_prefix = f"{stripped_path}/{cluster['cluster_id']}".strip("/")
 
+        return log_url, parsed_log_url.scheme, bucket, base_cluster_filepath_prefix
+
+    return None, None, None, None
+
+
+def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
+    cluster = get_default_client().get_cluster(cluster_id)
+    cluster_log_dest = _cluster_log_destination(cluster)
+    if cluster_log_dest:
+        (_, filesystem, bucket, base_prefix) = cluster_log_dest
+        # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
+        #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
+        #  we make sure to re-strip our final Prefix
+        file_key = f"{base_prefix}/sync_data/cluster_instances.json".strip("/")
+
+        aws_region_name = DB_CONFIG.aws_region_name
+        ec2 = boto.client("ec2", region_name=aws_region_name)
+
+        if filesystem == "s3":
+            s3 = boto.client("s3")
+
+            def write_file(body: bytes):
+                s3.put_object(Bucket=bucket, Key=file_key, Body=body)
+
+        elif filesystem == "dbfs":
+
+            def write_file(body: bytes):
+                # TODO
+                raise Exception()
+
+        previous_instances = {}
         while True:
             try:
                 instances = ec2.describe_instances(
@@ -898,53 +920,49 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
                     ]
                 )
 
-                if previous_instances:
-                    logger.info("Merging instances....")
-                    new_instances = [res for res in instances["Reservations"]]
-                    new_instance_id_to_reservation = dict(
-                        zip(
-                            (res["Instances"][0]["InstanceId"] for res in new_instances),
-                            new_instances,
-                        )
+                new_instances = [res for res in instances["Reservations"]]
+                new_instance_id_to_reservation = dict(
+                    zip(
+                        (res["Instances"][0]["InstanceId"] for res in new_instances),
+                        new_instances,
                     )
+                )
 
-                    old_instances = [res for res in previous_instances["Reservations"]]
-                    old_instance_id_to_reservation = dict(
-                        zip(
-                            (res["Instances"][0]["InstanceId"] for res in old_instances),
-                            old_instances,
-                        )
+                old_instances = [res for res in previous_instances.get("Reservations", [])]
+                old_instance_id_to_reservation = dict(
+                    zip(
+                        (res["Instances"][0]["InstanceId"] for res in old_instances),
+                        old_instances,
                     )
+                )
 
-                    old_instance_ids = set(old_instance_id_to_reservation)
-                    new_instance_ids = set(new_instance_id_to_reservation)
+                old_instance_ids = set(old_instance_id_to_reservation)
+                new_instance_ids = set(new_instance_id_to_reservation)
 
-                    # If we have the exact same set of instances, prefer the new set...
-                    if old_instance_ids == new_instance_ids:
-                        instances = {"Reservations": new_instances}
-                    else:
-                        # Otherwise, update old references and include any new instances in the list
-                        newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
-                        updated_instance_ids = newly_added_instance_ids.intersection(
-                            old_instance_ids
-                        )
-                        removed_instance_ids = old_instance_ids.difference(updated_instance_ids)
+                # If we have the exact same set of instances, prefer the new set...
+                if old_instance_ids == new_instance_ids:
+                    instances = {"Reservations": new_instances}
+                else:
+                    # Otherwise, update old references and include any new instances in the list
+                    newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
+                    updated_instance_ids = newly_added_instance_ids.intersection(old_instance_ids)
+                    removed_instance_ids = old_instance_ids.difference(updated_instance_ids)
 
-                        removed_instances = [
-                            old_instance_id_to_reservation[id] for id in removed_instance_ids
-                        ]
-                        updated_instances = [
-                            new_instance_id_to_reservation[id] for id in updated_instance_ids
-                        ]
-                        new_instances = [
-                            new_instance_id_to_reservation[id] for id in newly_added_instance_ids
-                        ]
+                    removed_instances = [
+                        old_instance_id_to_reservation[id] for id in removed_instance_ids
+                    ]
+                    updated_instances = [
+                        new_instance_id_to_reservation[id] for id in updated_instance_ids
+                    ]
+                    new_instances = [
+                        new_instance_id_to_reservation[id] for id in newly_added_instance_ids
+                    ]
 
-                        instances = {
-                            "Reservations": [*removed_instances, *updated_instances, *new_instances]
-                        }
+                    instances = {
+                        "Reservations": [*removed_instances, *updated_instances, *new_instances]
+                    }
 
-                s3.put_object(Bucket=bucket, Key=file_key, Body=orjson.dumps(instances))
+                write_file(orjson.dumps(instances))
 
                 previous_instances = instances
             except Exception as e:
@@ -975,6 +993,18 @@ def _get_run_cluster_id(tasks: List[dict]) -> Response[str]:
 
     if num_ids == 1:
         return Response(result=cluster_ids.pop())
+    elif num_ids == 0:
+        return Response(error=DatabricksError(message="No cluster found for tasks"))
+    else:
+        return Response(error=DatabricksError(message="More than 1 cluster found for tasks"))
+
+
+def _get_run_spark_context_id(tasks: List[dict]) -> Response[str]:
+    context_ids = {task["cluster_instance"]["spark_context_id"] for task in tasks}
+    num_ids = len(context_ids)
+
+    if num_ids == 1:
+        return Response(result=context_ids.pop())
     elif num_ids == 0:
         return Response(error=DatabricksError(message="No cluster found for tasks"))
     else:
@@ -1017,69 +1047,203 @@ def _s3_contents_have_all_rollover_logs(contents: List[dict], run_end_time_secon
     )
 
 
+def _dbfs_directory_has_all_rollover_logs(contents: dict, run_end_time_millis: float):
+    files = contents["files"]
+    final_rollover_log = contents and next(
+        (
+            file
+            for file in files
+            if Path(file["path"]).stem in {"eventlog", "eventlog.gz", "eventlog.json.gz"}
+        ),
+        False,
+    )
+    return (
+        # Related to - https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1
+        # We want to make sure that the final_rollover_log has had data written to it AFTER the run has actually
+        # completed. We use this as a signal that Databricks has flushed all event log data to DBFS, and that we
+        # can proceed with the upload + prediction.
+        final_rollover_log
+        and final_rollover_log["modification_time"] >= run_end_time_millis
+    )
+
+
 def event_log_poll_duration_seconds():
     """Convenience function to aid testing"""
     return 15
 
 
-def _get_eventlog(cluster_description: dict, run_end_time_millis: int) -> Response[bytes]:
-    log_url = cluster_description.get("cluster_log_conf", {}).get("s3", {}).get("destination")
-    if log_url:
-        parsed_log_url = urlparse(log_url)
+def _get_eventlog_from_s3(
+    cluster_id: str,
+    bucket: str,
+    base_filepath: str,
+    run_end_time_millis: int,
+    poll_duration_seconds: int,
+):
+    s3 = boto.client("s3")
 
-        cluster_id = cluster_description["cluster_id"]
-        s3 = boto.client("s3")
+    # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
+    #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
+    #  we make sure to re-strip our final Prefix
+    # TODO - using the spark_context_id might be good here, as we do in the DBFS logic
+    prefix = f"{base_filepath}/eventlog/{cluster_id}".strip("/")
 
-        stripped_path = parsed_log_url.path.strip("/")
-        # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
-        #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
-        #  we make sure to re-strip our final Prefix
-        prefix = f"{stripped_path}/{cluster_id}/eventlog/{cluster_id}".strip("/")
+    logger.info(f"Looking for eventlogs at location: {prefix}")
 
-        logger.info(f"Looking for eventlogs at location: {prefix}")
+    contents = s3.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents")
+    run_end_time_seconds = run_end_time_millis / 1000
+    poll_num_attempts = 0
+    poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
+    while (
+        not _s3_contents_have_all_rollover_logs(contents, run_end_time_seconds)
+        and poll_num_attempts < poll_max_attempts
+    ):
+        if poll_num_attempts > 0:
+            logger.info(
+                f"No or incomplete event log data detected - attempting again in {poll_duration_seconds} seconds"
+            )
+            sleep(poll_duration_seconds)
 
-        # Databricks uploads event log data every ~5 minutes to S3 -
-        #   https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1
-        # So we will poll this location for *up to* 5 minutes until we see all the eventlog files we are expecting
-        # in the S3 bucket
-        poll_duration_seconds = event_log_poll_duration_seconds()
-        num_attempts = 0
-        max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
-        contents = None
-        run_end_time_seconds = run_end_time_millis / 1000
+        contents = s3.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents")
+        poll_num_attempts += 1
+
+    if contents:
+        eventlog_zip = io.BytesIO()
+        eventlog_zip_file = zipfile.ZipFile(eventlog_zip, "a", zipfile.ZIP_DEFLATED)
+
+        for content in contents:
+            obj = s3.get_object(Bucket=bucket, Key=content["Key"])
+            eventlog_zip_file.writestr(content["Key"].split("/")[-1], obj["Body"].read())
+
+        eventlog_zip_file.close()
+
+        return Response(result=eventlog_zip.getvalue())
+
+    return Response(
+        error=DatabricksError(
+            message=f"No eventlog found at location - {bucket}/{base_filepath} - after {poll_num_attempts * poll_duration_seconds} seconds"
+        )
+    )
+
+
+def _get_eventlog_from_dbfs(
+    cluster_id: str,
+    spark_context_id: str,
+    base_filepath: str,
+    run_end_time_millis: int,
+    poll_duration_seconds: int,
+):
+    prefix = f"dbfs:/{base_filepath}/eventlog/"
+
+    root_dir = get_default_client().list_dbfs_directory(prefix)
+
+    eventlog_files = [f for f in root_dir["files"] if f["is_dir"]]
+    matching_subdirectory = None
+
+    # For shared clusters, we may find multiple subdirectories under the same root path, in the format -
+    #     {cluster_id}_{driver_ip_address}
+    # Since DBFS gives us no good filtering mechanism for this, and there isn't always an easy way to get
+    #  the driver's IP address for a Run, we can list the subdirectories and look for one containing a path
+    #  that ends with this cluster's `spark_context_id`
+    while eventlog_files and not matching_subdirectory:
+        eventlog_file_metadata = eventlog_files.pop()
+        path = eventlog_file_metadata["path"]
+
+        subdir = get_default_client().list_dbfs_directory(path)
+
+        subdir_files = subdir["files"]
+        matching_subdirectory = next(
+            (subfile for subfile in subdir_files if spark_context_id in subfile["path"]),
+            None,
+        )
+
+    if matching_subdirectory:
+        eventlog_dir = get_default_client().list_dbfs_directory(matching_subdirectory["path"])
+
+        poll_num_attempts = 0
+        poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
+
         while (
-            not _s3_contents_have_all_rollover_logs(contents, run_end_time_seconds)
-            and num_attempts < max_attempts
+            not _dbfs_directory_has_all_rollover_logs(eventlog_dir, run_end_time_millis)
+            and poll_num_attempts < poll_max_attempts
         ):
-            if num_attempts > 0:
+            if poll_num_attempts > 0:
                 logger.info(
                     f"No or incomplete event log data detected - attempting again in {poll_duration_seconds} seconds"
                 )
                 sleep(poll_duration_seconds)
 
-            contents = s3.list_objects_v2(
-                Bucket=parsed_log_url.netloc,
-                Prefix=prefix,
-            ).get("Contents")
-            num_attempts += 1
+            eventlog_dir = get_default_client().list_dbfs_directory(matching_subdirectory["path"])
+            poll_num_attempts += 1
 
-        if contents:
-            eventlog_zip = io.BytesIO()
-            eventlog_zip_file = zipfile.ZipFile(eventlog_zip, "a", zipfile.ZIP_DEFLATED)
+        eventlog_zip = io.BytesIO()
+        eventlog_zip_file = zipfile.ZipFile(eventlog_zip, "a", zipfile.ZIP_DEFLATED)
 
-            for content in contents:
-                obj = s3.get_object(Bucket=parsed_log_url.netloc, Key=content["Key"])
-                eventlog_zip_file.writestr(content["Key"].split("/")[-1], obj["Body"].read())
+        eventlog_files = eventlog_dir["files"]
+        for eventlog_file_metadata in eventlog_files:
+            filename = eventlog_file_metadata["path"].split("/")[-1]
+            filesize = eventlog_file_metadata["file_size"]
 
-            eventlog_zip_file.close()
+            bytes_read = 0
+            # DBFS tells us exactly how many bytes to expect for each file, so pre-allocate an array
+            #  to write the file chunks in to
+            content = bytearray(filesize)
+            while bytes_read < filesize:
+                file_content = get_default_client().read_dbfs_file_chunk(
+                    eventlog_file_metadata["path"], offset=bytes_read
+                )
+                new_bytes_read = bytes_read + file_content["bytes_read"]
+                content[bytes_read:new_bytes_read] = base64.b64decode(file_content["data"])
+                bytes_read = new_bytes_read
 
-            return Response(result=eventlog_zip.getvalue())
+            eventlog_zip_file.writestr(filename, content)
 
+        eventlog_zip_file.close()
+        return Response(result=eventlog_zip.getvalue())
+    else:
         return Response(
             error=DatabricksError(
-                message=f"No eventlog found at location - {log_url} - after {num_attempts * poll_duration_seconds} seconds"
+                message=f"No eventlog found for cluster-id: {cluster_id} & spark_context_id: {spark_context_id}"
             )
         )
+
+
+def _get_eventlog(
+    cluster_description: dict,
+    # Databricks will deliver event logs for separate SparkApplication runs on the same cluster into different
+    #  directories based on the `spark_context_id` of the Run.
+    run_spark_context_id: str,
+    run_end_time_millis: int,
+) -> Response[bytes]:
+    (log_url, filesystem, bucket, base_cluster_filepath_prefix) = _cluster_log_destination(
+        cluster_description
+    )
+    if not filesystem:
+        return Response(error=DatabricksError(message="No eventlog location found for cluster."))
+
+    # Databricks uploads event log data every ~5 minutes to S3 -
+    #   https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1
+    # So we will poll this location for *up to* 5 minutes until we see all the eventlog files we are expecting
+    # in the S3 bucket
+    poll_duration_seconds = event_log_poll_duration_seconds()
+
+    if filesystem == "s3":
+        return _get_eventlog_from_s3(
+            cluster_id=cluster_description["cluster_id"],
+            bucket=bucket,
+            base_filepath=base_cluster_filepath_prefix,
+            run_end_time_millis=run_end_time_millis,
+            poll_duration_seconds=poll_duration_seconds,
+        )
+    elif filesystem == "dbfs":
+        return _get_eventlog_from_dbfs(
+            cluster_id=cluster_description["cluster_id"],
+            spark_context_id=run_spark_context_id,
+            base_filepath=base_cluster_filepath_prefix,
+            run_end_time_millis=run_end_time_millis,
+            poll_duration_seconds=poll_duration_seconds,
+        )
+    else:
+        return Response(error=DatabricksError(message=f"Unknown log destination: {filesystem}"))
 
 
 def _get_all_cluster_events(cluster_id: str):

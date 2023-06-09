@@ -1,6 +1,6 @@
 import base64
 
-from sync.clients.databricks import DatabricksClient, get_default_client
+from sync.clients.databricks import DatabricksClient
 
 
 def format_dbfs_filepath(base_path: str):
@@ -9,7 +9,9 @@ def format_dbfs_filepath(base_path: str):
 
 
 def read_dbfs_file(
-    filepath: str, filesize: int = None, dbx_client: DatabricksClient = get_default_client()
+    filepath: str,
+    dbx_client: DatabricksClient,
+    filesize: int = None,
 ) -> bytes:
     """Given a DBFS filepath, returns that file's content in its entirety"""
     offset = 0
@@ -39,3 +41,23 @@ def read_dbfs_file(
         file_content = base64.b64decode(file_content)
 
     return file_content
+
+
+_WRITE_CHUNK_SIZE = 1024 * 1024
+
+
+def write_dbfs_file(filepath: str, body: bytes, dbx_client: DatabricksClient) -> None:
+    """Given a DBFS filepath and some bytes, writes the data in its entirety to DBFS"""
+    filepath = format_dbfs_filepath(filepath)
+    encoded = base64.b64encode(body).decode("utf-8")
+    fd = dbx_client.open_dbfs_file_stream(filepath, True)["handle"]
+
+    bytes_written = 0
+    total_bytes = len(encoded)
+    while bytes_written < total_bytes:
+        chunk_end = min(total_bytes, bytes_written + _WRITE_CHUNK_SIZE)
+        content = encoded[bytes_written:chunk_end]
+        dbx_client.add_block_to_dbfs_file_stream(fd, content)
+        bytes_written += len(content)
+
+    dbx_client.close_dbfs_file_stream(fd)

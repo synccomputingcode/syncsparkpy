@@ -113,6 +113,30 @@ class DatabricksClient(RetryableHTTPClient):
             )
         )
 
+    def open_dbfs_file_stream(self, path: str, overwrite: bool = False) -> dict:
+        headers, content = encode_json({"path": path, "overwrite": overwrite})
+        return self._send(
+            self._client.build_request(
+                "POST", "/api/2.0/dbfs/create", headers=headers, content=content
+            )
+        )
+
+    def add_block_to_dbfs_file_stream(self, handle: int, data: str) -> dict:
+        headers, content = encode_json({"handle": handle, "data": data})
+        return self._send(
+            self._client.build_request(
+                "POST", "/api/2.0/dbfs/add-block", headers=headers, content=content
+            )
+        )
+
+    def close_dbfs_file_stream(self, handle: int) -> dict:
+        headers, content = encode_json({"handle": handle})
+        return self._send(
+            self._client.build_request(
+                "POST", "/api/2.0/dbfs/close", headers=headers, content=content
+            )
+        )
+
     def _send(self, request: httpx.Request) -> dict:
         response = self._send_request(request)
 

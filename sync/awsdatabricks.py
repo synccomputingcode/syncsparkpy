@@ -2,6 +2,7 @@
 Utilities for interacting with Databricks
 """
 import base64
+import gzip
 import io
 import logging
 import time
@@ -26,6 +27,7 @@ from sync.models import (
     Platform,
     Response,
 )
+from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file
 
 logger = logging.getLogger(__name__)
 
@@ -258,21 +260,24 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
     cluster_instances = None
     aws_region_name = DB_CONFIG.aws_region_name
 
-    cluster_id = cluster["cluster_id"]
     cluster_log_dest = _cluster_log_destination(cluster)
 
     if cluster_log_dest:
         (_, filesystem, bucket, base_prefix) = cluster_log_dest
+
+        cluster_id = cluster["cluster_id"]
+        spark_context_id = cluster["spark_context_id"]
+        cluster_instances_file_key = (
+            f"{base_prefix}/sync_data/{spark_context_id}/cluster_instances.json"
+        )
+
+        cluster_instances_file_response = None
         if filesystem == "s3":
             s3 = boto.client("s3")
-
-            cluster_instances_file_key = f"{base_prefix}/sync_data/cluster_instances.json"
-
             try:
                 cluster_instances_file_response = s3.get_object(
                     Bucket=bucket, Key=cluster_instances_file_key
-                )
-                cluster_instances = orjson.loads(cluster_instances_file_response["Body"].read())
+                )["Body"].read()
             except ClientError as ex:
                 if ex.response["Error"]["Code"] == "NoSuchKey":
                     logger.warning(
@@ -282,6 +287,20 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
                     logger.error(
                         f"Unexpected error encountered while attempting to fetch sync_data/cluster_instances.json: {ex}"
                     )
+        elif filesystem == "dbfs":
+            filepath = format_dbfs_filepath(cluster_instances_file_key)
+            try:
+                cluster_instances_file_response = read_dbfs_file(filepath)
+            except Exception as ex:
+                logger.error(
+                    f"Unexpected error encountered while attempting to fetch {filepath}: {ex}"
+                )
+
+        cluster_instances = (
+            orjson.loads(cluster_instances_file_response)
+            if cluster_instances_file_response
+            else None
+        )
 
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
@@ -886,13 +905,22 @@ def _cluster_log_destination(
 
 def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
+    spark_context_id = cluster.get("spark_context_id")
+
+    while not spark_context_id:
+        # This is largely just a convenience for when this command is run by someone locally
+        logger.info("Waiting for cluster startup...")
+        sleep(30)
+        cluster = get_default_client().get_cluster(cluster_id)
+        spark_context_id = cluster.get("spark_context_id")
+
     cluster_log_dest = _cluster_log_destination(cluster)
     if cluster_log_dest:
         (_, filesystem, bucket, base_prefix) = cluster_log_dest
         # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
         #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
         #  we make sure to re-strip our final Prefix
-        file_key = f"{base_prefix}/sync_data/cluster_instances.json".strip("/")
+        file_key = f"{base_prefix}/sync_data/{spark_context_id}/cluster_instances.json".strip("/")
 
         aws_region_name = DB_CONFIG.aws_region_name
         ec2 = boto.client("ec2", region_name=aws_region_name)
@@ -901,13 +929,28 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
             s3 = boto.client("s3")
 
             def write_file(body: bytes):
+                logger.info("Saving state to S3")
                 s3.put_object(Bucket=bucket, Key=file_key, Body=body)
 
         elif filesystem == "dbfs":
+            path = format_dbfs_filepath(file_key)
+            dbx_client = get_default_client()
+            write_chunk_size = 1024 * 1024
 
             def write_file(body: bytes):
-                # TODO
-                raise Exception()
+                logger.info("Saving state to DBFS")
+                encoded = base64.b64encode(body).decode("utf-8")
+                fd = dbx_client.open_dbfs_file_stream(path, True)["handle"]
+
+                bytes_written = 0
+                total_bytes = len(encoded)
+                while bytes_written < total_bytes:
+                    chunk_end = min(total_bytes, bytes_written + write_chunk_size)
+                    content = encoded[bytes_written:chunk_end]
+                    dbx_client.add_block_to_dbfs_file_stream(fd, content)
+                    bytes_written += len(content)
+
+                dbx_client.close_dbfs_file_stream(fd)
 
         previous_instances = {}
         while True:
@@ -1132,7 +1175,7 @@ def _get_eventlog_from_dbfs(
     run_end_time_millis: int,
     poll_duration_seconds: int,
 ):
-    prefix = f"dbfs:/{base_filepath}/eventlog/"
+    prefix = format_dbfs_filepath(f"{base_filepath}/eventlog/")
 
     root_dir = get_default_client().list_dbfs_directory(prefix)
 
@@ -1180,20 +1223,16 @@ def _get_eventlog_from_dbfs(
 
         eventlog_files = eventlog_dir["files"]
         for eventlog_file_metadata in eventlog_files:
-            filename = eventlog_file_metadata["path"].split("/")[-1]
-            filesize = eventlog_file_metadata["file_size"]
+            filename: str = eventlog_file_metadata["path"].split("/")[-1]
+            filesize: int = eventlog_file_metadata["file_size"]
 
-            bytes_read = 0
-            # DBFS tells us exactly how many bytes to expect for each file, so pre-allocate an array
-            #  to write the file chunks in to
-            content = bytearray(filesize)
-            while bytes_read < filesize:
-                file_content = get_default_client().read_dbfs_file_chunk(
-                    eventlog_file_metadata["path"], offset=bytes_read
-                )
-                new_bytes_read = bytes_read + file_content["bytes_read"]
-                content[bytes_read:new_bytes_read] = base64.b64decode(file_content["data"])
-                bytes_read = new_bytes_read
+            content = read_dbfs_file(eventlog_file_metadata["path"], filesize)
+
+            # Databricks typically leaves the most recent rollover log uncompressed, so we may as well
+            #  gzip it before upload
+            if not filename.endswith(".gz"):
+                content = gzip.compress(content)
+                filename += ".gz"
 
             eventlog_zip_file.writestr(filename, content)
 
@@ -1257,7 +1296,7 @@ def _get_all_cluster_events(cluster_id: str):
 
     next_args = response.get("next_page")
     while next_args:
-        response = get_default_client().get_cluster_events(cluster_id, **next_args)
+        response = get_default_client().get_cluster_events(**next_args)
         responses.append(response)
         next_args = response.get("next_page")
 

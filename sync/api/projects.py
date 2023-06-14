@@ -43,6 +43,7 @@ def create_project(
     description: str = None,
     s3_url: str = None,
     prediction_preference: Preference = Preference.BALANCED,
+    prediction_params: dict = None,
 ) -> Response[dict]:
     """Creates a Sync project for tracking and optimizing Apache Spark applications
 
@@ -54,6 +55,8 @@ def create_project(
     :type s3_url: str, optional
     :param prediction_preference: preferred prediction solution, defaults to Preference.BALANCED
     :type prediction_preference: Preference, optional
+    :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented here - https://developers.synccomputing.com/reference/create_project_v1_projects_post
+    :type prediction_preference: dict, optional
     :return: the newly created project
     :rtype: Response[dict]
     """
@@ -64,6 +67,7 @@ def create_project(
                 "description": description,
                 "s3_url": s3_url,
                 "prediction_preference": prediction_preference,
+                "prediction_params": prediction_params
             }
         )
     )
@@ -85,6 +89,7 @@ def update_project(
     description: str = None,
     s3_url: str = None,
     prediction_preference: Preference = None,
+    prediction_params: dict = None,
 ) -> Response[dict]:
     """Updates a project's mutable properties
 
@@ -96,6 +101,8 @@ def update_project(
     :type s3_url: str, optional
     :param prediction_preference: default preference for predictions, defaults to None
     :type prediction_preference: Preference, optional
+    :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented here - https://developers.synccomputing.com/reference/update_project_v1_projects__project_id__put
+    :type prediction_preference: dict, optional
     :return: updated project
     :rtype: Response[dict]
     """
@@ -106,6 +113,8 @@ def update_project(
         project_update["s3_url"] = s3_url
     if prediction_preference:
         project_update["prediction_preference"] = prediction_preference
+    if prediction_params:
+        project_update["prediction_params"] = prediction_params
 
     return Response(
         **get_default_client().update_project(

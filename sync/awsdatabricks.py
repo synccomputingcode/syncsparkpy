@@ -1,7 +1,7 @@
 """
 Utilities for interacting with Databricks
 """
-import base64
+import gzip
 import io
 import logging
 import time
@@ -26,6 +26,7 @@ from sync.models import (
     Platform,
     Response,
 )
+from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file, write_dbfs_file
 
 logger = logging.getLogger(__name__)
 
@@ -254,34 +255,60 @@ def _get_cluster_report(
     )
 
 
+def _get_cluster_instances_from_s3(bucket: str, file_key: str, cluster_id):
+    s3 = boto.client("s3")
+    try:
+        return s3.get_object(Bucket=bucket, Key=file_key)["Body"].read()
+    except ClientError as ex:
+        if ex.response["Error"]["Code"] == "NoSuchKey":
+            logger.warning(
+                f"Could not find sync_data/cluster_instances.json for cluster: {cluster_id}"
+            )
+        else:
+            logger.error(
+                f"Unexpected error encountered while attempting to fetch sync_data/cluster_instances.json: {ex}"
+            )
+
+
+def _get_cluster_instances_from_dbfs(filepath: str):
+    filepath = format_dbfs_filepath(filepath)
+    dbx_client = get_default_client()
+    try:
+        return read_dbfs_file(filepath, dbx_client)
+    except Exception as ex:
+        logger.error(f"Unexpected error encountered while attempting to fetch {filepath}: {ex}")
+
+
 def _get_cluster_instances(cluster: dict) -> Response[dict]:
     cluster_instances = None
     aws_region_name = DB_CONFIG.aws_region_name
 
-    cluster_id = cluster["cluster_id"]
     cluster_log_dest = _cluster_log_destination(cluster)
 
     if cluster_log_dest:
         (_, filesystem, bucket, base_prefix) = cluster_log_dest
+
+        cluster_id = cluster["cluster_id"]
+        spark_context_id = cluster["spark_context_id"]
+        cluster_instances_file_key = (
+            f"{base_prefix}/sync_data/{spark_context_id}/cluster_instances.json"
+        )
+
+        cluster_instances_file_response = None
         if filesystem == "s3":
-            s3 = boto.client("s3")
+            cluster_instances_file_response = _get_cluster_instances_from_s3(
+                bucket, cluster_instances_file_key, cluster_id
+            )
+        elif filesystem == "dbfs":
+            cluster_instances_file_response = _get_cluster_instances_from_dbfs(
+                cluster_instances_file_key
+            )
 
-            cluster_instances_file_key = f"{base_prefix}/sync_data/cluster_instances.json"
-
-            try:
-                cluster_instances_file_response = s3.get_object(
-                    Bucket=bucket, Key=cluster_instances_file_key
-                )
-                cluster_instances = orjson.loads(cluster_instances_file_response["Body"].read())
-            except ClientError as ex:
-                if ex.response["Error"]["Code"] == "NoSuchKey":
-                    logger.warning(
-                        f"Could not find sync_data/cluster_instances.json for cluster: {cluster_id}"
-                    )
-                else:
-                    logger.error(
-                        f"Unexpected error encountered while attempting to fetch sync_data/cluster_instances.json: {ex}"
-                    )
+        cluster_instances = (
+            orjson.loads(cluster_instances_file_response)
+            if cluster_instances_file_response
+            else None
+        )
 
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
@@ -886,91 +913,111 @@ def _cluster_log_destination(
 
 def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
-    cluster_log_dest = _cluster_log_destination(cluster)
-    if cluster_log_dest:
-        (_, filesystem, bucket, base_prefix) = cluster_log_dest
-        # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
-        #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
-        #  we make sure to re-strip our final Prefix
-        file_key = f"{base_prefix}/sync_data/cluster_instances.json".strip("/")
+    spark_context_id = cluster.get("spark_context_id")
 
-        aws_region_name = DB_CONFIG.aws_region_name
-        ec2 = boto.client("ec2", region_name=aws_region_name)
+    while not spark_context_id:
+        # This is largely just a convenience for when this command is run by someone locally
+        logger.info("Waiting for cluster startup...")
+        sleep(30)
+        cluster = get_default_client().get_cluster(cluster_id)
+        spark_context_id = cluster.get("spark_context_id")
 
-        if filesystem == "s3":
-            s3 = boto.client("s3")
-
-            def write_file(body: bytes):
-                s3.put_object(Bucket=bucket, Key=file_key, Body=body)
-
-        elif filesystem == "dbfs":
-
-            def write_file(body: bytes):
-                # TODO
-                raise Exception()
-
-        previous_instances = {}
-        while True:
-            try:
-                instances = ec2.describe_instances(
-                    Filters=[
-                        {"Name": "tag:Vendor", "Values": ["Databricks"]},
-                        {"Name": "tag:ClusterId", "Values": [cluster_id]},
-                        # {'Name': 'tag:JobId', 'Values': []}
-                    ]
-                )
-
-                new_instances = [res for res in instances["Reservations"]]
-                new_instance_id_to_reservation = dict(
-                    zip(
-                        (res["Instances"][0]["InstanceId"] for res in new_instances),
-                        new_instances,
-                    )
-                )
-
-                old_instances = [res for res in previous_instances.get("Reservations", [])]
-                old_instance_id_to_reservation = dict(
-                    zip(
-                        (res["Instances"][0]["InstanceId"] for res in old_instances),
-                        old_instances,
-                    )
-                )
-
-                old_instance_ids = set(old_instance_id_to_reservation)
-                new_instance_ids = set(new_instance_id_to_reservation)
-
-                # If we have the exact same set of instances, prefer the new set...
-                if old_instance_ids == new_instance_ids:
-                    instances = {"Reservations": new_instances}
-                else:
-                    # Otherwise, update old references and include any new instances in the list
-                    newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
-                    updated_instance_ids = newly_added_instance_ids.intersection(old_instance_ids)
-                    removed_instance_ids = old_instance_ids.difference(updated_instance_ids)
-
-                    removed_instances = [
-                        old_instance_id_to_reservation[id] for id in removed_instance_ids
-                    ]
-                    updated_instances = [
-                        new_instance_id_to_reservation[id] for id in updated_instance_ids
-                    ]
-                    new_instances = [
-                        new_instance_id_to_reservation[id] for id in newly_added_instance_ids
-                    ]
-
-                    instances = {
-                        "Reservations": [*removed_instances, *updated_instances, *new_instances]
-                    }
-
-                write_file(orjson.dumps(instances))
-
-                previous_instances = instances
-            except Exception as e:
-                logger.error(f"Exception encountered while polling cluster: {e}")
-
-            sleep(polling_period)
+    (log_url, filesystem, bucket, base_prefix) = _cluster_log_destination(cluster)
+    if log_url:
+        _monitor_cluster(
+            (log_url, filesystem, bucket, base_prefix), cluster_id, spark_context_id, polling_period
+        )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
+
+
+def _monitor_cluster(
+    cluster_log_destination, cluster_id: str, spark_context_id: int, polling_period: int
+) -> None:
+    (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
+    # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
+    #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
+    #  we make sure to re-strip our final Prefix
+    file_key = f"{base_prefix}/sync_data/{spark_context_id}/cluster_instances.json".strip("/")
+
+    aws_region_name = DB_CONFIG.aws_region_name
+    ec2 = boto.client("ec2", region_name=aws_region_name)
+
+    if filesystem == "s3":
+        s3 = boto.client("s3")
+
+        def write_file(body: bytes):
+            logger.info("Saving state to S3")
+            s3.put_object(Bucket=bucket, Key=file_key, Body=body)
+
+    elif filesystem == "dbfs":
+        path = format_dbfs_filepath(file_key)
+        dbx_client = get_default_client()
+
+        def write_file(body: bytes):
+            logger.info("Saving state to DBFS")
+            write_dbfs_file(path, body, dbx_client)
+
+    previous_instances = {}
+    while True:
+        try:
+            instances = ec2.describe_instances(
+                Filters=[
+                    {"Name": "tag:Vendor", "Values": ["Databricks"]},
+                    {"Name": "tag:ClusterId", "Values": [cluster_id]},
+                    # {'Name': 'tag:JobId', 'Values': []}
+                ]
+            )
+
+            new_instances = [res for res in instances["Reservations"]]
+            new_instance_id_to_reservation = dict(
+                zip(
+                    (res["Instances"][0]["InstanceId"] for res in new_instances),
+                    new_instances,
+                )
+            )
+
+            old_instances = [res for res in previous_instances.get("Reservations", [])]
+            old_instance_id_to_reservation = dict(
+                zip(
+                    (res["Instances"][0]["InstanceId"] for res in old_instances),
+                    old_instances,
+                )
+            )
+
+            old_instance_ids = set(old_instance_id_to_reservation)
+            new_instance_ids = set(new_instance_id_to_reservation)
+
+            # If we have the exact same set of instances, prefer the new set...
+            if old_instance_ids == new_instance_ids:
+                instances = {"Reservations": new_instances}
+            else:
+                # Otherwise, update old references and include any new instances in the list
+                newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
+                updated_instance_ids = newly_added_instance_ids.intersection(old_instance_ids)
+                removed_instance_ids = old_instance_ids.difference(updated_instance_ids)
+
+                removed_instances = [
+                    old_instance_id_to_reservation[id] for id in removed_instance_ids
+                ]
+                updated_instances = [
+                    new_instance_id_to_reservation[id] for id in updated_instance_ids
+                ]
+                new_instances = [
+                    new_instance_id_to_reservation[id] for id in newly_added_instance_ids
+                ]
+
+                instances = {
+                    "Reservations": [*removed_instances, *updated_instances, *new_instances]
+                }
+
+            write_file(orjson.dumps(instances))
+
+            previous_instances = instances
+        except Exception as e:
+            logger.error(f"Exception encountered while polling cluster: {e}")
+
+        sleep(polling_period)
 
 
 def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
@@ -1132,7 +1179,7 @@ def _get_eventlog_from_dbfs(
     run_end_time_millis: int,
     poll_duration_seconds: int,
 ):
-    prefix = f"dbfs:/{base_filepath}/eventlog/"
+    prefix = format_dbfs_filepath(f"{base_filepath}/eventlog/")
 
     root_dir = get_default_client().list_dbfs_directory(prefix)
 
@@ -1179,21 +1226,18 @@ def _get_eventlog_from_dbfs(
         eventlog_zip_file = zipfile.ZipFile(eventlog_zip, "a", zipfile.ZIP_DEFLATED)
 
         eventlog_files = eventlog_dir["files"]
+        dbx_client = get_default_client()
         for eventlog_file_metadata in eventlog_files:
-            filename = eventlog_file_metadata["path"].split("/")[-1]
-            filesize = eventlog_file_metadata["file_size"]
+            filename: str = eventlog_file_metadata["path"].split("/")[-1]
+            filesize: int = eventlog_file_metadata["file_size"]
 
-            bytes_read = 0
-            # DBFS tells us exactly how many bytes to expect for each file, so pre-allocate an array
-            #  to write the file chunks in to
-            content = bytearray(filesize)
-            while bytes_read < filesize:
-                file_content = get_default_client().read_dbfs_file_chunk(
-                    eventlog_file_metadata["path"], offset=bytes_read
-                )
-                new_bytes_read = bytes_read + file_content["bytes_read"]
-                content[bytes_read:new_bytes_read] = base64.b64decode(file_content["data"])
-                bytes_read = new_bytes_read
+            content = read_dbfs_file(eventlog_file_metadata["path"], dbx_client, filesize)
+
+            # Databricks typically leaves the most recent rollover log uncompressed, so we may as well
+            #  gzip it before upload
+            if not filename.endswith(".gz"):
+                content = gzip.compress(content)
+                filename += ".gz"
 
             eventlog_zip_file.writestr(filename, content)
 
@@ -1257,7 +1301,7 @@ def _get_all_cluster_events(cluster_id: str):
 
     next_args = response.get("next_page")
     while next_args:
-        response = get_default_client().get_cluster_events(cluster_id, **next_args)
+        response = get_default_client().get_cluster_events(**next_args)
         responses.append(response)
         next_args = response.get("next_page")
 

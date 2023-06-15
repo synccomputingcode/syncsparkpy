@@ -670,7 +670,9 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
 
     base_prefix = "path/to/logs/0101-214342-tpi6qdp2"
     eventlog_file_prefix = f"{base_prefix}/eventlog/0101-214342-tpi6qdp2"
-    cluster_instances_file_key = f"{base_prefix}/sync_data/cluster_instances.json"
+    cluster_instances_file_key = (
+        f"{base_prefix}/sync_data/1443449481634833945/cluster_instances.json"
+    )
 
     # Don't add any responses for this one as we expect all the instance data we need to be available
     #  in the cluster_instances.json file

@@ -43,13 +43,10 @@ def configure():
         show_default=False,
     )
 
-    project_url = click.prompt(
-        "Default project S3 URL", default=CONFIG.default_project_url or OPTIONAL_DEFAULT
-    )
     prediction_preference = click.prompt(
         "Default prediction preference",
         type=click.Choice([p.value for p in Preference]),
-        default=(CONFIG.default_prediction_preference or Preference.BALANCED).value,
+        default=(CONFIG.default_prediction_preference or Preference.ECONOMY).value,
     )
 
     dbx_host = OPTIONAL_DEFAULT
@@ -74,7 +71,6 @@ def configure():
     init(
         APIKey(api_key_id=api_key_id, api_key_secret=api_key_secret),
         Configuration(
-            default_project_url=project_url if project_url != OPTIONAL_DEFAULT else None,
             default_prediction_preference=prediction_preference,
         ),
         DatabricksConf(host=dbx_host, token=dbx_token, aws_region_name=dbx_region)

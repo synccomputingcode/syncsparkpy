@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Union
 from urllib.parse import urlparse
 
 import boto3 as boto
-from pydantic import BaseSettings, Field, validator
+from pydantic import BaseSettings, Field, validator, Extra
 
 from .models import Preference
 
@@ -39,25 +39,12 @@ class APIKey(BaseSettings):
 
 
 class Configuration(BaseSettings):
-    default_project_url: Union[str, None] = Field(
-        description="default location for Sync project data"
-    )
-    default_prediction_preference: Union[Preference, None] = Preference.BALANCED
+    default_prediction_preference: Union[Preference, None] = Preference.ECONOMY
     api_url: str = Field("https://api.synccomputing.com", env="SYNC_API_URL")
 
-    @validator("default_project_url")
-    def validate_url(cls, url):
-        if url:
-            # There are valid S3 URLs (e.g. with spaces) not supported by Pydantic URL types: https://docs.pydantic.dev/usage/types/#urls
-            # Hence the manual validation here
-            parsed_url = urlparse(url.rstrip("/"))
-
-            if parsed_url.scheme != "s3":
-                raise ValueError("Only S3 URLs please!")
-
-            return parsed_url.geturl()
-
     class Config:
+        extra = Extra.ignore
+
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
             return (init_settings, env_settings, json_config_settings_source(CONFIG_FILE))
@@ -124,8 +111,11 @@ def get_api_key() -> APIKey:
     :rtype: APIKey
     """
     global _api_key
-    if not _api_key:
-        _api_key = APIKey()
+    if _api_key is None:
+        try:
+            _api_key = APIKey()
+        except ValueError:
+            pass
     return _api_key
 
 
@@ -136,9 +126,19 @@ def get_config() -> Configuration:
     :rtype: Configuration
     """
     global _config
-    if not _config:
+    if _config is None:
         _config = Configuration()
     return _config
+
+
+def get_databricks_config() -> DatabricksConf:
+    global _db_config
+    if _db_config is None:
+        try:
+            _db_config = DatabricksConf()
+        except ValueError:
+            pass
+    return _db_config
 
 
 CONFIG: Configuration
@@ -151,26 +151,11 @@ _db_config = None
 
 def __getattr__(name):
     if name == "CONFIG":
-        global _config
-        if _config is None:
-            _config = Configuration()
-        return _config
+        return get_config()
     elif name == "API_KEY":
-        global _api_key
-        if _api_key is None:
-            try:
-                _api_key = APIKey()
-            except ValueError:
-                pass
-        return _api_key
+        return get_api_key()
     elif name == "DB_CONFIG":
-        global _db_config
-        if _db_config is None:
-            try:
-                _db_config = DatabricksConf()
-            except ValueError:
-                pass
-        return _db_config
+        return get_databricks_config()
     else:
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 

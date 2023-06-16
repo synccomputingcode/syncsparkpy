@@ -2,7 +2,6 @@
 """
 
 import logging
-
 from typing import List
 
 from sync.api.predictions import get_predictions
@@ -42,7 +41,7 @@ def create_project(
     app_id: str,
     description: str = None,
     s3_url: str = None,
-    prediction_preference: Preference = Preference.BALANCED,
+    prediction_preference: Preference = Preference.ECONOMY,
     prediction_params: dict = None,
 ) -> Response[dict]:
     """Creates a Sync project for tracking and optimizing Apache Spark applications
@@ -53,7 +52,7 @@ def create_project(
     :type description: str, optional
     :param s3_url: S3 URL under which to store project configurations and logs, defaults to None
     :type s3_url: str, optional
-    :param prediction_preference: preferred prediction solution, defaults to Preference.BALANCED
+    :param prediction_preference: preferred prediction solution, defaults to `Preference.ECONOMY`
     :type prediction_preference: Preference, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented here - https://developers.synccomputing.com/reference/create_project_v1_projects_post
     :type prediction_preference: dict, optional
@@ -67,7 +66,7 @@ def create_project(
                 "description": description,
                 "s3_url": s3_url,
                 "prediction_preference": prediction_preference,
-                "prediction_params": prediction_params
+                "prediction_params": prediction_params,
             }
         )
     )

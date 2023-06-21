@@ -23,13 +23,17 @@ class Platform(str, Enum):
 
 class Project(BaseModel):
     id: UUID4 = Field(..., description="project UUID")
-    app_id: str = Field(
-        ...,
-        description="a string that uniquely identifies an application to the owner of that application",
+    name: str = Field(..., description="project name")
+    description: Union[str, None] = Field(
+        description="additional information on the app, or project"
     )
-    description: Union[str, None] = Field(description="Additional information on the app, or project")
     s3_url: Union[str, None] = Field(description="location of data from runs of the application")
-    prediction_preference: Union[Preference, None] = Field(description="preferred prediction to apply")
+    prediction_preference: Union[Preference, None] = Field(
+        description="preferred prediction to apply"
+    )
+    app_id: str = Field(
+        ..., description="external identifier, often based on the project's target application"
+    )
 
 
 class Error(BaseModel):

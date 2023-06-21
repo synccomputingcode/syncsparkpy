@@ -111,7 +111,7 @@ def test_get_project_report(get_project, get_cluster_report):
             "created_at": "2023-01-20T00:38:10Z",
             "updated_at": "2023-03-10T17:18:50Z",
             "id": "4f5fe783-df74-4d64-adad-a635d6319579",
-            "app_id": "Data Insights",
+            "name": "Data Insights",
             "description": "My first project",
             "s3_url": "s3://megacorp-bucket/projects/emr",
             "prediction_preference": "balanced",

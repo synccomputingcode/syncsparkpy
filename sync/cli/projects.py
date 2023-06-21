@@ -53,6 +53,7 @@ def get(project: dict):
 @projects.command
 @click.argument("name")
 @click.option("-d", "--description")
+@click.option("-j", "--job-id", help="Databricks job ID")
 @click.option("-l", "--location", help="S3 URL under which to store event logs and configuration")
 @click.option(
     "-p",
@@ -66,6 +67,7 @@ def get(project: dict):
 def create(
     name: str,
     description: str = None,
+    job_id: str = None,
     location: str = None,
     preference: Preference = None,
     app_id: str = None,
@@ -76,6 +78,7 @@ def create(
     response = create_project(
         name,
         description=description,
+        job_id=job_id,
         s3_url=location,
         prediction_preference=preference,
         app_id=app_id,

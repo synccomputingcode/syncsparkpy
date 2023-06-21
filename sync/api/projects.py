@@ -40,6 +40,7 @@ def get_prediction(project_id: str, preference: Preference = None) -> Response[d
 def create_project(
     name: str,
     description: str = None,
+    job_id: str = None,
     s3_url: str = None,
     prediction_preference: Preference = Preference.ECONOMY,
     prediction_params: dict = None,
@@ -51,6 +52,8 @@ def create_project(
     :type name: str
     :param description: application description, defaults to None
     :type description: str, optional
+    :param job_id: Databricks job ID, defaults to None
+    :type job_id: str, optional
     :param s3_url: S3 URL under which to store project configurations and logs, defaults to None
     :type s3_url: str, optional
     :param prediction_preference: preferred prediction solution, defaults to `Preference.ECONOMY`
@@ -67,6 +70,7 @@ def create_project(
             {
                 "name": name,
                 "description": description,
+                "job_id": job_id,
                 "s3_url": s3_url,
                 "prediction_preference": prediction_preference,
                 "prediction_params": prediction_params,

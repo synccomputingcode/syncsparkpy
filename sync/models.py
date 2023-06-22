@@ -7,7 +7,6 @@ from typing import Generic, TypeVar, Union
 
 from pydantic import BaseModel, Field, root_validator, validator
 from pydantic.generics import GenericModel
-from pydantic.types import UUID4
 
 
 class Preference(str, Enum):
@@ -19,21 +18,6 @@ class Preference(str, Enum):
 class Platform(str, Enum):
     AWS_EMR = "aws-emr"
     AWS_DATABRICKS = "aws-databricks"
-
-
-class Project(BaseModel):
-    id: UUID4 = Field(..., description="project UUID")
-    name: str = Field(..., description="project name")
-    description: Union[str, None] = Field(
-        description="additional information on the app, or project"
-    )
-    s3_url: Union[str, None] = Field(description="location of data from runs of the application")
-    prediction_preference: Union[Preference, None] = Field(
-        description="preferred prediction to apply"
-    )
-    app_id: str = Field(
-        ..., description="external identifier, often based on the project's target application"
-    )
 
 
 class Error(BaseModel):

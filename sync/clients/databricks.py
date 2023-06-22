@@ -52,14 +52,12 @@ class DatabricksClient(RetryableHTTPClient):
             )
         )
 
-    def get_cluster_events(self, cluster_id: str, **kwargs) -> dict:
+    def get_cluster_events(self, cluster_id: str, **params) -> dict:
         """Returns a single page of cluster events for the given cluster_id. **kwargs will be passed
         as-is as query parameters to the Databricks API. Refer to these docs for all possible arguments -
         https://docs.databricks.com/dev-tools/api/latest/clusters.html#events
         """
-        kwargs["cluster_id"] = cluster_id
-
-        headers, content = encode_json(kwargs)
+        headers, content = encode_json({"cluster_id": cluster_id, **params})
 
         return self._send(
             self._client.build_request(
@@ -137,6 +135,9 @@ class DatabricksClient(RetryableHTTPClient):
             )
         )
 
+    def get_current_user(self) -> dict:
+        return self._send(self._client.build_request("GET", "/api/2.0/preview/scim/v2/Me"))
+
     def _send(self, request: httpx.Request) -> dict:
         response = self._send_request(request)
 
@@ -146,13 +147,13 @@ class DatabricksClient(RetryableHTTPClient):
         if response.headers.get("Content-Type", "").startswith("application/json"):
             response_json = response.json()
             if "error_code" in response_json:
-                # Though not in the documentation, the cluster API can return and "error_code" too
-                # return {"error": {"code": "Databricks API Error", "message": f"{response_json['error_code']}: {response_json.get('message')}"}}
                 return response_json
 
-        # return {"error": {"code": "Databricks API Error", "message": "Transaction failure"}}
         logger.error(f"Unknown error - {response.status_code}: {response.text}")
-        return {"error_code": "UNKNOWN_ERROR", "message": "Transaction failure"}
+        return {
+            "error_code": str(response.status_code),
+            "message": httpx.codes.get_reason_phrase(response.status_code),
+        }
 
 
 _sync_client: Union[DatabricksClient, None] = None

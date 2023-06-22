@@ -2,6 +2,7 @@
 Models used throughout this SDK
 """
 
+from dataclasses import dataclass
 from enum import Enum, unique
 from typing import Generic, TypeVar, Union
 
@@ -27,9 +28,31 @@ class Project(BaseModel):
         ...,
         description="a string that uniquely identifies an application to the owner of that application",
     )
-    description: Union[str, None] = Field(description="Additional information on the app, or project")
+    description: Union[str, None] = Field(
+        description="Additional information on the app, or project"
+    )
     s3_url: Union[str, None] = Field(description="location of data from runs of the application")
-    prediction_preference: Union[Preference, None] = Field(description="preferred prediction to apply")
+    prediction_preference: Union[Preference, None] = Field(
+        description="preferred prediction to apply"
+    )
+
+
+class AccessStatusCode(str, Enum):
+    GREEN = "OK"
+    YELLOW = "Missing"
+    RED = "Required"
+
+
+@dataclass
+class AccessReportLine:
+    name: str
+    status: AccessStatusCode
+    message: Union[str, None]
+
+
+class AccessReport(list[AccessReportLine]):
+    def __str__(self):
+        return "\n".join(f"{line.name}\n  {line.status}: {line.message}" for line in self)
 
 
 class Error(BaseModel):

@@ -7,23 +7,223 @@ import io
 import logging
 import re
 from copy import deepcopy
+from typing import Tuple
 from urllib.parse import urlparse
 from uuid import uuid4
 
 import boto3 as boto
 import orjson
 from dateutil.parser import parse as dateparse
-from typing import Tuple
 
 from sync import TIME_FORMAT
+from sync.api import get_access_report as get_api_access_report
 from sync.api.predictions import create_prediction, wait_for_prediction
 from sync.api.projects import get_project
-from sync.models import EMRError, Platform, ProjectError, Response
+from sync.models import (
+    AccessReport,
+    AccessReportLine,
+    AccessStatusCode,
+    EMRError,
+    Platform,
+    ProjectError,
+    Response,
+)
 
 logger = logging.getLogger(__name__)
 
 
 RUN_DIR_PATTERN_TEMPLATE = r"{project_prefix}/{project_id}/(?P<timestamp>\d{{4}}-[^/]+)/{run_id}"
+
+
+def get_access_report(
+    log_url: str = None, cluster_id: str = None, region_name: str = None
+) -> AccessReport:
+    report = get_api_access_report()
+    sts = boto.client("sts")
+    response = sts.get_caller_identity()
+
+    arn = response.get("Arn")
+    if not arn:
+        report.append(
+            AccessReportLine(
+                name="AWS Authentication",
+                status=AccessStatusCode.RED,
+                message="Failed to authenticate AWS credentials",
+            )
+        )
+    else:
+        report.append(
+            AccessReportLine(
+                name="AWS Authentication",
+                status=AccessStatusCode.GREEN,
+                message=f"Authenticated as '{arn}'",
+            )
+        )
+
+    if arn and log_url:
+        parsed_log_url = urlparse(log_url)
+
+        if parsed_log_url.scheme == "s3" and arn:
+            try:
+                boto.client("s3").list_objects_v2(
+                    Bucket=parsed_log_url.netloc,
+                    Prefix=parsed_log_url.params.rstrip("/"),
+                    MaxKeys=1,
+                )
+            except Exception:
+                report.append(
+                    AccessReportLine(
+                        name="S3 Logging",
+                        status=AccessStatusCode.RED,
+                        message=f"s3:ListBucket on {parsed_log_url.geturl()} is required",
+                    )
+                )
+            else:
+                report.append(
+                    AccessReportLine(
+                        name="S3 Logging",
+                        status=AccessStatusCode.GREEN,
+                        message=f"Can list objects at {parsed_log_url.geturl()}",
+                    )
+                )
+        else:
+            report.append(
+                AccessReportLine(
+                    name="Logging",
+                    status=AccessStatusCode.RED,
+                    message=f"scheme in {parsed_log_url.geturl()} is not supported",
+                )
+            )
+
+    if arn and cluster_id:
+        valid_cluster_id = True
+        emr = boto.client("emr", region_name=region_name)
+        try:
+            emr.describe_cluster(ClusterId=cluster_id)["Cluster"]
+        except Exception as exc:
+            if exc.response.get("Error", {}).get("Code") == "AccessDeniedException":
+                report.append(
+                    AccessReportLine(
+                        name="EMR Cluster",
+                        status=AccessStatusCode.RED,
+                        message="emr:DescribeCluster permission is required",
+                    )
+                )
+            else:
+                report.append(
+                    AccessReportLine(
+                        name="EMR Cluster",
+                        status=AccessStatusCode.YELLOW,
+                        message=exc.response.get("Error", {}).get("Message"),
+                    )
+                )
+                valid_cluster_id = False
+        else:
+            report.append(
+                AccessReportLine(
+                    name="EMR Cluster",
+                    status=AccessStatusCode.GREEN,
+                    message="Can describe cluster",
+                )
+            )
+
+        if valid_cluster_id:
+            try:
+                emr.list_bootstrap_actions(ClusterId=cluster_id)
+            except Exception:
+                report.append(
+                    AccessReportLine(
+                        name="EMR Bootstrap Actions",
+                        status=AccessStatusCode.RED,
+                        message="emr:ListBootstrapActions permission is required",
+                    )
+                )
+            else:
+                report.append(
+                    AccessReportLine(
+                        name="EMR Bootstrap Actions",
+                        status=AccessStatusCode.GREEN,
+                        message="Can list bootstrap actions",
+                    )
+                )
+
+            try:
+                emr.list_instance_fleets(ClusterId=cluster_id)
+            except Exception:
+                report.append(
+                    AccessReportLine(
+                        name="EMR Instance Fleets",
+                        status=AccessStatusCode.RED,
+                        message="emr:ListInstanceFleets permission is required",
+                    )
+                )
+            else:
+                report.append(
+                    AccessReportLine(
+                        name="EMR Instance Fleets",
+                        status=AccessStatusCode.GREEN,
+                        message="Can list instance fleets",
+                    )
+                )
+
+            try:
+                emr.list_instance_groups(ClusterId=cluster_id)
+            except Exception:
+                report.append(
+                    AccessReportLine(
+                        name="EMR Instance Fleets",
+                        status=AccessStatusCode.RED,
+                        message="emr:ListInstanceFleets permission is required",
+                    )
+                )
+            else:
+                report.append(
+                    AccessReportLine(
+                        name="EMR Instance Fleets",
+                        status=AccessStatusCode.GREEN,
+                        message="Can list instance fleets",
+                    )
+                )
+
+            try:
+                emr.list_instances(ClusterId=cluster_id)
+            except Exception:
+                report.append(
+                    AccessReportLine(
+                        name="EMR Instances",
+                        status=AccessStatusCode.RED,
+                        message="emr:ListInstances permission is required",
+                    )
+                )
+            else:
+                report.append(
+                    AccessReportLine(
+                        name="EMR Instances",
+                        status=AccessStatusCode.GREEN,
+                        message="Can list instances",
+                    )
+                )
+
+            try:
+                emr.list_steps(ClusterId=cluster_id)
+            except Exception:
+                report.append(
+                    AccessReportLine(
+                        name="EMR Steps",
+                        status=AccessStatusCode.RED,
+                        message="emr:ListSteps permission is required",
+                    )
+                )
+            else:
+                report.append(
+                    AccessReportLine(
+                        name="EMR Steps", status=AccessStatusCode.GREEN, message="Can list steps"
+                    )
+                )
+
+    report += get_api_access_report()
+
+    return report
 
 
 def get_project_job_flow(job_flow: dict, project_id: str) -> Response[dict]:

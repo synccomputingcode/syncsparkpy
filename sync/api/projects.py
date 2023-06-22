@@ -38,35 +38,43 @@ def get_prediction(project_id: str, preference: Preference = None) -> Response[d
 
 
 def create_project(
-    app_id: str,
+    name: str,
     description: str = None,
+    job_id: str = None,
     s3_url: str = None,
     prediction_preference: Preference = Preference.ECONOMY,
     prediction_params: dict = None,
+    app_id: str = None,
 ) -> Response[dict]:
     """Creates a Sync project for tracking and optimizing Apache Spark applications
 
-    :param app_id: Apache Spark application name
-    :type app_id: str
+    :param name: Project name
+    :type name: str
     :param description: application description, defaults to None
     :type description: str, optional
+    :param job_id: Databricks job ID, defaults to None
+    :type job_id: str, optional
     :param s3_url: S3 URL under which to store project configurations and logs, defaults to None
     :type s3_url: str, optional
     :param prediction_preference: preferred prediction solution, defaults to `Preference.ECONOMY`
     :type prediction_preference: Preference, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented here - https://developers.synccomputing.com/reference/create_project_v1_projects_post
-    :type prediction_preference: dict, optional
+    :type prediction_params: dict, optional
+    :param app_id: Apache Spark application identifier, defaults to None
+    :type app_id: str, optional
     :return: the newly created project
     :rtype: Response[dict]
     """
     return Response(
         **get_default_client().create_project(
             {
-                "app_id": app_id,
+                "name": name,
                 "description": description,
+                "job_id": job_id,
                 "s3_url": s3_url,
                 "prediction_preference": prediction_preference,
                 "prediction_params": prediction_params,
+                "app_id": app_id,
             }
         )
     )

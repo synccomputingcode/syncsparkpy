@@ -4,7 +4,7 @@ Models used throughout this SDK
 
 from dataclasses import dataclass
 from enum import Enum, unique
-from typing import Callable, Generic, TypeVar, Union
+from typing import Callable, Generic, List, TypeVar, Union
 
 from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field, root_validator, validator
@@ -51,7 +51,7 @@ class AccessReportLine:
     message: Union[str, None]
 
 
-class AccessReport(list[AccessReportLine]):
+class AccessReport(List[AccessReportLine]):
     def __str__(self):
         return "\n".join(f"{line.name}\n  {line.status}: {line.message}" for line in self)
 

@@ -70,25 +70,7 @@ def get_access_report(log_url: str = None) -> AccessReport:
         )
 
         ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
-        try:
-            ec2.describe_instances(DryRun=True)
-        except Exception as exc:
-            if exc.response.get("Error", {}).get("Code") == "DryRunOperation":
-                report.append(
-                    AccessReportLine(
-                        name="EC2 Instances",
-                        status=AccessStatusCode.GREEN,
-                        message="Can describe EC2 instances",
-                    )
-                )
-            else:
-                report.append(
-                    AccessReportLine(
-                        name="EC2 Instances",
-                        status=AccessStatusCode.YELLOW,
-                        message="ec2:DescribeInstances permission is required for cluster basis cost",
-                    )
-                )
+        report.add_boto_method_call(ec2.describe_instances, AccessStatusCode.YELLOW, DryRun=True)
     else:
         report.append(
             AccessReportLine(
@@ -102,28 +84,13 @@ def get_access_report(log_url: str = None) -> AccessReport:
         parsed_log_url = urlparse(log_url)
 
         if parsed_log_url.scheme == "s3" and arn:
-            try:
-                boto.client("s3").list_objects_v2(
-                    Bucket=parsed_log_url.netloc,
-                    Prefix=parsed_log_url.params.rstrip("/"),
-                    MaxKeys=1,
-                )
-            except Exception:
-                report.append(
-                    AccessReportLine(
-                        name="Log Access",
-                        status=AccessStatusCode.RED,
-                        message=f"s3:ListBucket on {parsed_log_url.geturl()} is required",
-                    )
-                )
-            else:
-                report.append(
-                    AccessReportLine(
-                        name="Log Access",
-                        status=AccessStatusCode.GREEN,
-                        message=f"Can list objects at {parsed_log_url.geturl()}",
-                    )
-                )
+            s3 = boto.client("s3")
+            report.add_boto_method_call(
+                s3.list_objects_v2,
+                Bucket=parsed_log_url.netloc,
+                Prefix=parsed_log_url.params.rstrip("/"),
+                MaxKeys=1,
+            )
         elif parsed_log_url.scheme == "dbfs":
             response = dbx_client.list_dbfs_directory(parsed_log_url.geturl())
             if "error_code" not in response:

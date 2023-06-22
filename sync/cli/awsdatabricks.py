@@ -1,5 +1,5 @@
 import click
-from orjson import orjson
+import orjson
 
 from sync import awsdatabricks
 from sync.cli.util import validate_project
@@ -10,7 +10,13 @@ from sync.models import DatabricksComputeType, DatabricksPlanType, Preference
 @click.group
 def aws_databricks():
     """Databricks on AWS commands"""
-    pass
+
+
+@aws_databricks.command
+@click.option("--log-url")
+def access_report(log_url: str = None):
+    """Get access report"""
+    click.echo(awsdatabricks.get_access_report(log_url))
 
 
 @aws_databricks.command
@@ -118,13 +124,6 @@ def get_cluster_report(
         )
     else:
         click.echo(f"Failed to create cluster report. {config_response.error}", err=True)
-
-
-@aws_databricks.command
-@click.option("--log-url")
-def access_report(log_url: str = None):
-    """Get access report"""
-    click.echo(awsdatabricks.get_access_report(log_url))
 
 
 @aws_databricks.command

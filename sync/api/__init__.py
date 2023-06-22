@@ -22,7 +22,7 @@ def get_access_report() -> AccessReport:
             AccessReportLine(
                 name="Sync Authentication",
                 status=AccessStatusCode.GREEN,
-                message="Can Authenticate Sync credentials",
+                message="Sync credentials are valid",
             )
         ]
     )

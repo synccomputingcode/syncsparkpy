@@ -26,7 +26,7 @@ def list():
     response = get_projects()
     projects = response.result
     if projects:
-        click.echo_via_pager(f"{p['updated_at']} {p['id']}: {p['app_id']}\n" for p in projects)
+        click.echo_via_pager(f"{p['updated_at']} {p['id']}: {p['name']}\n" for p in projects)
     else:
         click.echo(str(response.error), err=True)
 
@@ -51,8 +51,9 @@ def get(project: dict):
 
 
 @projects.command
-@click.argument("app-id")
+@click.argument("name")
 @click.option("-d", "--description")
+@click.option("-j", "--job-id", help="Databricks job ID")
 @click.option("-l", "--location", help="S3 URL under which to store event logs and configuration")
 @click.option(
     "-p",
@@ -60,13 +61,28 @@ def get(project: dict):
     type=click.Choice(Preference),
     default=CONFIG.default_prediction_preference,
 )
+@click.option(
+    "-i", "--app-id", help="External identifier often based on the project's target application"
+)
 def create(
-    app_id: str, description: str = None, location: str = None, preference: Preference = None
+    name: str,
+    description: str = None,
+    job_id: str = None,
+    location: str = None,
+    preference: Preference = None,
+    app_id: str = None,
 ):
     """Create a project
 
     APP_ID is a name that uniquely identifies an application"""
-    response = create_project(app_id, description, location, preference)
+    response = create_project(
+        name,
+        description=description,
+        job_id=job_id,
+        s3_url=location,
+        prediction_preference=preference,
+        app_id=app_id,
+    )
     project = response.result
     if project:
         click.echo(f"Project ID: {project['id']}")

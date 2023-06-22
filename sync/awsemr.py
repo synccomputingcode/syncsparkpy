@@ -38,6 +38,18 @@ RUN_DIR_PATTERN_TEMPLATE = r"{project_prefix}/{project_id}/(?P<timestamp>\d{{4}}
 def get_access_report(
     log_url: str = None, cluster_id: str = None, region_name: str = None
 ) -> AccessReport:
+    """Reports access to systems required for integration of EMR jobs with Sync.
+    Access is partially determined by the configuration of this library and boto3.
+
+    :param log_url: location of event logs, defaults to None
+    :type log_url: str, optional
+    :param cluster_id: cluster ID with which to test EMR access, defaults to None
+    :type cluster_id: str, optional
+    :param region_name: region override, defaults to None
+    :type region_name: str, optional
+    :return: access report
+    :rtype: AccessReport
+    """
     report = get_api_access_report()
     sts = boto.client("sts")
     response = sts.get_caller_identity()

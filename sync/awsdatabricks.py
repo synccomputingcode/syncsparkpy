@@ -36,6 +36,14 @@ logger = logging.getLogger(__name__)
 
 
 def get_access_report(log_url: str = None) -> AccessReport:
+    """Reports access to Databricks, AWS and Sync required for integrating jobs with Sync.
+    Access is partially determined by the configuration of this library and boto3.
+
+    :param log_url: location of event logs, defaults to None
+    :type log_url: str, optional
+    :return: access report
+    :rtype: AccessReport
+    """
     report = get_api_access_report()
     dbx_client = get_default_client()
 

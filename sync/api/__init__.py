@@ -3,6 +3,11 @@ from sync.models import AccessReport, AccessReportLine, AccessStatusCode
 
 
 def get_access_report() -> AccessReport:
+    """Reports access to the Sync API
+
+    :return: access report
+    :rtype: AccessReport
+    """
     response = get_default_client().get_products()
 
     error = response.get("error")

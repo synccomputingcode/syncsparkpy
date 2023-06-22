@@ -381,33 +381,19 @@ def get_prediction_job(
     :return: job object with prediction applied to it
     :rtype: Response[dict]
     """
-    prediction_response = get_prediction(prediction_id)
-    prediction = prediction_response.result
-    if prediction:
-        job = get_default_client().get_job(job_id)
-        if "error_code" in job:
-            return Response(error=DatabricksAPIError(**job))
+    job = get_default_client().get_job(job_id)
+    if "error_code" in job:
+        return Response(error=DatabricksAPIError(**job))
 
-        job_settings = job["settings"]
-        tasks = job_settings.get("tasks", [])
-        if tasks:
-            cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
-            cluster = cluster_response.result
-            if cluster:
-                # num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
-                #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster
-                #  with `num_workers`) for a cluster that was originally autoscaled, we want to make sure to remove this
-                #  prior configuration
-                if "num_workers" in cluster:
-                    del cluster["num_workers"]
-
-                if "autoscale" in cluster:
-                    del cluster["autoscale"]
-
-                prediction_cluster = _deep_update(
-                    cluster, prediction["solutions"][preference]["configuration"]
-                )
-
+    job_settings = job["settings"]
+    tasks = job_settings.get("tasks", [])
+    if tasks:
+        cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
+        cluster = cluster_response.result
+        if cluster:
+            prediction_cluster_response = get_prediction_cluster(cluster, prediction_id, preference)
+            prediction_cluster = prediction_cluster_response.result
+            if prediction_cluster:
                 cluster_key = tasks[0].get("job_cluster_key")
                 if cluster_key:
                     job_settings["job_clusters"] = [
@@ -416,10 +402,51 @@ def get_prediction_job(
                         if j.get("job_cluster_key") != cluster_key
                     ] + [{"job_cluster_key": cluster_key, "new_cluster": prediction_cluster}]
                 else:
+                    # For `new_cluster` definitions, Databricks will automatically assign the newly created cluster a name,
+                    # and will reject any run submissions where the `cluster_name` is pre-populated
+                    if "cluster_name" in prediction_cluster:
+                        del prediction_cluster["cluster_name"]
                     tasks[0]["new_cluster"] = prediction_cluster
                 return Response(result=job)
-            return cluster_response
-        return Response(error=DatabricksError(message="No task found in job"))
+            return prediction_cluster_response
+        return cluster_response
+    return Response(error=DatabricksError(message="No task found in job"))
+
+
+def get_prediction_cluster(
+    cluster: dict, prediction_id: str, preference: str = CONFIG.default_prediction_preference.value
+) -> Response[dict]:
+    """Apply the prediction to the provided cluster.
+
+    The cluster is updated with configuration from the prediction and returned in the result.
+
+    :param cluster: Databricks cluster object
+    :type cluster: dict
+    :param prediction_id: prediction ID
+    :type prediction_id: str
+    :param preference: preferred prediction solution, defaults to local configuration
+    :type preference: str, optional
+    :return: job object with prediction applied to it
+    :rtype: Response[dict]
+    """
+    prediction_response = get_prediction(prediction_id)
+    prediction = prediction_response.result
+    if prediction:
+        # num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
+        #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster
+        #  with `num_workers`) for a cluster that was originally autoscaled, we want to make sure to remove this
+        #  prior configuration
+        if "num_workers" in cluster:
+            del cluster["num_workers"]
+
+        if "autoscale" in cluster:
+            del cluster["autoscale"]
+
+        prediction_cluster = _deep_update(
+            cluster, prediction["solutions"][preference]["configuration"]
+        )
+
+        return Response(result=prediction_cluster)
     return prediction_response
 
 
@@ -449,10 +476,9 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
         cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
         cluster = cluster_response.result
         if cluster:
-            project_settings_response = get_project_cluster_settings(project_id, region_name)
-            project_cluster_settings = project_settings_response.result
-            if project_cluster_settings:
-                project_cluster = _deep_update(cluster, project_cluster_settings)
+            project_cluster_response = get_project_cluster(cluster, project_id, region_name)
+            project_cluster = project_cluster_response.result
+            if project_cluster:
                 cluster_key = tasks[0].get("job_cluster_key")
                 if cluster_key:
                     job_settings["job_clusters"] = [
@@ -464,9 +490,32 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
                     tasks[0]["new_cluster"] = project_cluster
 
                 return Response(result=job)
-            return project_settings_response
+            return project_cluster_response
         return cluster_response
     return Response(error=DatabricksError(message="No task found in job"))
+
+
+def get_project_cluster(cluster: dict, project_id: str, region_name: str = None) -> Response[dict]:
+    """Apply project configuration to a cluster.
+
+    The cluster is updated with tags and a log configuration to facilitate project continuity.
+
+    :param cluster: Databricks cluster object
+    :type cluster: dict
+    :param project_id: Sync project ID
+    :type project_id: str
+    :param region_name: region name, defaults to AWS configuration
+    :type region_name: str, optional
+    :return: project job object
+    :rtype: Response[dict]
+    """
+    project_settings_response = get_project_cluster_settings(project_id, region_name)
+    project_cluster_settings = project_settings_response.result
+    if project_cluster_settings:
+        project_cluster = _deep_update(cluster, project_cluster_settings)
+
+        return Response(result=project_cluster)
+    return project_settings_response
 
 
 def get_project_cluster_settings(project_id: str, region_name: str = None) -> Response[dict]:

@@ -12,14 +12,18 @@ from typing import Any, Collection, Dict, List, Tuple, TypeVar, Union
 from urllib.parse import urlparse
 
 import boto3 as boto
+import orjson
 from botocore.exceptions import ClientError
-from orjson import orjson
 
+from sync.api import get_access_report as get_api_access_report
 from sync.api.predictions import create_prediction_with_eventlog_bytes, get_prediction
 from sync.api.projects import get_project
 from sync.clients.databricks import get_default_client
 from sync.config import CONFIG, DB_CONFIG
 from sync.models import (
+    AccessReport,
+    AccessReportLine,
+    AccessStatusCode,
     DatabricksAPIError,
     DatabricksClusterReport,
     DatabricksError,
@@ -29,6 +33,100 @@ from sync.models import (
 from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file, write_dbfs_file
 
 logger = logging.getLogger(__name__)
+
+
+def get_access_report(log_url: str = None) -> AccessReport:
+    """Reports access to Databricks, AWS and Sync required for integrating jobs with Sync.
+    Access is partially determined by the configuration of this library and boto3.
+
+    :param log_url: location of event logs, defaults to None
+    :type log_url: str, optional
+    :return: access report
+    :rtype: AccessReport
+    """
+    report = get_api_access_report()
+    dbx_client = get_default_client()
+
+    response = dbx_client.get_current_user()
+    user_name = response.get("userName")
+    if user_name:
+        report.append(
+            AccessReportLine(
+                name="Databricks Authentication",
+                status=AccessStatusCode.GREEN,
+                message=f"Authenticated as '{user_name}'",
+            )
+        )
+    else:
+        report.append(
+            AccessReportLine(
+                name="Databricks Authentication",
+                status=AccessStatusCode.RED,
+                message=f"{response.get('error_code')}: {response.get('message')}",
+            )
+        )
+
+    response = boto.client("sts").get_caller_identity()
+    arn = response.get("Arn")
+    if arn:
+        report.append(
+            AccessReportLine(
+                name="AWS Authentication",
+                status=AccessStatusCode.GREEN,
+                message=f"Authenticated as '{arn}'",
+            )
+        )
+
+        ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
+        report.add_boto_method_call(ec2.describe_instances, AccessStatusCode.YELLOW, DryRun=True)
+    else:
+        report.append(
+            AccessReportLine(
+                name="AWS Authentication",
+                status=AccessStatusCode.RED,
+                message="Failed to authenticate AWS credentials",
+            )
+        )
+
+    if log_url:
+        parsed_log_url = urlparse(log_url)
+
+        if parsed_log_url.scheme == "s3" and arn:
+            s3 = boto.client("s3")
+            report.add_boto_method_call(
+                s3.list_objects_v2,
+                Bucket=parsed_log_url.netloc,
+                Prefix=parsed_log_url.params.rstrip("/"),
+                MaxKeys=1,
+            )
+        elif parsed_log_url.scheme == "dbfs":
+            response = dbx_client.list_dbfs_directory(parsed_log_url.geturl())
+            if "error_code" not in response:
+                report.append(
+                    AccessReportLine(
+                        name="Log Access",
+                        status=AccessStatusCode.GREEN,
+                        message=f"Can list objects at {parsed_log_url.geturl()}",
+                    )
+                )
+            else:
+                report.append(
+                    AccessReportLine(
+                        name="Log Access",
+                        status=AccessStatusCode.RED,
+                        message=f"Can list objects at {parsed_log_url.geturl()}",
+                    )
+                )
+        else:
+            report.append(
+                AccessReportLine(
+                    name="Log Access",
+                    status=AccessStatusCode.RED,
+                    message=f"scheme in {parsed_log_url.geturl()} is not supported",
+                )
+            )
+
+    return report
 
 
 def create_prediction(
@@ -314,15 +412,18 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
     #  are associated with this cluster
     if cluster_instances is None:
         ec2 = boto.client("ec2", region_name=aws_region_name)
-        cluster_instances = ec2.describe_instances(
-            Filters=[
-                {"Name": "tag:Vendor", "Values": ["Databricks"]},
-                {"Name": "tag:ClusterId", "Values": [cluster_id]},
-                # {'Name': 'tag:JobId', 'Values': []}
-            ]
-        )
+        try:
+            cluster_instances = ec2.describe_instances(
+                Filters=[
+                    {"Name": "tag:Vendor", "Values": ["Databricks"]},
+                    {"Name": "tag:ClusterId", "Values": [cluster_id]},
+                    # {'Name': 'tag:JobId', 'Values': []}
+                ]
+            )
+        except Exception as exc:
+            logger.warning(exc)
 
-    if not cluster_instances["Reservations"]:
+    if not cluster_instances or not cluster_instances["Reservations"]:
         no_instances_message = (
             f"Unable to find any active or recently terminated instances for cluster `{cluster_id}` in `{aws_region_name}`. "
             + "Please refer to the following documentation for options on how to address this - "
@@ -1228,10 +1329,10 @@ def _get_eventlog_from_dbfs(
     run_end_time_millis: int,
     poll_duration_seconds: int,
 ):
+    dbx_client = get_default_client()
+
     prefix = format_dbfs_filepath(f"{base_filepath}/eventlog/")
-
-    root_dir = get_default_client().list_dbfs_directory(prefix)
-
+    root_dir = dbx_client.list_dbfs_directory(prefix)
     eventlog_files = [f for f in root_dir["files"] if f["is_dir"]]
     matching_subdirectory = None
 
@@ -1244,7 +1345,7 @@ def _get_eventlog_from_dbfs(
         eventlog_file_metadata = eventlog_files.pop()
         path = eventlog_file_metadata["path"]
 
-        subdir = get_default_client().list_dbfs_directory(path)
+        subdir = dbx_client.list_dbfs_directory(path)
 
         subdir_files = subdir["files"]
         matching_subdirectory = next(
@@ -1253,7 +1354,7 @@ def _get_eventlog_from_dbfs(
         )
 
     if matching_subdirectory:
-        eventlog_dir = get_default_client().list_dbfs_directory(matching_subdirectory["path"])
+        eventlog_dir = dbx_client.list_dbfs_directory(matching_subdirectory["path"])
 
         poll_num_attempts = 0
         poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
@@ -1268,14 +1369,13 @@ def _get_eventlog_from_dbfs(
                 )
                 sleep(poll_duration_seconds)
 
-            eventlog_dir = get_default_client().list_dbfs_directory(matching_subdirectory["path"])
+            eventlog_dir = dbx_client.list_dbfs_directory(matching_subdirectory["path"])
             poll_num_attempts += 1
 
         eventlog_zip = io.BytesIO()
         eventlog_zip_file = zipfile.ZipFile(eventlog_zip, "a", zipfile.ZIP_DEFLATED)
 
         eventlog_files = eventlog_dir["files"]
-        dbx_client = get_default_client()
         for eventlog_file_metadata in eventlog_files:
             filename: str = eventlog_file_metadata["path"].split("/")[-1]
             filesize: int = eventlog_file_metadata["file_size"]

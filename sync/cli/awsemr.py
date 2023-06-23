@@ -18,6 +18,15 @@ def aws_emr():
 
 
 @aws_emr.command
+@click.option("--cluster-id")
+@click.option("--log-url")
+@click.option("-r", "--region")
+def access_report(cluster_id: str = None, log_url: str = None, region: str = None):
+    """Get access report"""
+    click.echo(awsemr.get_access_report(log_url=log_url, cluster_id=cluster_id, region_name=region))
+
+
+@aws_emr.command
 @click.argument("job-flow", type=click.File("r"))
 @click.option("-p", "--project", callback=validate_project)
 @click.option("-r", "--region")

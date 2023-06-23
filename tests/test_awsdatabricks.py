@@ -545,6 +545,46 @@ def test_create_prediction_for_run_no_instances_found(respx_mock):
     assert result.error
 
 
+@patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
+def test_create_prediction_for_run_unauthorized_ec2(respx_mock):
+    respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
+        return_value=Response(200, json=MOCK_RUN)
+    )
+
+    respx_mock.get(
+        "https://*.cloud.databricks.com/api/2.0/clusters/get?cluster_id=0101-214342-tpi6qdp2"
+    ).mock(return_value=Response(200, json=MOCK_CLUSTER))
+
+    respx_mock.post("https://*.cloud.databricks.com/api/2.0/clusters/events").mock(
+        return_value=Response(200, json={"events": [], "total_count": 0})
+    )
+
+    ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
+    ec2_stubber = Stubber(ec2)
+    ec2_stubber.add_client_error(
+        "describe_instances",
+        service_error_code="AccessDeniedException",
+        service_message="User: arn:aws:sts::123456789012:assumed-role/sync-test-no-access/botocore-session-1687389953 is not authorized to perform: elasticmapreduce:DescribeCluster on resource: arn:aws:elasticmapreduce:us-east-1:123456789012:cluster/j-3GJINYS04BO38 because no identity-based policy allows the elasticmapreduce:DescribeCluster action",
+    )
+
+    s3 = boto.client("s3")
+    s3_stubber = Stubber(s3)
+    s3_stubber.add_client_error("get_object", "NoSuchKey")
+
+    def client_patch(name, **kwargs):
+        if name == "ec2":
+            return ec2
+        elif name == "s3":
+            return s3
+
+    with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
+        mock_aws_client.side_effect = client_patch
+        result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
+
+    assert result.error
+
+
 MOCK_PREDICTION_CREATION_RESPONSE = {
     "result": {
         "prediction_id": str(uuid4()),

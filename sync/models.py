@@ -2,9 +2,11 @@
 Models used throughout this SDK
 """
 
+from dataclasses import dataclass
 from enum import Enum, unique
-from typing import Generic, TypeVar, Union
+from typing import Callable, Generic, List, TypeVar, Union
 
+from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field, root_validator, validator
 from pydantic.generics import GenericModel
 
@@ -18,6 +20,45 @@ class Preference(str, Enum):
 class Platform(str, Enum):
     AWS_EMR = "aws-emr"
     AWS_DATABRICKS = "aws-databricks"
+
+
+class AccessStatusCode(str, Enum):
+    GREEN = "OK"
+    YELLOW = "Action recommended"
+    RED = "Action required"
+
+
+@dataclass
+class AccessReportLine:
+    name: str
+    status: AccessStatusCode
+    message: Union[str, None]
+
+
+class AccessReport(List[AccessReportLine]):
+    def __str__(self):
+        return "\n".join(f"{line.name}\n  {line.status}: {line.message}" for line in self)
+
+    def add_boto_method_call(
+        self, method: Callable, error_status: AccessStatusCode = AccessStatusCode.RED, **params
+    ):
+        line = None
+        name = f"{method.__self__.meta._service_model._service_description['metadata']['serviceId']} {''.join(word.capitalize() for word in method.__func__.__name__.split('_'))}"
+        try:
+            method(**params)
+        except ClientError as error:  # as when the code is 'AccessDeniedException', a bad parameter like a mistyped cluster ID yields a botocore.errorfactory.InvalidRequestException with code 'InvalidRequestException'
+            if error.response.get("Error", {}).get("Code") != "DryRunOperation":
+                line = AccessReportLine(name, error_status, str(error))
+        except Exception as exc:
+            line = AccessReportLine(name, error_status, str(exc))
+
+        if not line:
+            line = AccessReportLine(
+                name, AccessStatusCode.GREEN, f"{method.__func__.__name__} call succeeded"
+            )
+
+        self.append(line)
+        return line
 
 
 class Error(BaseModel):

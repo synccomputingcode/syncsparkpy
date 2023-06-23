@@ -7,23 +7,117 @@ import io
 import logging
 import re
 from copy import deepcopy
+from typing import Tuple
 from urllib.parse import urlparse
 from uuid import uuid4
 
 import boto3 as boto
 import orjson
 from dateutil.parser import parse as dateparse
-from typing import Tuple
 
 from sync import TIME_FORMAT
+from sync.api import get_access_report as get_api_access_report
 from sync.api.predictions import create_prediction, wait_for_prediction
 from sync.api.projects import get_project
-from sync.models import EMRError, Platform, ProjectError, Response
+from sync.models import (
+    AccessReport,
+    AccessReportLine,
+    AccessStatusCode,
+    EMRError,
+    Platform,
+    ProjectError,
+    Response,
+)
 
 logger = logging.getLogger(__name__)
 
 
 RUN_DIR_PATTERN_TEMPLATE = r"{project_prefix}/{project_id}/(?P<timestamp>\d{{4}}-[^/]+)/{run_id}"
+
+
+def get_access_report(
+    log_url: str = None, cluster_id: str = None, region_name: str = None
+) -> AccessReport:
+    """Reports access to systems required for integration of EMR jobs with Sync.
+    Access is partially determined by the configuration of this library and boto3.
+
+    :param log_url: location of event logs, defaults to None
+    :type log_url: str, optional
+    :param cluster_id: cluster ID with which to test EMR access, defaults to None
+    :type cluster_id: str, optional
+    :param region_name: region override, defaults to None
+    :type region_name: str, optional
+    :return: access report
+    :rtype: AccessReport
+    """
+    report = get_api_access_report()
+    sts = boto.client("sts")
+    response = sts.get_caller_identity()
+
+    arn = response.get("Arn")
+    if not arn:
+        report.append(
+            AccessReportLine(
+                name="AWS Authentication",
+                status=AccessStatusCode.RED,
+                message="Failed to authenticate AWS credentials",
+            )
+        )
+    else:
+        report.append(
+            AccessReportLine(
+                name="AWS Authentication",
+                status=AccessStatusCode.GREEN,
+                message=f"Authenticated as '{arn}'",
+            )
+        )
+
+    if log_url:
+        parsed_log_url = urlparse(log_url)
+
+        if parsed_log_url.scheme == "s3" and arn:
+            s3 = boto.client("s3")
+            report.add_boto_method_call(
+                s3.list_objects_v2,
+                Bucket=parsed_log_url.netloc,
+                Prefix=parsed_log_url.params.rstrip("/"),
+                MaxKeys=1,
+            )
+        else:
+            report.append(
+                AccessReportLine(
+                    name="Logging",
+                    status=AccessStatusCode.RED,
+                    message=f"scheme in {parsed_log_url.geturl()} is not supported",
+                )
+            )
+
+    if arn and cluster_id:
+        emr = boto.client("emr", region_name=region_name)
+
+        try:
+            response = emr.describe_cluster(ClusterId=cluster_id)
+            report.append(
+                AccessReportLine(
+                    "EMR DescribeCluster",
+                    AccessStatusCode.GREEN,
+                    "describe_cluster call succeeded",
+                )
+            )
+
+            if response["Cluster"]["InstanceCollectionType"] == "INSTANCE_FLEET":
+                report.add_boto_method_call(emr.list_instance_fleets, ClusterId=cluster_id)
+            elif response["Cluster"]["InstanceCollectionType"] == "INSTANCE_GROUP":
+                report.add_boto_method_call(emr.list_instance_groups, ClusterId=cluster_id)
+
+            report.add_boto_method_call(emr.list_bootstrap_actions, ClusterId=cluster_id)
+            report.add_boto_method_call(emr.list_instances, ClusterId=cluster_id)
+            report.add_boto_method_call(emr.list_steps, ClusterId=cluster_id)
+
+        except Exception as exc:
+            report.append(AccessReportLine("EMR DescribeCluster", AccessStatusCode.RED, str(exc)))
+
+    return report
 
 
 def get_project_job_flow(job_flow: dict, project_id: str) -> Response[dict]:

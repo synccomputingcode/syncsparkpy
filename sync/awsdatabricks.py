@@ -659,19 +659,20 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
     return project_response
 
 
-def run_job_object(job: dict) -> Response[str]:
+def run_job_object(job: dict) -> Response[Tuple[str, str]]:
     """Create a Databricks one-off run based on the job configuration.
 
     :param job: Databricks job object
     :type job: dict
-    :return: run ID
-    :rtype: Response[str]
+    :return: run ID, and optionally ID of newly created cluster
+    :rtype: Response[Typle[str, str]]
     """
     tasks = job["settings"]["tasks"]
     cluster_response = _get_job_cluster(tasks, job["settings"].get("job_clusters", []))
 
     cluster = cluster_response.result
     if cluster:
+        new_cluster_id = None
         if len(tasks) == 1:
             # For `new_cluster` definitions, Databricks will automatically assign the newly created cluster a name,
             #  and will reject any run submissions where the `cluster_name` is pre-populated
@@ -695,6 +696,8 @@ def run_job_object(job: dict) -> Response[str]:
             if "error_code" in cluster_result:
                 return Response(error=DatabricksAPIError(**cluster_result))
 
+            new_cluster_id = cluster_result["cluster_id"]
+
             for task in tasks:
                 task["existing_cluster_id"] = cluster_result["cluster_id"]
                 if "new_cluster" in task:
@@ -708,7 +711,7 @@ def run_job_object(job: dict) -> Response[str]:
         if "error_code" in run_result:
             return Response(error=DatabricksAPIError(**run_result))
 
-        return Response(result=run_result["run_id"])
+        return Response(result=(run_result["run_id"], new_cluster_id))
     return cluster_response
 
 
@@ -855,13 +858,13 @@ def run_and_record_job_object(
     :rtype: Response[str]
     """
     run_response = run_job_object(job)
-    run_id = run_response.result
-    if run_id:
-        wait_response = wait_for_run_and_cluster(run_id)
+    run_and_cluster_ids = run_response.result
+    if run_and_cluster_ids:
+        wait_response = wait_for_run_and_cluster(*run_and_cluster_ids)
         result_state = wait_response.result
         if result_state:
             if result_state == "SUCCESS":
-                return record_run(run_id, plan_type, compute_type, project_id)
+                return record_run(run_and_cluster_ids[0], plan_type, compute_type, project_id)
             return Response(
                 error=DatabricksError(message=f"Unsuccessful run result state: {result_state}")
             )
@@ -962,11 +965,13 @@ def wait_for_final_run_status(run_id: str) -> Response[str]:
     return Response(error=DatabricksAPIError(**run))
 
 
-def wait_for_run_and_cluster(run_id: str) -> Response[str]:
+def wait_for_run_and_cluster(run_id: str, *delete_cluster_ids: str) -> Response[str]:
     """Waits for final run status and returns it after terminating the cluster.
 
     :param run_id: Databricks run ID
     :type run_id: str
+    :param delete_cluster_ids: IDs of existing (all-purpose) clusters to delete on completion, defaults to empty
+    :type delete_cluster_ids: Collection, optional
     :return: result state, e.g. "SUCCESS"
     :rtype: Response[str]
     """
@@ -974,11 +979,12 @@ def wait_for_run_and_cluster(run_id: str) -> Response[str]:
     while "error_code" not in run:
         result_state = run["state"].get("result_state")  # result_state isn't present while running
         if result_state in {"SUCCESS", "FAILED", "TIMEDOUT", "CANCELED"}:
-            existing_cluster_ids = list({task.get("existing_cluster_id") for task in run["tasks"]})
-            for cluster_id in existing_cluster_ids:
+            for cluster_id in {task.get("existing_cluster_id") for task in run["tasks"]}:
                 cluster_response = terminate_cluster(cluster_id)
                 if cluster_response.error:
                     return cluster_response
+                if cluster_id in delete_cluster_ids:
+                    get_default_client().delete_cluster(cluster_id)
             return Response(result=result_state)
 
         sleep(30)
@@ -1003,7 +1009,7 @@ def terminate_cluster(cluster_id: str) -> Response[dict]:
         elif state == "TERMINATING":
             return _wait_for_cluster_termination(cluster_id)
         elif state in {"PENDING", "RUNNING", "RESTARTING", "RESIZING"}:
-            get_default_client().delete_cluster(cluster_id)
+            get_default_client().terminate_cluster(cluster_id)
             return _wait_for_cluster_termination(cluster_id)
         else:
             return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))

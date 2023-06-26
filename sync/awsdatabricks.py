@@ -153,10 +153,10 @@ def create_prediction(
         run occurred in.
     :type cluster_events: dict
     :param instances: All EC2 Instances that were a part of the cluster. Expects a data format as is returned by
-        boto3's EC2.describe_instances API - https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2/client/describe_instances.html
+        `boto3's EC2.describe_instances API <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2/client/describe_instances.html>`_
         Instances should be narrowed to just those instances relevant to the Databricks Run. This can be done by passing
         a `tag:ClusterId` filter to the describe_instances call like -
-        Filters=[{"Name": "tag:ClusterId", "Values": ["my-dbx-clusterid"]}]
+        ``Filters=[{"Name": "tag:ClusterId", "Values": ["my-dbx-clusterid"]}]``
         If there are multiple pages of instances, all pages should be accumulated into 1 dictionary and passed to this
         function
     :param eventlog: encoded event log zip

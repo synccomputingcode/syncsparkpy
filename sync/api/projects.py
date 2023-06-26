@@ -58,7 +58,7 @@ def create_project(
     :type s3_url: str, optional
     :param prediction_preference: preferred prediction solution, defaults to `Preference.ECONOMY`
     :type prediction_preference: Preference, optional
-    :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented here - https://developers.synccomputing.com/reference/create_project_v1_projects_post
+    :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/create_project_v1_projects_post>`__
     :type prediction_params: dict, optional
     :param app_id: Apache Spark application identifier, defaults to None
     :type app_id: str, optional
@@ -108,7 +108,7 @@ def update_project(
     :type s3_url: str, optional
     :param prediction_preference: default preference for predictions, defaults to None
     :type prediction_preference: Preference, optional
-    :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented here - https://developers.synccomputing.com/reference/update_project_v1_projects__project_id__put
+    :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/update_project_v1_projects__project_id__put>`__
     :type prediction_preference: dict, optional
     :return: updated project
     :rtype: Response[dict]

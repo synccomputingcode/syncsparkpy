@@ -85,7 +85,7 @@ def create_prediction(
     compute: DatabricksComputeType,
     project: dict = None,
     allow_incomplete: bool = False,
-    exclude_task: Tuple[str] = None,
+    exclude_task: Tuple[str, ...] = None,
 ):
     """Create a prediction for a job run"""
     prediction_response = awsdatabricks.create_prediction_for_run(

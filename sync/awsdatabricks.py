@@ -665,7 +665,7 @@ def run_job_object(job: dict) -> Response[Tuple[str, str]]:
     :param job: Databricks job object
     :type job: dict
     :return: run ID, and optionally ID of newly created cluster
-    :rtype: Response[Typle[str, str]]
+    :rtype: Response[Tuple[str, str]]
     """
     tasks = job["settings"]["tasks"]
     cluster_response = _get_job_cluster(tasks, job["settings"].get("job_clusters", []))
@@ -871,7 +871,11 @@ def run_and_record_job_object(
                 )
 
         for cluster_id in run_and_cluster_ids[1:]:
-            get_default_client().delete_cluster(cluster_id)
+            delete_cluster_response = get_default_client().delete_cluster(cluster_id)
+            if "error_code" in delete_cluster_response:
+                logger.warning(
+                    f"Failed to delete cluster {cluster_id}: {delete_cluster_response['error_code']}: {delete_cluster_response['message']}"
+                )
 
         return response
     return run_response

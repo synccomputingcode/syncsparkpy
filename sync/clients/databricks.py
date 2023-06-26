@@ -44,11 +44,19 @@ class DatabricksClient(RetryableHTTPClient):
             )
         )
 
-    def delete_cluster(self, cluster_id: str) -> dict:
+    def terminate_cluster(self, cluster_id: str) -> dict:
         headers, content = encode_json({"cluster_id": cluster_id})
         return self._send(
             self._client.build_request(
                 "POST", "/api/2.0/clusters/delete", headers=headers, content=content
+            )
+        )
+
+    def delete_cluster(self, cluster_id: str) -> dict:
+        headers, content = encode_json({"cluster_id": cluster_id})
+        return self._send(
+            self._client.build_request(
+                "POST", "/api/2.0/clusters/permanent-delete", headers=headers, content=content
             )
         )
 

@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import click
 import orjson
 
@@ -74,16 +76,20 @@ def run_job(
     default=False,
     help="Force creation of a prediction even with incomplete cluster data.",
 )
+@click.option(
+    "--exclude-task", help="Don't consider task when finding the cluster of a run", multiple=True
+)
 def create_prediction(
     run_id: str,
     plan: DatabricksPlanType,
     compute: DatabricksComputeType,
     project: dict = None,
     allow_incomplete: bool = False,
+    exclude_task: Tuple[str, ...] = None,
 ):
     """Create a prediction for a job run"""
     prediction_response = awsdatabricks.create_prediction_for_run(
-        run_id, plan, compute, project["id"], allow_incomplete
+        run_id, plan, compute, project["id"], allow_incomplete, exclude_task
     )
     prediction = prediction_response.result
     if prediction:

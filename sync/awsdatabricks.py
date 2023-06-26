@@ -860,15 +860,20 @@ def run_and_record_job_object(
     run_response = run_job_object(job)
     run_and_cluster_ids = run_response.result
     if run_and_cluster_ids:
-        wait_response = wait_for_run_and_cluster(*run_and_cluster_ids)
-        result_state = wait_response.result
+        response = wait_for_run_and_cluster(run_and_cluster_ids[0])
+        result_state = response.result
         if result_state:
             if result_state == "SUCCESS":
-                return record_run(run_and_cluster_ids[0], plan_type, compute_type, project_id)
-            return Response(
-                error=DatabricksError(message=f"Unsuccessful run result state: {result_state}")
-            )
-        return wait_response
+                response = record_run(run_and_cluster_ids[0], plan_type, compute_type, project_id)
+            else:
+                response = Response(
+                    error=DatabricksError(message=f"Unsuccessful run result state: {result_state}")
+                )
+
+        for cluster_id in run_and_cluster_ids[1:]:
+            get_default_client().delete_cluster(cluster_id)
+
+        return response
     return run_response
 
 
@@ -965,13 +970,11 @@ def wait_for_final_run_status(run_id: str) -> Response[str]:
     return Response(error=DatabricksAPIError(**run))
 
 
-def wait_for_run_and_cluster(run_id: str, *delete_cluster_ids: str) -> Response[str]:
+def wait_for_run_and_cluster(run_id: str) -> Response[str]:
     """Waits for final run status and returns it after terminating the cluster.
 
     :param run_id: Databricks run ID
     :type run_id: str
-    :param delete_cluster_ids: IDs of existing (all-purpose) clusters to delete on completion, defaults to empty
-    :type delete_cluster_ids: Collection, optional
     :return: result state, e.g. "SUCCESS"
     :rtype: Response[str]
     """
@@ -983,8 +986,6 @@ def wait_for_run_and_cluster(run_id: str, *delete_cluster_ids: str) -> Response[
                 cluster_response = terminate_cluster(cluster_id)
                 if cluster_response.error:
                     return cluster_response
-                if cluster_id in delete_cluster_ids:
-                    get_default_client().delete_cluster(cluster_id)
             return Response(result=result_state)
 
         sleep(30)

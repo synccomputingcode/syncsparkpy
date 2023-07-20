@@ -39,6 +39,7 @@ def get_prediction(project_id: str, preference: Preference = None) -> Response[d
 
 def create_project(
     name: str,
+    product_code: str,
     description: str = None,
     job_id: str = None,
     s3_url: str = None,
@@ -50,6 +51,8 @@ def create_project(
 
     :param name: Project name
     :type name: str
+    :param product_code: Product code
+    :type product_code: str
     :param description: application description, defaults to None
     :type description: str, optional
     :param job_id: Databricks job ID, defaults to None
@@ -69,6 +72,7 @@ def create_project(
         **get_default_client().create_project(
             {
                 "name": name,
+                "product_code": product_code,
                 "description": description,
                 "job_id": job_id,
                 "s3_url": s3_url,

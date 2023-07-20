@@ -52,6 +52,7 @@ def get(project: dict):
 
 @projects.command
 @click.argument("name")
+@click.argument("product_code")
 @click.option("-d", "--description")
 @click.option("-j", "--job-id", help="Databricks job ID")
 @click.option("-l", "--location", help="S3 URL under which to store event logs and configuration")
@@ -66,17 +67,19 @@ def get(project: dict):
 )
 def create(
     name: str,
+    product_code: str,
     description: str = None,
     job_id: str = None,
     location: str = None,
     preference: Preference = None,
     app_id: str = None,
 ):
-    """Create a project
-
-    APP_ID is a name that uniquely identifies an application"""
+    """Create a project for a Spark application that runs on the platform identified by PRODUCT_CODE.
+    Run `sync-cli products` to see a list of available product codes.
+    """
     response = create_project(
         name,
+        product_code,
         description=description,
         job_id=job_id,
         s3_url=location,

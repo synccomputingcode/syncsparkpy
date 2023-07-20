@@ -74,7 +74,7 @@ def run_job(
     "--allow-incomplete",
     is_flag=True,
     default=False,
-    help="Force creation of a prediction even with incomplete cluster data.",
+    help="Force creation of a prediction even with incomplete cluster data. Some features may not be available. To ensure a complete cluster report see https://docs.synccomputing.com/sync-gradient/integrating-with-gradient/databricks-workflows.",
 )
 @click.option(
     "--exclude-task", help="Don't consider task when finding the cluster of a run", multiple=True
@@ -110,7 +110,7 @@ def create_prediction(
     "--allow-incomplete",
     is_flag=True,
     default=False,
-    help="Force creation of a cluster report even if some data is missing.",
+    help="Force creation of a cluster report even if some data is missing. Some features require a complete report. To ensure a complete report see https://docs.synccomputing.com/sync-gradient/integrating-with-gradient/databricks-workflows.",
 )
 def get_cluster_report(
     run_id: str,

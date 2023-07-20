@@ -23,7 +23,7 @@ def main(debug: bool):
     if debug:
         logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
     else:
-        logging.basicConfig(level=logging.WARNING, format=LOG_FORMAT)
+        logging.disable()
 
 
 main.add_command(predictions.predictions)

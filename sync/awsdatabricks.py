@@ -427,7 +427,7 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
         no_instances_message = (
             f"Unable to find any active or recently terminated instances for cluster `{cluster_id}` in `{aws_region_name}`. "
             + "Please refer to the following documentation for options on how to address this - "
-            + "https://synccomputingcode.github.io/syncsparkpy/reference/awsdatabricks.html"
+            + "https://docs.synccomputing.com/sync-gradient/integrating-with-gradient/databricks-workflows"
         )
         return Response(error=DatabricksError(message=no_instances_message))
 

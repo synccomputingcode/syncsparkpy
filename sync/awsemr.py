@@ -522,11 +522,27 @@ def get_cluster_report(cluster_id: str, region_name: str = None) -> Response[dic
     else:
         cluster["InstanceGroups"] = emr.list_instance_groups(ClusterId=cluster_id)["InstanceGroups"]
 
+    cluster_instances = emr.list_instances(ClusterId=cluster_id)
+    instances = cluster_instances.get("Instances")
+    instances_next_marker = cluster_instances.get("Marker")
+    while instances_next_marker is not None:
+        cluster_instances = emr.list_instances(ClusterId=cluster_id, Marker=instances_next_marker)
+        instances.extend(cluster_instances.get("Instances"))
+        instances_next_marker = cluster_instances.get("Marker")
+
+    cluster_steps = emr.list_steps(ClusterId=cluster_id)
+    steps = cluster_steps.get("Steps")
+    steps_next_marker = cluster_steps.get("Marker")
+    while steps_next_marker is not None:
+        cluster_steps = emr.list_steps(ClusterId=cluster_id, Marker=steps_next_marker)
+        steps.extend(cluster_steps.get("Steps"))
+        steps_next_marker = cluster_steps.get("Marker")
+
     return Response(
         result={
             "Cluster": cluster,
-            "Instances": emr.list_instances(ClusterId=cluster_id)["Instances"],
-            "Steps": emr.list_steps(ClusterId=cluster_id)["Steps"],
+            "Instances": instances,
+            "Steps": steps,
             "Region": region_name or emr.meta.region_name,
         }
     )

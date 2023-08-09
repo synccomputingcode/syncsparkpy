@@ -20,6 +20,7 @@ class Preference(str, Enum):
 class Platform(str, Enum):
     AWS_EMR = "aws-emr"
     AWS_DATABRICKS = "aws-databricks"
+    AZURE_DATABRICKS = "azure-databricks"
 
 
 class AccessStatusCode(str, Enum):
@@ -100,7 +101,14 @@ class DatabricksClusterReport(BaseModel):
     compute_type: DatabricksComputeType
     cluster: dict
     cluster_events: dict
+
+
+class AWSDatabricksClusterReport(DatabricksClusterReport):
     instances: Union[dict, None]
+
+
+class AzureDatabricksClusterReport(DatabricksClusterReport):
+    instances: Union[list[dict], None]
 
 
 class DatabricksError(Error):

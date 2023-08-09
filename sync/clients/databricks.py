@@ -3,6 +3,8 @@ from typing import Generator, Union
 
 import httpx
 
+from sync.models import Platform
+
 from ..config import DB_CONFIG
 from . import USER_AGENT, RetryableHTTPClient, encode_json
 
@@ -162,6 +164,19 @@ class DatabricksClient(RetryableHTTPClient):
             "error_code": str(response.status_code),
             "message": httpx.codes.get_reason_phrase(response.status_code),
         }
+
+    def get_host(self) -> httpx.URL:
+        return self._client.base_url
+
+    def get_platform(self) -> Platform:
+        if self.get_host().netloc.decode().endswith(".azuredatabricks.net"):
+            return Platform.AZURE_DATABRICKS
+        if self.get_host().netloc.decode().endswith(".cloud.databricks.com"):
+            return Platform.AWS_DATABRICKS
+
+        raise ValueError(
+            f"Cannot determine compute provider for the workspace at {self.get_host()}"
+        )
 
 
 _sync_client: Union[DatabricksClient, None] = None

@@ -245,21 +245,11 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
 
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
-    if cluster_instances is None:
+    if not cluster_instances:
         credential = DefaultAzureCredential()
         sub_id = os.getenv("AZURE_SUBSCRIPTION_ID")
-        resources = ResourceManagementClient(credential, sub_id)
 
-        resource_group_name = None
-        for workspace_item in resources.resources.list(
-            filter="resourceType eq 'Microsoft.Databricks/workspaces'"
-        ):
-            workspace = resources.resources.get_by_id(workspace_item.id, "2023-02-01")
-            if (
-                workspace.properties["workspaceUrl"]
-                == get_default_client().get_host().netloc.decode()
-            ):
-                resource_group_name = workspace.properties["managedResourceGroupId"].split("/")[-1]
+        resource_group_name = _get_databricks_resource_group_name(credential, sub_id)
 
         compute = ComputeManagementClient(credential=credential, subscription_id=sub_id)
         if resource_group_name:

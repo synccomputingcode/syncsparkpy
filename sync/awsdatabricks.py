@@ -243,7 +243,7 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
 
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
-    if cluster_instances is None:
+    if not cluster_instances:
         ec2 = boto.client("ec2", region_name=aws_region_name)
         try:
             cluster_instances = ec2.describe_instances(

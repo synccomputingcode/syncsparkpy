@@ -18,9 +18,9 @@ def azure_databricks(ctx: click.Context):
     ctx.obj = Platform.AZURE_DATABRICKS
 
 
-azure_databricks.command(access_report)
-azure_databricks.command(run_prediction)
-azure_databricks.command(run_job)
-azure_databricks.command(create_prediction)
-azure_databricks.command(get_cluster_report)
-azure_databricks.command(monitor_cluster)
+azure_databricks.add_command(access_report)
+azure_databricks.add_command(run_prediction)
+azure_databricks.add_command(run_job)
+azure_databricks.add_command(create_prediction)
+azure_databricks.add_command(get_cluster_report)
+azure_databricks.add_command(monitor_cluster)

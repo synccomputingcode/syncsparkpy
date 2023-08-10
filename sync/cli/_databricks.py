@@ -10,6 +10,7 @@ from sync.models import DatabricksComputeType, DatabricksPlanType, Platform, Pre
 pass_platform = click.make_pass_decorator(Platform)
 
 
+@click.command
 @click.option("--log-url")
 @pass_platform
 def access_report(platform: Platform, log_url: str = None):
@@ -22,6 +23,7 @@ def access_report(platform: Platform, log_url: str = None):
     click.echo(databricks.get_access_report(log_url))
 
 
+@click.command
 @click.argument("job-id")
 @click.argument("prediction-id")
 @click.option(
@@ -47,6 +49,7 @@ def run_prediction(platform: Platform, job_id: str, prediction_id: str, preferen
         click.echo(str(run.error), err=True)
 
 
+@click.command
 @click.argument("job-id")
 @click.option("--plan", type=click.Choice(DatabricksPlanType), default=DatabricksPlanType.STANDARD)
 @click.option(
@@ -77,6 +80,7 @@ def run_job(
         click.echo(str(run_response.error), err=True)
 
 
+@click.command
 @click.argument("run-id")
 @click.option("--plan", type=click.Choice(DatabricksPlanType), default=DatabricksPlanType.STANDARD)
 @click.option(
@@ -120,6 +124,7 @@ def create_prediction(
         click.echo(f"Failed to create prediction. {prediction_response.error}", err=True)
 
 
+@click.command
 @click.argument("run-id")
 @click.option("--plan", type=click.Choice(DatabricksPlanType), default=DatabricksPlanType.STANDARD)
 @click.option(
@@ -133,6 +138,9 @@ def create_prediction(
     default=False,
     help="Force creation of a cluster report even if some data is missing. Some features require a complete report. To ensure a complete report see https://docs.synccomputing.com/sync-gradient/integrating-with-gradient/databricks-workflows.",
 )
+@click.option(
+    "--exclude-task", help="Don't consider task when finding the cluster of a run", multiple=True
+)
 @pass_platform
 def get_cluster_report(
     platform: Platform,
@@ -140,6 +148,7 @@ def get_cluster_report(
     plan: DatabricksPlanType,
     compute: DatabricksComputeType,
     allow_incomplete: bool = False,
+    exclude_task: Tuple[str, ...] = None,
 ):
     """Get a cluster report"""
     if platform is Platform.AWS_DATABRICKS:
@@ -147,7 +156,9 @@ def get_cluster_report(
     elif platform is Platform.AZURE_DATABRICKS:
         import sync.azuredatabricks as databricks
 
-    config_response = databricks.get_cluster_report(run_id, plan, compute, allow_incomplete)
+    config_response = databricks.get_cluster_report(
+        run_id, plan, compute, allow_incomplete, exclude_task
+    )
 
     config = config_response.result
     if config:
@@ -161,6 +172,7 @@ def get_cluster_report(
         click.echo(f"Failed to create cluster report. {config_response.error}", err=True)
 
 
+@click.command
 @click.argument("cluster-id")
 @pass_platform
 def monitor_cluster(platform: Platform, cluster_id: str):

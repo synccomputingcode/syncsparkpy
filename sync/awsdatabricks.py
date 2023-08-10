@@ -365,8 +365,8 @@ def _monitor_cluster(
             else:
                 # Otherwise, update old references and include any new instances in the list
                 newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
-                updated_instance_ids = newly_added_instance_ids.intersection(old_instance_ids)
-                removed_instance_ids = old_instance_ids.difference(updated_instance_ids)
+                updated_instance_ids = new_instance_ids.intersection(old_instance_ids)
+                removed_instance_ids = old_instance_ids.difference(new_instance_ids)
 
                 removed_instances = [
                     old_instance_id_to_reservation[id] for id in removed_instance_ids

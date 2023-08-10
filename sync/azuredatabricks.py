@@ -136,12 +136,13 @@ def get_access_report(log_url: str = None) -> AccessReport:
             )
         )
 
-    if os.getenv("AZURE_SUBSCRIPTION_ID"):
+    subscription_id = _get_azure_subscription_id()
+    if subscription_id:
         report.append(
             AccessReportLine(
                 name="Azure Authentication",
                 status=AccessStatusCode.GREEN,
-                message="Subscription ID found",
+                message=f"Subscription ID found: {subscription_id}",
             )
         )
     else:
@@ -400,12 +401,14 @@ AzureClient = TypeVar("AzureClient")
 def _get_azure_client(azure_client_class: Type[AzureClient]) -> AzureClient:
     global _azure_subscription_id
     if not _azure_subscription_id:
-        _azure_subscription_id = os.getenv("AZURE_SUBSCRIPTION_ID")
-        if not _azure_subscription_id:
-            _azure_subscription_id = get_cli_profile().get_login_credentials()[1]
+        _azure_subscription_id = _get_azure_subscription_id()
 
     global _azure_credential
     if not _azure_credential:
         _azure_credential = DefaultAzureCredential()
 
     return azure_client_class(_azure_credential, _azure_subscription_id)
+
+
+def _get_azure_subscription_id():
+    return os.getenv("AZURE_SUBSCRIPTION_ID") or get_cli_profile().get_login_credentials()[1]

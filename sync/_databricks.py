@@ -16,7 +16,7 @@ import boto3 as boto
 from sync.api.predictions import create_prediction_with_eventlog_bytes, get_prediction
 from sync.api.projects import get_project
 from sync.clients.databricks import get_default_client
-from sync.config import CONFIG, DB_CONFIG
+from sync.config import CONFIG
 from sync.models import DatabricksAPIError, DatabricksClusterReport, DatabricksError, Response
 from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file
 

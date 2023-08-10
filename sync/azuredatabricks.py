@@ -1,9 +1,11 @@
 import logging
 import os
 from time import sleep
+from typing import Type, TypeVar
 from urllib.parse import urlparse
 
 import orjson
+from azure.common.credentials import get_cli_profile
 from azure.core.exceptions import ClientAuthenticationError
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
@@ -246,12 +248,10 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
     if not cluster_instances:
-        credential = DefaultAzureCredential()
-        sub_id = os.getenv("AZURE_SUBSCRIPTION_ID")
 
-        resource_group_name = _get_databricks_resource_group_name(credential, sub_id)
+        resource_group_name = _get_databricks_resource_group_name()
 
-        compute = ComputeManagementClient(credential=credential, subscription_id=sub_id)
+        compute = _get_azure_client(ComputeManagementClient)
         if resource_group_name:
             vms = compute.virtual_machines.list(resource_group_name=resource_group_name)
         else:
@@ -313,10 +313,7 @@ def _monitor_cluster(
             logger.info("Saving state to DBFS")
             write_dbfs_file(path, body, dbx_client)
 
-    credential = DefaultAzureCredential()
-    sub_id = os.getenv("AZURE_SUBSCRIPTION_ID")
-
-    resource_group_name = _get_databricks_resource_group_name(credential, sub_id)
+    resource_group_name = _get_databricks_resource_group_name()
     if not resource_group_name:
         logger.warning("Failed to find Databricks managed resource group")
 
@@ -324,7 +321,7 @@ def _monitor_cluster(
 
     while True:
         try:
-            compute = ComputeManagementClient(credential=credential, subscription_id=sub_id)
+            compute = _get_azure_client(ComputeManagementClient)
             if resource_group_name:
                 vms = compute.virtual_machines.list(resource_group_name=resource_group_name)
             else:
@@ -382,10 +379,8 @@ def _monitor_cluster(
         sleep(polling_period)
 
 
-def _get_databricks_resource_group_name(
-    credential: DefaultAzureCredential, subscription_id: str
-) -> str:
-    resources = ResourceManagementClient(credential, subscription_id)
+def _get_databricks_resource_group_name() -> str:
+    resources = _get_azure_client(ResourceManagementClient)
 
     for workspace_item in resources.resources.list(
         filter="resourceType eq 'Microsoft.Databricks/workspaces'"
@@ -393,3 +388,24 @@ def _get_databricks_resource_group_name(
         workspace = resources.resources.get_by_id(workspace_item.id, "2023-02-01")
         if workspace.properties["workspaceUrl"] == get_default_client().get_host().netloc.decode():
             return workspace.properties["managedResourceGroupId"].split("/")[-1]
+
+
+_azure_credential = None
+_azure_subscription_id = None
+
+
+AzureClient = TypeVar("AzureClient")
+
+
+def _get_azure_client(azure_client_class: Type[AzureClient]) -> AzureClient:
+    global _azure_subscription_id
+    if not _azure_subscription_id:
+        _azure_subscription_id = os.getenv("AZURE_SUBSCRIPTION_ID")
+        if not _azure_subscription_id:
+            _azure_subscription_id = get_cli_profile().get_login_credentials()[1]
+
+    global _azure_credential
+    if not _azure_credential:
+        _azure_credential = DefaultAzureCredential()
+
+    return azure_client_class(_azure_credential, _azure_subscription_id)

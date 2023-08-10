@@ -108,7 +108,7 @@ class AWSDatabricksClusterReport(DatabricksClusterReport):
 
 
 class AzureDatabricksClusterReport(DatabricksClusterReport):
-    instances: Union[list[dict], None]
+    instances: Union[List[dict], None]
 
 
 class DatabricksError(Error):

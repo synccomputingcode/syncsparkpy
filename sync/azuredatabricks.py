@@ -217,7 +217,13 @@ def _get_cluster_report(
     )
 
 
+if getattr(sync._databricks, "__claim", __name__) != __name__:
+    raise RuntimeError(
+        "Databricks modules for different cloud providers cannot be used in the same context"
+    )
+
 sync._databricks._get_cluster_report = _get_cluster_report
+setattr(sync._databricks, "__claim", __name__)
 
 
 def _get_cluster_instances(cluster: dict) -> Response[dict]:
@@ -318,11 +324,11 @@ def _monitor_cluster(
     if not resource_group_name:
         logger.warning("Failed to find Databricks managed resource group")
 
+    compute = _get_azure_client(ComputeManagementClient)
     previous_instances = {}
 
     while True:
         try:
-            compute = _get_azure_client(ComputeManagementClient)
             if resource_group_name:
                 vms = compute.virtual_machines.list(resource_group_name=resource_group_name)
             else:

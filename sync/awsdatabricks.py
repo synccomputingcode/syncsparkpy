@@ -207,7 +207,13 @@ def _get_cluster_report(
     )
 
 
+if getattr(sync._databricks, "__claim", __name__) != __name__:
+    raise RuntimeError(
+        "Databricks modules for different cloud providers cannot be used in the same context"
+    )
+
 sync._databricks._get_cluster_report = _get_cluster_report
+setattr(sync._databricks, "__claim", __name__)
 
 
 def _get_cluster_instances(cluster: dict) -> Response[dict]:

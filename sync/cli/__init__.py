@@ -6,7 +6,7 @@ import logging
 import click
 
 from sync.api.predictions import get_products
-from sync.cli import awsdatabricks, awsemr, predictions, projects
+from sync.cli import awsdatabricks, awsemr, azuredatabricks, predictions, projects
 from sync.clients.sync import get_default_client
 from sync.config import API_KEY, CONFIG, DB_CONFIG, APIKey, Configuration, DatabricksConf, init
 from sync.models import Preference
@@ -30,6 +30,7 @@ main.add_command(predictions.predictions)
 main.add_command(projects.projects)
 main.add_command(awsemr.aws_emr)
 main.add_command(awsdatabricks.aws_databricks)
+main.add_command(azuredatabricks.azure_databricks)
 
 
 @main.command

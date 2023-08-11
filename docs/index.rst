@@ -21,6 +21,7 @@ Welcome to the Sync Library!
    reference/api
    reference/awsemr
    reference/awsdatabricks
+   reference/azuredatabricks
 
 
 Indices and tables

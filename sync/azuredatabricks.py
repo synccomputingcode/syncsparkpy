@@ -1,10 +1,15 @@
 import logging
+import os
 from time import sleep
+from typing import Type, TypeVar
 from urllib.parse import urlparse
 
-import boto3 as boto
 import orjson
-from botocore.exceptions import ClientError
+from azure.common.credentials import get_cli_profile
+from azure.core.exceptions import ClientAuthenticationError
+from azure.identity import DefaultAzureCredential
+from azure.mgmt.compute import ComputeManagementClient
+from azure.mgmt.resource import ResourceManagementClient
 
 import sync._databricks
 from sync._databricks import (
@@ -39,12 +44,11 @@ from sync._databricks import (
 )
 from sync.api import get_access_report as get_api_access_report
 from sync.clients.databricks import get_default_client
-from sync.config import DB_CONFIG
 from sync.models import (
     AccessReport,
     AccessReportLine,
     AccessStatusCode,
-    AWSDatabricksClusterReport,
+    AzureDatabricksClusterReport,
     DatabricksError,
     Response,
 )
@@ -54,11 +58,11 @@ __all__ = [
     "get_access_report",
     "run_prediction",
     "run_and_record_job",
-    "create_prediction_for_run",
-    "get_cluster_report",
     "monitor_cluster",
     "create_cluster",
     "get_cluster",
+    "create_prediction_for_run",
+    "get_cluster_report",
     "record_run",
     "get_prediction_job",
     "get_prediction_cluster",
@@ -114,40 +118,46 @@ def get_access_report(log_url: str = None) -> AccessReport:
             )
         )
 
-    response = boto.client("sts").get_caller_identity()
-    arn = response.get("Arn")
-    if arn:
+    try:
+        DefaultAzureCredential().get_token("https://management.azure.com/.default")
         report.append(
             AccessReportLine(
-                name="AWS Authentication",
+                name="Azure Authentication",
                 status=AccessStatusCode.GREEN,
-                message=f"Authenticated as '{arn}'",
+                message="Retrieved management token ",
+            )
+        )
+    except ClientAuthenticationError as err:
+        report.append(
+            AccessReportLine(
+                name="Azure Authentication",
+                status=AccessStatusCode.RED,
+                message=f"Authenticated as '{err}'",
             )
         )
 
-        ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
-        report.add_boto_method_call(ec2.describe_instances, AccessStatusCode.YELLOW, DryRun=True)
+    subscription_id = _get_azure_subscription_id()
+    if subscription_id:
+        report.append(
+            AccessReportLine(
+                name="Azure Authentication",
+                status=AccessStatusCode.GREEN,
+                message=f"Subscription ID found: {subscription_id}",
+            )
+        )
     else:
         report.append(
             AccessReportLine(
-                name="AWS Authentication",
+                name="Azure Authentication",
                 status=AccessStatusCode.RED,
-                message="Failed to authenticate AWS credentials",
+                message="Subscription ID not found",
             )
         )
 
     if log_url:
         parsed_log_url = urlparse(log_url)
 
-        if parsed_log_url.scheme == "s3" and arn:
-            s3 = boto.client("s3")
-            report.add_boto_method_call(
-                s3.list_objects_v2,
-                Bucket=parsed_log_url.netloc,
-                Prefix=parsed_log_url.params.rstrip("/"),
-                MaxKeys=1,
-            )
-        elif parsed_log_url.scheme == "dbfs":
+        if parsed_log_url.scheme == "dbfs":
             response = dbx_client.list_dbfs_directory(parsed_log_url.geturl())
             if "error_code" not in response:
                 report.append(
@@ -179,7 +189,7 @@ def get_access_report(log_url: str = None) -> AccessReport:
 
 def _get_cluster_report(
     cluster_id: str, plan_type: str, compute_type: str, allow_incomplete: bool
-) -> Response[AWSDatabricksClusterReport]:
+) -> Response[AzureDatabricksClusterReport]:
     # Cluster `terminated_time` can be a few seconds after the start of the next task in which
     # this may be executing.
     cluster_response = _wait_for_cluster_termination(cluster_id, poll_seconds=5)
@@ -197,7 +207,7 @@ def _get_cluster_report(
 
     cluster_events = _get_all_cluster_events(cluster_id)
     return Response(
-        result=AWSDatabricksClusterReport(
+        result=AzureDatabricksClusterReport(
             plan_type=plan_type,
             compute_type=compute_type,
             cluster=cluster,
@@ -218,7 +228,6 @@ setattr(sync._databricks, "__claim", __name__)
 
 def _get_cluster_instances(cluster: dict) -> Response[dict]:
     cluster_instances = None
-    aws_region_name = DB_CONFIG.aws_region_name
 
     cluster_log_dest = _cluster_log_destination(cluster)
 
@@ -232,11 +241,7 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
         )
 
         cluster_instances_file_response = None
-        if filesystem == "s3":
-            cluster_instances_file_response = _get_cluster_instances_from_s3(
-                bucket, cluster_instances_file_key, cluster_id
-            )
-        elif filesystem == "dbfs":
+        if filesystem == "dbfs":
             cluster_instances_file_response = _get_cluster_instances_from_dbfs(
                 cluster_instances_file_key
             )
@@ -250,42 +255,32 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
     if not cluster_instances:
-        ec2 = boto.client("ec2", region_name=aws_region_name)
-        try:
-            cluster_instances = ec2.describe_instances(
-                Filters=[
-                    {"Name": "tag:Vendor", "Values": ["Databricks"]},
-                    {"Name": "tag:ClusterId", "Values": [cluster_id]},
-                    # {'Name': 'tag:JobId', 'Values': []}
-                ]
-            )
-        except Exception as exc:
-            logger.warning(exc)
 
-    if not cluster_instances or not cluster_instances["Reservations"]:
+        resource_group_name = _get_databricks_resource_group_name()
+
+        compute = _get_azure_client(ComputeManagementClient)
+        if resource_group_name:
+            vms = compute.virtual_machines.list(resource_group_name=resource_group_name)
+        else:
+            logger.warning("Failed to find Databricks managed resource group")
+            vms = compute.virtual_machines.list_all()
+
+        cluster_instances = [
+            vm.as_dict()
+            for vm in vms
+            if vm.tags.get("Vendor") == "Databricks"
+            and vm.tags.get("ClusterId") == cluster["cluster_id"]
+        ]
+
+    if not cluster_instances:
         no_instances_message = (
-            f"Unable to find any active or recently terminated instances for cluster `{cluster_id}` in `{aws_region_name}`. "
+            f"Unable to find any active or recently terminated instances for cluster `{cluster_id}`. "
             + "Please refer to the following documentation for options on how to address this - "
             + "https://docs.synccomputing.com/sync-gradient/integrating-with-gradient/databricks-workflows"
         )
         return Response(error=DatabricksError(message=no_instances_message))
 
     return Response(result=cluster_instances)
-
-
-def _get_cluster_instances_from_s3(bucket: str, file_key: str, cluster_id):
-    s3 = boto.client("s3")
-    try:
-        return s3.get_object(Bucket=bucket, Key=file_key)["Body"].read()
-    except ClientError as ex:
-        if ex.response["Error"]["Code"] == "NoSuchKey":
-            logger.warning(
-                f"Could not find sync_data/cluster_instances.json for cluster: {cluster_id}"
-            )
-        else:
-            logger.error(
-                f"Unexpected error encountered while attempting to fetch sync_data/cluster_instances.json: {ex}"
-            )
 
 
 def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
@@ -317,17 +312,7 @@ def _monitor_cluster(
     #  we make sure to re-strip our final Prefix
     file_key = f"{base_prefix}/sync_data/{spark_context_id}/cluster_instances.json".strip("/")
 
-    aws_region_name = DB_CONFIG.aws_region_name
-    ec2 = boto.client("ec2", region_name=aws_region_name)
-
-    if filesystem == "s3":
-        s3 = boto.client("s3")
-
-        def write_file(body: bytes):
-            logger.info("Saving state to S3")
-            s3.put_object(Bucket=bucket, Key=file_key, Body=body)
-
-    elif filesystem == "dbfs":
+    if filesystem == "dbfs":
         path = format_dbfs_filepath(file_key)
         dbx_client = get_default_client()
 
@@ -335,30 +320,36 @@ def _monitor_cluster(
             logger.info("Saving state to DBFS")
             write_dbfs_file(path, body, dbx_client)
 
+    resource_group_name = _get_databricks_resource_group_name()
+    if not resource_group_name:
+        logger.warning("Failed to find Databricks managed resource group")
+
+    compute = _get_azure_client(ComputeManagementClient)
     previous_instances = {}
+
     while True:
         try:
-            instances = ec2.describe_instances(
-                Filters=[
-                    {"Name": "tag:Vendor", "Values": ["Databricks"]},
-                    {"Name": "tag:ClusterId", "Values": [cluster_id]},
-                    # {'Name': 'tag:JobId', 'Values': []}
-                ]
-            )
+            if resource_group_name:
+                vms = compute.virtual_machines.list(resource_group_name=resource_group_name)
+            else:
+                vms = compute.virtual_machines.list_all()
+            new_instances = [
+                vm.as_dict()
+                for vm in vms
+                if vm.tags.get("Vendor") == "Databricks" and vm.tags.get("ClusterId") == cluster_id
+            ]
 
-            new_instances = [res for res in instances["Reservations"]]
             new_instance_id_to_reservation = dict(
                 zip(
-                    (res["Instances"][0]["InstanceId"] for res in new_instances),
+                    (vm["id"] for vm in new_instances),
                     new_instances,
                 )
             )
 
-            old_instances = [res for res in previous_instances.get("Reservations", [])]
             old_instance_id_to_reservation = dict(
                 zip(
-                    (res["Instances"][0]["InstanceId"] for res in old_instances),
-                    old_instances,
+                    (vm["id"] for vm in previous_instances),
+                    previous_instances,
                 )
             )
 
@@ -367,7 +358,7 @@ def _monitor_cluster(
 
             # If we have the exact same set of instances, prefer the new set...
             if old_instance_ids == new_instance_ids:
-                instances = {"Reservations": new_instances}
+                instances = new_instances
             else:
                 # Otherwise, update old references and include any new instances in the list
                 newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
@@ -384,9 +375,7 @@ def _monitor_cluster(
                     new_instance_id_to_reservation[id] for id in newly_added_instance_ids
                 ]
 
-                instances = {
-                    "Reservations": [*removed_instances, *updated_instances, *new_instances]
-                }
+                instances = [*removed_instances, *updated_instances, *new_instances]
 
             write_file(orjson.dumps(instances))
 
@@ -395,3 +384,37 @@ def _monitor_cluster(
             logger.error(f"Exception encountered while polling cluster: {e}")
 
         sleep(polling_period)
+
+
+def _get_databricks_resource_group_name() -> str:
+    resources = _get_azure_client(ResourceManagementClient)
+
+    for workspace_item in resources.resources.list(
+        filter="resourceType eq 'Microsoft.Databricks/workspaces'"
+    ):
+        workspace = resources.resources.get_by_id(workspace_item.id, "2023-02-01")
+        if workspace.properties["workspaceUrl"] == get_default_client().get_host().netloc.decode():
+            return workspace.properties["managedResourceGroupId"].split("/")[-1]
+
+
+_azure_credential = None
+_azure_subscription_id = None
+
+
+AzureClient = TypeVar("AzureClient")
+
+
+def _get_azure_client(azure_client_class: Type[AzureClient]) -> AzureClient:
+    global _azure_subscription_id
+    if not _azure_subscription_id:
+        _azure_subscription_id = _get_azure_subscription_id()
+
+    global _azure_credential
+    if not _azure_credential:
+        _azure_credential = DefaultAzureCredential()
+
+    return azure_client_class(_azure_credential, _azure_subscription_id)
+
+
+def _get_azure_subscription_id():
+    return os.getenv("AZURE_SUBSCRIPTION_ID") or get_cli_profile().get_login_credentials()[1]

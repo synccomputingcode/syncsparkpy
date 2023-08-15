@@ -1,5 +1,6 @@
 import logging
 from time import sleep
+from typing import Dict, List
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -399,7 +400,7 @@ def _monitor_cluster(  # noqa: C901
         sleep(polling_period)
 
 
-def _get_ebs_volumes(cluster_id: str, ec2_client: "botocore.client.ec2") -> list[dict]:
+def _get_ebs_volumes(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[Dict]:
 
     args = {}
     volumes = []
@@ -423,7 +424,7 @@ def _get_ebs_volumes(cluster_id: str, ec2_client: "botocore.client.ec2") -> list
     return volumes
 
 
-def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> dict[str, list]:
+def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> Dict[str, List[Dict]]:
 
     args = {}
     instances = []

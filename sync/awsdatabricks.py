@@ -3,6 +3,7 @@ from time import sleep
 from urllib.parse import urlparse
 
 import boto3 as boto
+import botocore
 import orjson
 from botocore.exceptions import ClientError
 
@@ -259,6 +260,10 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
                     # {'Name': 'tag:JobId', 'Values': []}
                 ]
             )
+
+            if cluster_instances:
+                cluster_instances["Volumes"] = _get_ebs_volumes(cluster_id, ec2)
+
         except Exception as exc:
             logger.warning(exc)
 
@@ -336,6 +341,8 @@ def _monitor_cluster(
             write_dbfs_file(path, body, dbx_client)
 
     previous_instances = {}
+    recorded_volume_id_set = set({})
+    recorded_volumes = []
     while True:
         try:
             instances = ec2.describe_instances(
@@ -388,6 +395,15 @@ def _monitor_cluster(
                     "Reservations": [*removed_instances, *updated_instances, *new_instances]
                 }
 
+            # Now record the ebs volumes
+            volumes = _get_ebs_volumes(cluster_id, ec2)
+
+            for v in volumes:
+                if v["VolumeId"] not in recorded_volume_id_set:
+                    recorded_volume_id_set.add(v["VolumeId"])
+                    recorded_volumes.append(v)
+
+            instances["Volumes"] = recorded_volumes
             write_file(orjson.dumps(instances))
 
             previous_instances = instances
@@ -395,3 +411,28 @@ def _monitor_cluster(
             logger.error(f"Exception encountered while polling cluster: {e}")
 
         sleep(polling_period)
+
+
+def _get_ebs_volumes(cluster_id: str, ec2_client: "botocore.client.ec2") -> list[dict]:
+
+    args = {}
+    volumes = []
+    while True:
+        response = ec2_client.describe_volumes(
+            Filters=[
+                {"Name": "tag:Vendor", "Values": ["Databricks"]},
+                {"Name": "tag:ClusterId", "Values": [cluster_id]},
+            ],
+            MaxResults=6,
+            **args,
+        )
+
+        if new_volumes := response.get("Volumes"):
+            volumes += new_volumes
+
+        if next_token := response.get("NextToken"):
+            args["NextToken"] = next_token
+        else:
+            break
+
+    return volumes

@@ -436,8 +436,6 @@ def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> di
             **args,
         )
 
-        print(response)
-
         if new_instances := response.get("Reservations"):
             instances += new_instances
 

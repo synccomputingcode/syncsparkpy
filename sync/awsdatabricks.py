@@ -254,9 +254,7 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
         ec2 = boto.client("ec2", region_name=aws_region_name)
         try:
             cluster_instances = _get_ec2_instances(cluster_id, ec2)
-
-            if cluster_instances:
-                cluster_instances["Volumes"] = _get_ebs_volumes(cluster_id, ec2)
+            cluster_instances["Volumes"] = _get_ebs_volumes(cluster_id, ec2)
 
         except Exception as exc:
             logger.warning(exc)

@@ -412,10 +412,10 @@ def _get_ebs_volumes(cluster_id: str, ec2_client: "botocore.client.ec2") -> list
             **args,
         )
 
-        if new_volumes := response.get("Volumes"):
-            volumes += new_volumes
+        volumes += response.get("Volumes", [])
 
-        if next_token := response.get("NextToken"):
+        next_token = response.get("NextToken")
+        if next_token:
             args["NextToken"] = next_token
         else:
             break
@@ -436,10 +436,10 @@ def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> di
             **args,
         )
 
-        if new_instances := response.get("Reservations"):
-            instances += new_instances
+        instances += response.get("Reservations", [])
 
-        if next_token := response.get("NextToken"):
+        next_token = response.get("NextToken")
+        if next_token:
             args["NextToken"] = next_token
         else:
             break

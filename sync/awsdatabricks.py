@@ -253,13 +253,7 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
     if not cluster_instances:
         ec2 = boto.client("ec2", region_name=aws_region_name)
         try:
-            cluster_instances = ec2.describe_instances(
-                Filters=[
-                    {"Name": "tag:Vendor", "Values": ["Databricks"]},
-                    {"Name": "tag:ClusterId", "Values": [cluster_id]},
-                    # {'Name': 'tag:JobId', 'Values': []}
-                ]
-            )
+            cluster_instances = _get_ec2_instances(cluster_id, ec2)
 
             if cluster_instances:
                 cluster_instances["Volumes"] = _get_ebs_volumes(cluster_id, ec2)
@@ -313,7 +307,7 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
 
 
-def _monitor_cluster(
+def _monitor_cluster(  # noqa: C901
     cluster_log_destination, cluster_id: str, spark_context_id: int, polling_period: int
 ) -> None:
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
@@ -345,13 +339,7 @@ def _monitor_cluster(
     recorded_volumes = []
     while True:
         try:
-            instances = ec2.describe_instances(
-                Filters=[
-                    {"Name": "tag:Vendor", "Values": ["Databricks"]},
-                    {"Name": "tag:ClusterId", "Values": [cluster_id]},
-                    # {'Name': 'tag:JobId', 'Values': []}
-                ]
-            )
+            instances = _get_ec2_instances(cluster_id, ec2)
 
             new_instances = [res for res in instances["Reservations"]]
             new_instance_id_to_reservation = dict(
@@ -404,8 +392,8 @@ def _monitor_cluster(
                     recorded_volumes.append(v)
 
             instances["Volumes"] = recorded_volumes
-            write_file(orjson.dumps(instances))
 
+            write_file(orjson.dumps(instances))
             previous_instances = instances
         except Exception as e:
             logger.error(f"Exception encountered while polling cluster: {e}")
@@ -423,7 +411,6 @@ def _get_ebs_volumes(cluster_id: str, ec2_client: "botocore.client.ec2") -> list
                 {"Name": "tag:Vendor", "Values": ["Databricks"]},
                 {"Name": "tag:ClusterId", "Values": [cluster_id]},
             ],
-            MaxResults=6,
             **args,
         )
 
@@ -436,3 +423,29 @@ def _get_ebs_volumes(cluster_id: str, ec2_client: "botocore.client.ec2") -> list
             break
 
     return volumes
+
+
+def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> dict[str, list]:
+
+    args = {}
+    instances = []
+    while True:
+        response = ec2_client.describe_instances(
+            Filters=[
+                {"Name": "tag:Vendor", "Values": ["Databricks"]},
+                {"Name": "tag:ClusterId", "Values": [cluster_id]},
+            ],
+            **args,
+        )
+
+        print(response)
+
+        if new_instances := response.get("Reservations"):
+            instances += new_instances
+
+        if next_token := response.get("NextToken"):
+            args["NextToken"] = next_token
+        else:
+            break
+
+    return {"Reservations": instances}

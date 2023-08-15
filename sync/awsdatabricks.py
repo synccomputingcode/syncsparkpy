@@ -1,6 +1,6 @@
 import logging
 from time import sleep
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -190,12 +190,14 @@ def _get_cluster_report(
 
     cluster = cluster_response.result
 
-    instances = _get_cluster_instances(cluster)
-    if instances.error:
-        if allow_incomplete:
-            logger.warning(instances.error)
-        else:
-            return instances
+    instances, volumes = _get_cluster_instances(cluster)
+
+    for response in [instances, volumes]:
+        if response.error:
+            if allow_incomplete:
+                logger.warning(response.error)
+            else:
+                return response
 
     cluster_events = _get_all_cluster_events(cluster_id)
     return Response(
@@ -205,6 +207,7 @@ def _get_cluster_report(
             cluster=cluster,
             cluster_events=cluster_events,
             instances=instances.result,
+            volumes=volumes.result,
         )
     )
 
@@ -218,7 +221,7 @@ sync._databricks._get_cluster_report = _get_cluster_report
 setattr(sync._databricks, "__claim", __name__)
 
 
-def _get_cluster_instances(cluster: dict) -> Response[dict]:
+def _get_cluster_instances(cluster: dict) -> Tuple[Response[dict], Response[dict]]:
     cluster_instances = None
     aws_region_name = DB_CONFIG.aws_region_name
 
@@ -260,15 +263,26 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
         except Exception as exc:
             logger.warning(exc)
 
-    if not cluster_instances or not cluster_instances["Reservations"]:
-        no_instances_message = (
-            f"Unable to find any active or recently terminated instances for cluster `{cluster_id}` in `{aws_region_name}`. "
+    def missing_message(input: str) -> str:
+        return (
+            f"Unable to find any active or recently terminated {input} for cluster `{cluster_id}` in `{aws_region_name}`. "
             + "Please refer to the following documentation for options on how to address this - "
             + "https://docs.synccomputing.com/sync-gradient/integrating-with-gradient/databricks-workflows"
         )
-        return Response(error=DatabricksError(message=no_instances_message))
 
-    return Response(result=cluster_instances)
+    if not cluster_instances or not cluster_instances["Reservations"]:
+        reservations_response = Response(
+            error=DatabricksError(message=missing_message("instances"))
+        )
+    else:
+        reservations_response = Response(result={"Reservations": cluster_instances["Reservations"]})
+
+    if not cluster_instances or not cluster_instances["Volumes"]:
+        volumes_response = Response(error=DatabricksError(message=missing_message("ebs volumes")))
+    else:
+        volumes_response = Response(result=cluster_instances["Volumes"])
+
+    return reservations_response, volumes_response
 
 
 def _get_cluster_instances_from_s3(bucket: str, file_key: str, cluster_id):
@@ -306,7 +320,7 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
 
 
-def _monitor_cluster(  # noqa: C901
+def _monitor_cluster(
     cluster_log_destination, cluster_id: str, spark_context_id: int, polling_period: int
 ) -> None:
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
@@ -334,8 +348,7 @@ def _monitor_cluster(  # noqa: C901
             write_dbfs_file(path, body, dbx_client)
 
     previous_instances = {}
-    recorded_volume_id_set = set({})
-    recorded_volumes = []
+    recorded_volumes = {}
     while True:
         try:
             instances = _get_ec2_instances(cluster_id, ec2)
@@ -382,15 +395,9 @@ def _monitor_cluster(  # noqa: C901
                     "Reservations": [*removed_instances, *updated_instances, *new_instances]
                 }
 
-            # Now record the ebs volumes
-            volumes = _get_ebs_volumes(cluster_id, ec2)
-
-            for v in volumes:
-                if v["VolumeId"] not in recorded_volume_id_set:
-                    recorded_volume_id_set.add(v["VolumeId"])
-                    recorded_volumes.append(v)
-
-            instances["Volumes"] = recorded_volumes
+            # Also record the instance ebs volumes in a separate field
+            recorded_volumes.update({v["VolumeId"]: v for v in _get_ebs_volumes(cluster_id, ec2)})
+            instances["Volumes"] = list(recorded_volumes.values())
 
             write_file(orjson.dumps(instances))
             previous_instances = instances
@@ -402,47 +409,35 @@ def _monitor_cluster(  # noqa: C901
 
 def _get_ebs_volumes(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[Dict]:
 
-    args = {}
-    volumes = []
-    while True:
-        response = ec2_client.describe_volumes(
-            Filters=[
-                {"Name": "tag:Vendor", "Values": ["Databricks"]},
-                {"Name": "tag:ClusterId", "Values": [cluster_id]},
-            ],
-            **args,
-        )
+    filters = [
+        {"Name": "tag:Vendor", "Values": ["Databricks"]},
+        {"Name": "tag:ClusterId", "Values": [cluster_id]},
+    ]
+    response = ec2_client.describe_volumes(Filters=filters)
+    volumes = response.get("Volumes", [])
+    next_token = response.get("NextToken")
 
+    while next_token:
+        response = ec2_client.describe_volumes(Filters=filters, NextToken=next_token)
         volumes += response.get("Volumes", [])
-
         next_token = response.get("NextToken")
-        if next_token:
-            args["NextToken"] = next_token
-        else:
-            break
 
     return volumes
 
 
 def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> Dict[str, List[Dict]]:
 
-    args = {}
-    instances = []
-    while True:
-        response = ec2_client.describe_instances(
-            Filters=[
-                {"Name": "tag:Vendor", "Values": ["Databricks"]},
-                {"Name": "tag:ClusterId", "Values": [cluster_id]},
-            ],
-            **args,
-        )
+    filters = [
+        {"Name": "tag:Vendor", "Values": ["Databricks"]},
+        {"Name": "tag:ClusterId", "Values": [cluster_id]},
+    ]
+    response = ec2_client.describe_instances(Filters=filters)
+    reservations = response.get("Reservations", [])
+    next_token = response.get("NextToken")
 
-        instances += response.get("Reservations", [])
-
+    while next_token:
+        response = ec2_client.describe_instances(Filters=filters, NextToken=next_token)
+        reservations += response.get("Reservations", [])
         next_token = response.get("NextToken")
-        if next_token:
-            args["NextToken"] = next_token
-        else:
-            break
 
-    return {"Reservations": instances}
+    return {"Reservations": reservations}

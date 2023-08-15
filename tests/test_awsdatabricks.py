@@ -440,6 +440,81 @@ MOCK_INSTANCES = {
     ],
 }
 
+MOCK_VOLUMES = {
+    "Volumes": [
+        {
+            "Attachments": [
+                {
+                    "AttachTime": datetime.fromisoformat("2023-08-15T21:43:03+00:00"),
+                    "Device": "/dev/sda1",
+                    "InstanceId": "i-01ecbca3d064b99cb",
+                    "State": "attached",
+                    "VolumeId": "vol-01114146532c3a1c5",
+                    "DeleteOnTermination": True,
+                }
+            ],
+            "AvailabilityZone": "us-east-1f",
+            "CreateTime": datetime.fromisoformat("2023-08-15T21:43:04.058000+00:00"),
+            "Encrypted": True,
+            "KmsKeyId": "arn:aws:kms:us-east-1:471881062455:key/75aa19ed-25bd-4fca-be79-c21a23256d69",
+            "Size": 30,
+            "SnapshotId": "snap-08aeac93ec15d59b0",
+            "State": "in-use",
+            "VolumeId": "vol-01114146532c3a1c5",
+            "Iops": 3000,
+            "Tags": [
+                {"Key": "ClusterName", "Value": "script-test-nvme"},
+                {"Key": "Vendor", "Value": "Databricks"},
+                {
+                    "Key": "Name",
+                    "Value": "workerenv-656201176161048-20de29ca-1c16-42b0-a91e-4f6a30f57313-worker",
+                },
+                {"Key": "management_service", "Value": "instance_manager_service"},
+                {"Key": "ClusterId", "Value": "0815-124039-8cpvy56n"},
+                {"Key": "Creator", "Value": "sean.gorsky@synccomputing.com"},
+            ],
+            "VolumeType": "gp3",
+            "MultiAttachEnabled": False,
+            "Throughput": 125,
+        },
+        {
+            "Attachments": [
+                {
+                    "AttachTime": datetime.fromisoformat("2023-08-15T21:43:03+00:00"),
+                    "Device": "/dev/xvdb",
+                    "InstanceId": "i-01ecbca3d064b99cb",
+                    "State": "attached",
+                    "VolumeId": "vol-0888642ead4f823ea",
+                    "DeleteOnTermination": True,
+                }
+            ],
+            "AvailabilityZone": "us-east-1f",
+            "CreateTime": datetime.fromisoformat("2023-08-15T21:43:03.967000+00:00"),
+            "Encrypted": True,
+            "KmsKeyId": "arn:aws:kms:us-east-1:471881062455:key/75aa19ed-25bd-4fca-be79-c21a23256d69",
+            "Size": 150,
+            "SnapshotId": "",
+            "State": "in-use",
+            "VolumeId": "vol-0888642ead4f823ea",
+            "Iops": 3000,
+            "Tags": [
+                {"Key": "ClusterId", "Value": "0815-124039-8cpvy56n"},
+                {"Key": "ClusterName", "Value": "script-test-nvme"},
+                {"Key": "management_service", "Value": "instance_manager_service"},
+                {"Key": "Vendor", "Value": "Databricks"},
+                {
+                    "Key": "Name",
+                    "Value": "workerenv-656201176161048-20de29ca-1c16-42b0-a91e-4f6a30f57313-worker",
+                },
+                {"Key": "Creator", "Value": "sean.gorsky@synccomputing.com"},
+            ],
+            "VolumeType": "gp3",
+            "MultiAttachEnabled": False,
+            "Throughput": 125,
+        },
+    ]
+}
+
 MOCK_DBX_CONF = DatabricksConf(
     host="https://dbc-123.cloud.databricks.com",
     token="my_secret_token",
@@ -511,7 +586,7 @@ def test_create_prediction_for_run_bad_cluster_data(respx_mock):
 
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
 @patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
-def test_create_prediction_for_run_no_instances_found(respx_mock):
+def test_create_prediction_for_run_no_instances_found_or_no_volumes_found(respx_mock):
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=MOCK_RUN)
     )
@@ -525,24 +600,29 @@ def test_create_prediction_for_run_no_instances_found(respx_mock):
     )
 
     ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
-    ec2_stubber = Stubber(ec2)
-    ec2_stubber.add_response("describe_instances", {"Reservations": []})
-
     s3 = boto.client("s3")
-    s3_stubber = Stubber(s3)
-    s3_stubber.add_client_error("get_object", "NoSuchKey")
 
-    def client_patch(name, **kwargs):
-        if name == "ec2":
-            return ec2
-        elif name == "s3":
-            return s3
+    for case in [({"Reservations": []}, MOCK_VOLUMES), (MOCK_INSTANCES, {"Volumes": []})]:
 
-    with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
-        mock_aws_client.side_effect = client_patch
-        result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
+        s3_stubber = Stubber(s3)
+        s3_stubber.add_client_error("get_object", "NoSuchKey")
 
-    assert result.error
+        def client_patch(name, **kwargs):
+            if name == "ec2":
+                return ec2
+            elif name == "s3":
+                return s3
+
+        # First test no instances
+        ec2_stubber = Stubber(ec2)
+        ec2_stubber.add_response("describe_instances", case[0])
+        ec2_stubber.add_response("describe_volumes", case[1])
+
+        with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
+            mock_aws_client.side_effect = client_patch
+            result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
+
+        assert result.error
 
 
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
@@ -631,6 +711,7 @@ def test_create_prediction_for_run_success(respx_mock):
     ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
     ec2_stubber = Stubber(ec2)
     ec2_stubber.add_response("describe_instances", MOCK_INSTANCES)
+    ec2_stubber.add_response("describe_volumes", MOCK_VOLUMES)
 
     base_prefix = "path/to/logs/0101-214342-tpi6qdp2"
     eventlog_file_prefix = f"{base_prefix}/eventlog/0101-214342-tpi6qdp2"
@@ -721,8 +802,9 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
 
     s3 = boto.client("s3")
     s3_stubber = Stubber(s3)
+
     mock_instances_bytes = orjson.dumps(
-        MOCK_INSTANCES,
+        {**MOCK_INSTANCES, **MOCK_VOLUMES},
         option=orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS | orjson.OPT_NAIVE_UTC,
     )
     s3_stubber.add_response(
@@ -810,6 +892,7 @@ def test_create_prediction_for_run_with_pending_task(respx_mock):
     ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
     ec2_stubber = Stubber(ec2)
     ec2_stubber.add_response("describe_instances", MOCK_INSTANCES)
+    ec2_stubber.add_response("describe_volumes", MOCK_VOLUMES)
 
     s3_file_prefix = "path/to/logs/0101-214342-tpi6qdp2/eventlog/0101-214342-tpi6qdp2"
 
@@ -896,6 +979,7 @@ def test_create_prediction_for_run_event_log_upload_delay(
     ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
     ec2_stubber = Stubber(ec2)
     ec2_stubber.add_response("describe_instances", MOCK_INSTANCES)
+    ec2_stubber.add_response("describe_volumes", MOCK_VOLUMES)
 
     s3_file_prefix = "path/to/logs/0101-214342-tpi6qdp2/eventlog/0101-214342-tpi6qdp2"
 

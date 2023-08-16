@@ -12,7 +12,7 @@ import sync._databricks
 from sync._databricks import (
     _cluster_log_destination,
     _get_all_cluster_events,
-    _get_aws_cluster_info_from_dbfs,
+    _get_cluster_instances_from_dbfs,
     _wait_for_cluster_termination,
     create_and_record_run,
     create_and_wait_for_run,
@@ -240,7 +240,7 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
                 bucket, cluster_info_file_key, cluster_id
             )
         elif filesystem == "dbfs":
-            cluster_info_file_response = _get_aws_cluster_info_from_dbfs(cluster_info_file_key)
+            cluster_info_file_response = _get_cluster_instances_from_dbfs(cluster_info_file_key)
 
         cluster_info = (
             orjson.loads(cluster_info_file_response) if cluster_info_file_response else None

@@ -223,7 +223,7 @@ def _get_cluster_report(
     raise NotImplementedError()
 
 
-def _get_cluster_instances_from_dbfs(filepath: str):
+def _get_aws_cluster_info_from_dbfs(filepath: str):
     filepath = format_dbfs_filepath(filepath)
     dbx_client = get_default_client()
     try:

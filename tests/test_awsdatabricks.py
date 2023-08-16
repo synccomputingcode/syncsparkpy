@@ -791,9 +791,7 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
 
     base_prefix = "path/to/logs/0101-214342-tpi6qdp2"
     eventlog_file_prefix = f"{base_prefix}/eventlog/0101-214342-tpi6qdp2"
-    cluster_instances_file_key = (
-        f"{base_prefix}/sync_data/1443449481634833945/cluster_instances.json"
-    )
+    cluster_info_file_key = f"{base_prefix}/sync_data/1443449481634833945/aws_cluster_info.json"
 
     # Don't add any responses for this one as we expect all the instance data we need to be available
     #  in the cluster_instances.json file
@@ -803,7 +801,7 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
     s3 = boto.client("s3")
     s3_stubber = Stubber(s3)
 
-    mock_instances_bytes = orjson.dumps(
+    mock_cluster_info_bytes = orjson.dumps(
         {**MOCK_INSTANCES, **MOCK_VOLUMES},
         option=orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS | orjson.OPT_NAIVE_UTC,
     )
@@ -811,13 +809,13 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
         "get_object",
         {
             "ContentType": "application/octet-stream",
-            "ContentLength": len(mock_instances_bytes),
+            "ContentLength": len(mock_cluster_info_bytes),
             "Body": StreamingBody(
-                io.BytesIO(mock_instances_bytes),
-                len(mock_instances_bytes),
+                io.BytesIO(mock_cluster_info_bytes),
+                len(mock_cluster_info_bytes),
             ),
         },
-        {"Bucket": "bucket", "Key": cluster_instances_file_key},
+        {"Bucket": "bucket", "Key": cluster_info_file_key},
     )
     s3_stubber.add_response(
         "list_objects_v2",

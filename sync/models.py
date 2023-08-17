@@ -105,6 +105,7 @@ class DatabricksClusterReport(BaseModel):
 
 class AWSDatabricksClusterReport(DatabricksClusterReport):
     instances: Union[dict, None]
+    volumes: Union[dict, None]
 
 
 class AzureDatabricksClusterReport(DatabricksClusterReport):

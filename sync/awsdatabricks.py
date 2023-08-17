@@ -1,8 +1,10 @@
 import logging
 from time import sleep
+from typing import Dict, List, Tuple
 from urllib.parse import urlparse
 
 import boto3 as boto
+import botocore
 import orjson
 from botocore.exceptions import ClientError
 
@@ -188,12 +190,14 @@ def _get_cluster_report(
 
     cluster = cluster_response.result
 
-    instances = _get_cluster_instances(cluster)
-    if instances.error:
-        if allow_incomplete:
-            logger.warning(instances.error)
-        else:
-            return instances
+    reservations, volumes = _get_aws_cluster_info(cluster)
+
+    for response in [reservations, volumes]:
+        if response.error:
+            if allow_incomplete:
+                logger.warning(response.error)
+            else:
+                return response
 
     cluster_events = _get_all_cluster_events(cluster_id)
     return Response(
@@ -202,7 +206,8 @@ def _get_cluster_report(
             compute_type=compute_type,
             cluster=cluster,
             cluster_events=cluster_events,
-            instances=instances.result,
+            instances=reservations.result,
+            volumes=volumes.result,
         )
     )
 
@@ -216,8 +221,8 @@ sync._databricks._get_cluster_report = _get_cluster_report
 setattr(sync._databricks, "__claim", __name__)
 
 
-def _get_cluster_instances(cluster: dict) -> Response[dict]:
-    cluster_instances = None
+def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]]:
+    cluster_info = None
     aws_region_name = DB_CONFIG.aws_region_name
 
     cluster_log_dest = _cluster_log_destination(cluster)
@@ -227,65 +232,61 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
 
         cluster_id = cluster["cluster_id"]
         spark_context_id = cluster["spark_context_id"]
-        cluster_instances_file_key = (
-            f"{base_prefix}/sync_data/{spark_context_id}/cluster_instances.json"
-        )
+        cluster_info_file_key = f"{base_prefix}/sync_data/{spark_context_id}/aws_cluster_info.json"
 
-        cluster_instances_file_response = None
+        cluster_info_file_response = None
         if filesystem == "s3":
-            cluster_instances_file_response = _get_cluster_instances_from_s3(
-                bucket, cluster_instances_file_key, cluster_id
+            cluster_info_file_response = _get_aws_cluster_info_from_s3(
+                bucket, cluster_info_file_key, cluster_id
             )
         elif filesystem == "dbfs":
-            cluster_instances_file_response = _get_cluster_instances_from_dbfs(
-                cluster_instances_file_key
-            )
+            cluster_info_file_response = _get_cluster_instances_from_dbfs(cluster_info_file_key)
 
-        cluster_instances = (
-            orjson.loads(cluster_instances_file_response)
-            if cluster_instances_file_response
-            else None
+        cluster_info = (
+            orjson.loads(cluster_info_file_response) if cluster_info_file_response else None
         )
 
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
-    if not cluster_instances:
+    if not cluster_info:
         ec2 = boto.client("ec2", region_name=aws_region_name)
         try:
-            cluster_instances = ec2.describe_instances(
-                Filters=[
-                    {"Name": "tag:Vendor", "Values": ["Databricks"]},
-                    {"Name": "tag:ClusterId", "Values": [cluster_id]},
-                    # {'Name': 'tag:JobId', 'Values': []}
-                ]
-            )
+            cluster_info = {
+                "Reservations": _get_ec2_instances(cluster_id, ec2),
+                "Volumes": _get_ebs_volumes(cluster_id, ec2),
+            }
+
         except Exception as exc:
             logger.warning(exc)
 
-    if not cluster_instances or not cluster_instances["Reservations"]:
-        no_instances_message = (
-            f"Unable to find any active or recently terminated instances for cluster `{cluster_id}` in `{aws_region_name}`. "
+    def missing_message(input: str) -> str:
+        return (
+            f"Unable to find any active or recently terminated {input} for cluster `{cluster_id}` in `{aws_region_name}`. "
             + "Please refer to the following documentation for options on how to address this - "
             + "https://docs.synccomputing.com/sync-gradient/integrating-with-gradient/databricks-workflows"
         )
-        return Response(error=DatabricksError(message=no_instances_message))
 
-    return Response(result=cluster_instances)
+    if not cluster_info or not cluster_info["Reservations"]:
+        reservations_response = Response(
+            error=DatabricksError(message=missing_message("instances"))
+        )
+    else:
+        reservations_response = Response(result={"Reservations": cluster_info["Reservations"]})
+
+    if not cluster_info or not cluster_info["Volumes"]:
+        volumes_response = Response(error=DatabricksError(message=missing_message("ebs volumes")))
+    else:
+        volumes_response = Response(result={"Volumes": cluster_info["Volumes"]})
+
+    return reservations_response, volumes_response
 
 
-def _get_cluster_instances_from_s3(bucket: str, file_key: str, cluster_id):
+def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
     s3 = boto.client("s3")
     try:
         return s3.get_object(Bucket=bucket, Key=file_key)["Body"].read()
-    except ClientError as ex:
-        if ex.response["Error"]["Code"] == "NoSuchKey":
-            logger.warning(
-                f"Could not find sync_data/cluster_instances.json for cluster: {cluster_id}"
-            )
-        else:
-            logger.error(
-                f"Unexpected error encountered while attempting to fetch sync_data/cluster_instances.json: {ex}"
-            )
+    except ClientError as err:
+        logger.warning(f"Failed to retrieve cluster info from S3 with key, '{file_key}': {err}")
 
 
 def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
@@ -315,7 +316,7 @@ def _monitor_cluster(
     # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
     #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
     #  we make sure to re-strip our final Prefix
-    file_key = f"{base_prefix}/sync_data/{spark_context_id}/cluster_instances.json".strip("/")
+    file_key = f"{base_prefix}/sync_data/{spark_context_id}/aws_cluster_info.json".strip("/")
 
     aws_region_name = DB_CONFIG.aws_region_name
     ec2 = boto.client("ec2", region_name=aws_region_name)
@@ -335,30 +336,22 @@ def _monitor_cluster(
             logger.info("Saving state to DBFS")
             write_dbfs_file(path, body, dbx_client)
 
-    previous_instances = {}
+    old_reservations = []
+    recorded_volumes = {}
     while True:
         try:
-            instances = ec2.describe_instances(
-                Filters=[
-                    {"Name": "tag:Vendor", "Values": ["Databricks"]},
-                    {"Name": "tag:ClusterId", "Values": [cluster_id]},
-                    # {'Name': 'tag:JobId', 'Values': []}
-                ]
-            )
-
-            new_instances = [res for res in instances["Reservations"]]
+            new_reservations = _get_ec2_instances(cluster_id, ec2)
             new_instance_id_to_reservation = dict(
                 zip(
-                    (res["Instances"][0]["InstanceId"] for res in new_instances),
-                    new_instances,
+                    (res["Instances"][0]["InstanceId"] for res in new_reservations),
+                    new_reservations,
                 )
             )
 
-            old_instances = [res for res in previous_instances.get("Reservations", [])]
             old_instance_id_to_reservation = dict(
                 zip(
-                    (res["Instances"][0]["InstanceId"] for res in old_instances),
-                    old_instances,
+                    (res["Instances"][0]["InstanceId"] for res in old_reservations),
+                    old_reservations,
                 )
             )
 
@@ -367,31 +360,72 @@ def _monitor_cluster(
 
             # If we have the exact same set of instances, prefer the new set...
             if old_instance_ids == new_instance_ids:
-                instances = {"Reservations": new_instances}
+                reservations = new_reservations
             else:
                 # Otherwise, update old references and include any new instances in the list
                 newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
                 updated_instance_ids = new_instance_ids.intersection(old_instance_ids)
                 removed_instance_ids = old_instance_ids.difference(new_instance_ids)
 
-                removed_instances = [
+                removed_reservations = [
                     old_instance_id_to_reservation[id] for id in removed_instance_ids
                 ]
-                updated_instances = [
+                updated_reservations = [
                     new_instance_id_to_reservation[id] for id in updated_instance_ids
                 ]
-                new_instances = [
+                new_reservations = [
                     new_instance_id_to_reservation[id] for id in newly_added_instance_ids
                 ]
 
-                instances = {
-                    "Reservations": [*removed_instances, *updated_instances, *new_instances]
-                }
+                reservations = [*removed_reservations, *updated_reservations, *new_reservations]
 
-            write_file(orjson.dumps(instances))
+            # Also record the instance ebs volumes in a separate field
+            recorded_volumes.update({v["VolumeId"]: v for v in _get_ebs_volumes(cluster_id, ec2)})
 
-            previous_instances = instances
+            write_file(
+                orjson.dumps(
+                    {"Reservations": reservations, "Volumes": list(recorded_volumes.values())}
+                )
+            )
+
+            old_reservations = reservations
         except Exception as e:
             logger.error(f"Exception encountered while polling cluster: {e}")
 
         sleep(polling_period)
+
+
+def _get_ebs_volumes(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[Dict]:
+
+    filters = [
+        {"Name": "tag:Vendor", "Values": ["Databricks"]},
+        {"Name": "tag:ClusterId", "Values": [cluster_id]},
+    ]
+    response = ec2_client.describe_volumes(Filters=filters)
+    volumes = response.get("Volumes", [])
+    next_token = response.get("NextToken")
+
+    while next_token:
+        response = ec2_client.describe_volumes(Filters=filters, NextToken=next_token)
+        volumes += response.get("Volumes", [])
+        next_token = response.get("NextToken")
+
+    return volumes
+
+
+def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[Dict]:
+
+    filters = [
+        {"Name": "tag:Vendor", "Values": ["Databricks"]},
+        {"Name": "tag:ClusterId", "Values": [cluster_id]},
+    ]
+    response = ec2_client.describe_instances(Filters=filters)
+    reservations = response.get("Reservations", [])
+    next_token = response.get("NextToken")
+
+    while next_token:
+        response = ec2_client.describe_instances(Filters=filters, NextToken=next_token)
+        reservations += response.get("Reservations", [])
+        next_token = response.get("NextToken")
+
+    return reservations

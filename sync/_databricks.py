@@ -29,6 +29,7 @@ def create_prediction(
     cluster: dict,
     cluster_events: dict,
     instances: dict,
+    volumes: dict,
     eventlog: bytes,
     project_id: str = None,
 ) -> Response[str]:
@@ -68,6 +69,7 @@ def create_prediction(
             "cluster": cluster,
             "cluster_events": cluster_events,
             "instances": instances,
+            "volumes": volumes,
         },
         "eventlog.zip",
         eventlog,
@@ -167,6 +169,7 @@ def create_prediction_for_run(
                     cluster=cluster,
                     cluster_events=cluster_report.cluster_events,
                     instances=cluster_report.instances,
+                    volumes=cluster_report.volumes,
                     eventlog=eventlog,
                     project_id=project_id,
                 )

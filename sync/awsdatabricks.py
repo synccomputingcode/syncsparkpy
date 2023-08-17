@@ -285,15 +285,8 @@ def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
     s3 = boto.client("s3")
     try:
         return s3.get_object(Bucket=bucket, Key=file_key)["Body"].read()
-    except ClientError as ex:
-        if ex.response["Error"]["Code"] == "NoSuchKey":
-            logger.warning(
-                f"Could not find sync_data/aws_cluster_info.json for cluster: {cluster_id}"
-            )
-        else:
-            logger.error(
-                f"Unexpected error encountered while attempting to fetch sync_data/aws_cluster_info.json: {ex}"
-            )
+    except ClientError as err:
+        logger.warning(f"Failed to retrieve cluster info from S3 with key, '{file_key}': {err}")
 
 
 def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:

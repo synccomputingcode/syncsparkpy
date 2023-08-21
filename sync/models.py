@@ -78,6 +78,10 @@ class ProjectError(Error):
     code: str = Field("Project Error", const=True)
 
 
+class SubmissionError(Error):
+    code: str = Field("Submission Error", const=True)
+
+
 class EMRError(Error):
     code: str = Field("EMR Error", const=True)
 
@@ -101,6 +105,7 @@ class DatabricksClusterReport(BaseModel):
     compute_type: DatabricksComputeType
     cluster: dict
     cluster_events: dict
+    tasks: List[dict]
 
 
 class AWSDatabricksClusterReport(DatabricksClusterReport):

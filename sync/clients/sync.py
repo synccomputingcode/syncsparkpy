@@ -13,7 +13,8 @@ class SyncAuth(httpx.Auth):
     requires_response_body = True
 
     def __init__(self, api_url: str, api_key: APIKey):
-        self.auth_url = f"{api_url}/v1/auth/token"
+        # self.auth_url = f"{api_url}/v1/auth/token"
+        self.auth_url = "https://dev-api.synccomputing.com/v1/auth/token"
         self.api_key = api_key
         self._access_token = None
 
@@ -110,6 +111,14 @@ class SyncClient(RetryableHTTPClient):
 
     def delete_project(self, project_id: str) -> dict:
         return self._send(self._client.build_request("DELETE", f"/v1/projects/{project_id}"))
+
+    def create_project_submission(self, project_id: str, submission: dict) -> dict:
+        headers, content = encode_json(submission)
+        return self._send(
+            self._client.build_request(
+                "POST", f"/v1/projects/{project_id}/submissions", headers=headers, content=content
+            )
+        )
 
     def _send(self, request: httpx.Request) -> dict:
         response = self._send_request(request)

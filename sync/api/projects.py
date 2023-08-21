@@ -1,12 +1,15 @@
 """Project functions
 """
-
+import io
 import logging
 from typing import List
+from urllib.parse import urlparse
 
-from sync.api.predictions import get_predictions
+import httpx
+
+from sync.api.predictions import generate_presigned_url, get_predictions
 from sync.clients.sync import get_default_client
-from sync.models import Preference, ProjectError, Response
+from sync.models import Platform, Preference, ProjectError, Response, SubmissionError
 
 logger = logging.getLogger()
 
@@ -174,3 +177,90 @@ def delete_project(project_id: str) -> Response[str]:
     :rtype: Response[str]
     """
     return Response(**get_default_client().delete_project(project_id))
+
+
+def create_project_submission(
+    platform: Platform, cluster_report: dict, eventlog_url: str, project_id: str
+) -> Response[str]:
+    """Create prediction
+
+    :param platform: platform, e.g. "aws-emr"
+    :type platform: Platform
+    :param cluster_report: cluster report
+    :type cluster_report: dict
+    :param eventlog_url: event log URL
+    :type eventlog_url: str
+    :param project_id: ID of project to which the submission belongs
+    :type project_id: str
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    scheme = urlparse(eventlog_url).scheme
+    if scheme == "s3":
+        response = generate_presigned_url(eventlog_url)
+        if response.error:
+            return response
+        eventlog_http_url = response.result
+    elif scheme in {"http", "https"}:
+        eventlog_http_url = eventlog_url
+    else:
+        return Response(error=SubmissionError(message="Unsupported event log URL scheme"))
+
+    response = get_default_client().create_project_submission(
+        project_id,
+        {
+            "product": platform,
+            "cluster_report": cluster_report,
+            "event_log_uri": eventlog_http_url,
+        },
+    )
+
+    if response.get("error"):
+        return Response(**response)
+
+    return Response(result=response["result"]["submission_id"])
+
+
+def create_project_submission_with_eventlog_bytes(
+    platform: Platform,
+    cluster_report: dict,
+    eventlog_name: str,
+    eventlog_bytes: bytes,
+    project_id: str,
+) -> Response[str]:
+    """Creates a prediction giving event log bytes instead of a URL
+
+    :param platform: platform, e.g. "aws-emr"
+    :type platform: Platform
+    :param cluster_report: cluster report
+    :type cluster_report: dict
+    :param eventlog_name: name of event log (extension is important)
+    :type eventlog_name: str
+    :param eventlog_bytes: encoded event log
+    :type eventlog_bytes: bytes
+    :param project_id: ID of project to which the prediction belongs, defaults to None
+    :type project_id: str, optional
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    # TODO - best way to handle "no eventlog"
+    response = get_default_client().create_project_submission(
+        project_id, {"product_code": platform, "cluster_report": cluster_report}
+    )
+
+    if response.get("error"):
+        return Response(**response)
+
+    upload_details = response["result"]["upload_details"]
+    log_response = httpx.post(
+        upload_details["url"],
+        data={
+            **upload_details["fields"],
+            "key": upload_details["fields"]["key"].replace("${filename}", eventlog_name),
+        },
+        files={"file": io.BytesIO(eventlog_bytes)},
+    )
+    if not log_response.status_code == httpx.codes.NO_CONTENT:
+        return Response(error=SubmissionError(message="Failed to upload event log"))
+
+    return Response(result=response["result"]["submission_id"])

@@ -17,7 +17,13 @@ from sync.api.predictions import create_prediction_with_eventlog_bytes, get_pred
 from sync.api.projects import create_project_submission_with_eventlog_bytes, get_project
 from sync.clients.databricks import get_default_client
 from sync.config import CONFIG
-from sync.models import DatabricksAPIError, DatabricksClusterReport, DatabricksError, Response
+from sync.models import (
+    AWSDatabricksClusterReport,
+    DatabricksAPIError,
+    DatabricksClusterReport,
+    DatabricksError,
+    Response,
+)
 from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file
 
 logger = logging.getLogger(__name__)
@@ -29,8 +35,8 @@ def create_prediction(
     cluster: dict,
     cluster_events: dict,
     instances: dict,
-    volumes: dict,
     eventlog: bytes,
+    volumes: dict = None,
     project_id: str = None,
 ) -> Response[str]:
     """Create a Databricks prediction
@@ -56,6 +62,8 @@ def create_prediction(
         function
     :param eventlog: encoded event log zip
     :type eventlog: bytes
+    :param volumes: TODO
+    :type volumes: dict, optional
     :param project_id: Sync project ID, defaults to None
     :type project_id: str, optional
     :return: prediction ID
@@ -147,6 +155,9 @@ def create_prediction_for_run(
         return run_information_response
 
     cluster_report, eventlog = run_information_response.result
+    disk_volumes = (
+        cluster_report.volumes if isinstance(cluster_report, AWSDatabricksClusterReport) else None
+    )
 
     return create_prediction(
         plan_type=cluster_report.plan_type.value,
@@ -156,6 +167,7 @@ def create_prediction_for_run(
         instances=cluster_report.instances,
         eventlog=eventlog,
         project_id=project_id,
+        volumes=disk_volumes,
     )
 
 
@@ -167,6 +179,7 @@ def create_submission(
     cluster_events: dict,
     instances: dict,
     eventlog: bytes,
+    volumes: dict = None,
 ) -> Response[str]:
     """Create a Databricks Project submission
 
@@ -174,6 +187,8 @@ def create_submission(
     :type plan_type: str
     :param compute_type: e.g. "Jobs Compute"
     :type compute_type: str
+    :param project_id: Sync project ID
+    :type project_id: str
     :param cluster: The Databricks cluster definition as defined by -
         https://docs.databricks.com/dev-tools/api/latest/clusters.html#get
     :type cluster: dict
@@ -191,8 +206,8 @@ def create_submission(
         function
     :param eventlog: encoded event log zip
     :type eventlog: bytes
-    :param project_id: Sync project ID, defaults to None
-    :type project_id: str, optional
+    :param volumes: TODO
+    :type volumes: dict, optional
     :return: prediction ID
     :rtype: Response[str]
     """
@@ -204,6 +219,7 @@ def create_submission(
             "cluster": cluster,
             "cluster_events": cluster_events,
             "instances": instances,
+            "volumes": volumes,
         },
         "eventlog.zip",
         eventlog,
@@ -249,8 +265,9 @@ def create_submission_for_run(
         return run_information_response
 
     cluster_report, eventlog = run_information_response.result
-
-    # print(cluster_report)
+    disk_volumes = (
+        cluster_report.volumes if isinstance(cluster_report, AWSDatabricksClusterReport) else None
+    )
 
     return create_submission(
         plan_type=plan_type,
@@ -260,6 +277,7 @@ def create_submission_for_run(
         cluster_events=cluster_report.cluster_events,
         instances=cluster_report.instances,
         eventlog=eventlog,
+        volumes=disk_volumes,
     )
 
 
@@ -1031,7 +1049,7 @@ def _filter_run_tasks(
             tasks = project_tasks
         else:
             logger.warning(
-                f"No task clusters found matching the provided project-id - assuming all non-excluded tasks are relevant"
+                "No task clusters found matching the provided project-id - assuming all non-excluded tasks are relevant"
             )
 
     return tasks

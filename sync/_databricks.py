@@ -62,7 +62,7 @@ def create_prediction(
         function
     :param eventlog: encoded event log zip
     :type eventlog: bytes
-    :param volumes: TODO
+    :param volumes: The EBS volumes that were attached to this cluster
     :type volumes: dict, optional
     :param project_id: Sync project ID, defaults to None
     :type project_id: str, optional
@@ -146,9 +146,9 @@ def create_prediction_for_run(
         run_id,
         plan_type,
         compute_type,
-        project_id,
-        allow_incomplete_cluster_report,
-        exclude_tasks,
+        project_id=project_id,
+        allow_incomplete_cluster_report=allow_incomplete_cluster_report,
+        exclude_tasks=exclude_tasks,
     )
 
     if run_information_response.error:
@@ -206,7 +206,7 @@ def create_submission(
         function
     :param eventlog: encoded event log zip
     :type eventlog: bytes
-    :param volumes: TODO
+    :param volumes: The EBS volumes that were attached to this cluster
     :type volumes: dict, optional
     :return: prediction ID
     :rtype: Response[str]
@@ -256,9 +256,10 @@ def create_submission_for_run(
         run_id,
         plan_type,
         compute_type,
-        project_id,
-        allow_incomplete_cluster_report,
-        exclude_tasks,
+        project_id=project_id,
+        allow_failed_tasks=True,
+        allow_incomplete_cluster_report=allow_incomplete_cluster_report,
+        exclude_tasks=exclude_tasks,
     )
 
     if run_information_response.error:
@@ -286,6 +287,7 @@ def _get_run_information(
     plan_type: str,
     compute_type: str,
     project_id: str = None,
+    allow_failed_tasks: bool = False,
     allow_incomplete_cluster_report: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[Tuple[DatabricksClusterReport, bytes]]:
@@ -294,6 +296,10 @@ def _get_run_information(
         return Response(error=DatabricksAPIError(**run))
 
     tasks = _filter_run_tasks(run["tasks"], exclude_tasks, project_id)
+    if not allow_failed_tasks and any(
+        task["state"].get("result_state") != "SUCCESS" for task in tasks
+    ):
+        return Response(error=DatabricksError(message="Tasks did not complete successfully"))
 
     cluster_id_response = _get_run_cluster_id(tasks)
     cluster_id = cluster_id_response.result
@@ -337,8 +343,9 @@ def get_cluster_report(
     :type plan_type: str
     :param compute_type: Cluster compute type, e.g. "Jobs Compute"
     :type compute_type: str
-    :param project_id: TODO
-    :type project_id: TODO
+    :param project_id: The Sync Project ID this report should be generated for. This is good to provide in general, but
+    especially for multi-cluster jobs.
+    :type project_id: str, optional
     :param allow_incomplete: Whether creating a cluster report with incomplete data should be allowable
     :type allow_incomplete: bool, optional, defaults to False
     :param exclude_tasks: Keys of tasks (task names) to exclude from the report

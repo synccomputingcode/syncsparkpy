@@ -29,8 +29,8 @@ def create_prediction(
     cluster: dict,
     cluster_events: dict,
     instances: dict,
-    volumes: dict,
     eventlog: bytes,
+    volumes: dict = None,
     project_id: str = None,
 ) -> Response[str]:
     """Create a Databricks prediction
@@ -164,12 +164,7 @@ def create_prediction_for_run(
             eventlog = eventlog_response.result
             if eventlog:
                 return create_prediction(
-                    plan_type=cluster_report.plan_type.value,
-                    compute_type=cluster_report.compute_type.value,
-                    cluster=cluster,
-                    cluster_events=cluster_report.cluster_events,
-                    instances=cluster_report.instances,
-                    volumes=cluster_report.volumes,
+                    **cluster_report.dict(),
                     eventlog=eventlog,
                     project_id=project_id,
                 )
@@ -531,7 +526,10 @@ def run_prediction(job_id: str, prediction_id: str, preference: str) -> Response
     prediction_job_response = get_prediction_job(job_id, prediction_id, preference)
     prediction_job = prediction_job_response.result
     if prediction_job:
-        return run_job_object(prediction_job)
+        run_response = run_job_object(prediction_job)
+        if run_response.result:
+            return Response(result=run_response.result[0])
+        return run_response
     return prediction_job_response
 
 

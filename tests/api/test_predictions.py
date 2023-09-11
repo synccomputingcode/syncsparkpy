@@ -3,10 +3,11 @@ import respx
 from httpx import Response
 
 from sync.api import predictions
+from sync.config import CONFIG
 from sync.models import Platform
 
 # auth route will only be called in the first test
-mock_router = respx.mock(base_url="https://*.synccomputing.com", assert_all_called=False)
+mock_router = respx.mock(base_url=CONFIG.api_url, assert_all_called=False)
 mock_router.post("/v1/auth/token").mock(
     return_value=Response(
         200,

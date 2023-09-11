@@ -13,8 +13,7 @@ class SyncAuth(httpx.Auth):
     requires_response_body = True
 
     def __init__(self, api_url: str, api_key: APIKey):
-        # self.auth_url = f"{api_url}/v1/auth/token"
-        self.auth_url = "https://dev-api.synccomputing.com/v1/auth/token"
+        self.auth_url = f"{api_url}/v1/auth/token"
         self.api_key = api_key
         self._access_token = None
 

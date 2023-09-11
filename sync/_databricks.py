@@ -295,36 +295,37 @@ def _get_run_information(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    tasks = _filter_run_tasks(run["tasks"], exclude_tasks, project_id)
+    try:
+        cluster_id, tasks = _get_cluster_id_and_tasks_from_run_tasks(
+            run["tasks"], exclude_tasks, project_id
+        )
+    except Exception as e:
+        return Response(error=DatabricksError(message=str(e)))
+
     if not allow_failed_tasks and any(
         task["state"].get("result_state") != "SUCCESS" for task in tasks
     ):
         return Response(error=DatabricksError(message="Tasks did not complete successfully"))
 
-    cluster_id_response = _get_run_cluster_id(tasks)
-    cluster_id = cluster_id_response.result
+    # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
+    #  uploading all the event log data before we start checking for it
+    cluster_report_response = _get_cluster_report(
+        cluster_id, tasks, plan_type, compute_type, allow_incomplete_cluster_report
+    )
+    cluster_report = cluster_report_response.result
+    if cluster_report:
 
-    if cluster_id:
-        # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
-        #  uploading all the event log data before we start checking for it
-        cluster_report_response = _get_cluster_report(
-            cluster_id, tasks, plan_type, compute_type, allow_incomplete_cluster_report
-        )
-        cluster_report = cluster_report_response.result
-        if cluster_report:
+        cluster = cluster_report.cluster
+        spark_context_id = _get_run_spark_context_id(tasks)
+        eventlog_response = _get_eventlog(cluster, spark_context_id.result, run.get("end_time"))
 
-            cluster = cluster_report.cluster
-            spark_context_id = _get_run_spark_context_id(tasks)
-            eventlog_response = _get_eventlog(cluster, spark_context_id.result, run.get("end_time"))
+        eventlog = eventlog_response.result
+        if eventlog:
+            # TODO - allow submissions w/out eventlog. Best way to make eventlog optional?..
+            return Response(result=(cluster_report, eventlog))
 
-            eventlog = eventlog_response.result
-            if eventlog:
-                # TODO - allow submissions w/out eventlog. Best way to make eventlog optional?..
-                return Response(result=(cluster_report, eventlog))
-
-            return eventlog_response
-        return cluster_report_response
-    return cluster_id_response
+        return eventlog_response
+    return cluster_report_response
 
 
 def get_cluster_report(
@@ -357,14 +358,14 @@ def get_cluster_report(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    tasks = _filter_run_tasks(run["tasks"], exclude_tasks, project_id)
+    try:
+        cluster_id, tasks = _get_cluster_id_and_tasks_from_run_tasks(
+            run["tasks"], exclude_tasks, project_id
+        )
+    except Exception as e:
+        return Response(error=DatabricksError(message=str(e)))
 
-    cluster_id_response = _get_run_cluster_id(tasks)
-    cluster_id = cluster_id_response.result
-    if cluster_id:
-        return _get_cluster_report(cluster_id, tasks, plan_type, compute_type, allow_incomplete)
-
-    return cluster_id_response
+    return _get_cluster_report(cluster_id, tasks, plan_type, compute_type, allow_incomplete)
 
 
 def _get_cluster_report(
@@ -1038,14 +1039,27 @@ def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
     return Response(error=DatabricksError(message="Not all tasks use the same cluster"))
 
 
-def _filter_run_tasks(
+def _get_cluster_id_and_tasks_from_run_tasks(
     all_tasks: List[dict],
     exclude_tasks: Union[Collection[str], None] = None,
     project_id: str = None,
-):
-    tasks = [
-        task for task in all_tasks if not exclude_tasks or task["task_key"] not in exclude_tasks
-    ]
+) -> Tuple[str, List[dict]]:
+    cluster_id_to_tasks = {}
+    for task in all_tasks:
+        if not exclude_tasks or task["task_key"] not in exclude_tasks:
+            cluster_id = task["cluster_instance"]["cluster_id"]
+            if cluster_id not in cluster_id_to_tasks:
+                cluster_id_to_tasks[cluster_id] = [task]
+            else:
+                cluster_id_to_tasks[cluster_id].append(task)
+
+    num_ids = len(cluster_id_to_tasks)
+    if num_ids == 0:
+        raise Exception("No cluster found for tasks")
+    elif num_ids > 1:
+        raise Exception("More than 1 cluster found for tasks")
+
+    cluster_id, tasks = cluster_id_to_tasks.popitem()
     if project_id:
         project_tasks = [
             t
@@ -1059,18 +1073,7 @@ def _filter_run_tasks(
                 "No task clusters found matching the provided project-id - assuming all non-excluded tasks are relevant"
             )
 
-    return tasks
-
-
-def _get_run_cluster_id(tasks: List[dict]) -> Response[str]:
-    cluster_ids = {task["cluster_instance"]["cluster_id"] for task in tasks}
-    num_ids = len(cluster_ids)
-    if num_ids == 1:
-        return Response(result=cluster_ids.pop())
-    elif num_ids == 0:
-        return Response(error=DatabricksError(message="No cluster found for tasks"))
-    else:
-        return Response(error=DatabricksError(message="More than 1 cluster found for tasks"))
+    return cluster_id, tasks
 
 
 def _get_run_spark_context_id(tasks: List[dict]) -> Response[str]:

@@ -17,13 +17,7 @@ from sync.api.predictions import create_prediction_with_eventlog_bytes, get_pred
 from sync.api.projects import create_project_submission_with_eventlog_bytes, get_project
 from sync.clients.databricks import get_default_client
 from sync.config import CONFIG
-from sync.models import (
-    AWSDatabricksClusterReport,
-    DatabricksAPIError,
-    DatabricksClusterReport,
-    DatabricksError,
-    Response,
-)
+from sync.models import DatabricksAPIError, DatabricksClusterReport, DatabricksError, Response
 from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file
 
 logger = logging.getLogger(__name__)
@@ -37,6 +31,7 @@ def create_prediction(
     instances: dict,
     eventlog: bytes,
     volumes: dict = None,
+    tasks: List[dict] = None,
     project_id: str = None,
 ) -> Response[str]:
     """Create a Databricks prediction
@@ -62,6 +57,8 @@ def create_prediction(
         function
     :param eventlog: encoded event log zip
     :type eventlog: bytes
+    :param tasks: The Databricks Tasks associated with the cluster
+    :type tasks: List[dict]
     :param volumes: The EBS volumes that were attached to this cluster
     :type volumes: dict, optional
     :param project_id: Sync project ID, defaults to None
@@ -78,6 +75,7 @@ def create_prediction(
             "cluster_events": cluster_events,
             "instances": instances,
             "volumes": volumes,
+            "tasks": tasks,
         },
         "eventlog.zip",
         eventlog,
@@ -156,7 +154,7 @@ def create_prediction_for_run(
 
     cluster_report, eventlog = run_information_response.result
     return create_prediction(
-        **cluster_report.dict(),
+        **cluster_report.dict(exclude_none=True),
         eventlog=eventlog,
         project_id=project_id,
     )
@@ -170,6 +168,7 @@ def create_submission(
     cluster_events: dict,
     instances: dict,
     eventlog: bytes,
+    tasks: List[dict] = None,
     volumes: dict = None,
 ) -> Response[str]:
     """Create a Databricks Project submission
@@ -197,9 +196,11 @@ def create_submission(
         function
     :param eventlog: encoded event log zip
     :type eventlog: bytes
+    :param tasks: The Databricks Tasks associated with the cluster
+    :type tasks: List[dict]
     :param volumes: The EBS volumes that were attached to this cluster
     :type volumes: dict, optional
-    :return: prediction ID
+    :return: Submission ID
     :rtype: Response[str]
     """
     return create_project_submission_with_eventlog_bytes(
@@ -211,6 +212,7 @@ def create_submission(
             "cluster_events": cluster_events,
             "instances": instances,
             "volumes": volumes,
+            "tasks": tasks,
         },
         "eventlog.zip",
         eventlog,
@@ -257,19 +259,10 @@ def create_submission_for_run(
         return run_information_response
 
     cluster_report, eventlog = run_information_response.result
-    disk_volumes = (
-        cluster_report.volumes if isinstance(cluster_report, AWSDatabricksClusterReport) else None
-    )
-
     return create_submission(
-        plan_type=plan_type,
-        compute_type=compute_type,
+        **cluster_report.dict(exclude_none=True),
         project_id=project_id,
-        cluster=cluster_report.cluster,
-        cluster_events=cluster_report.cluster_events,
-        instances=cluster_report.instances,
         eventlog=eventlog,
-        volumes=disk_volumes,
     )
 
 

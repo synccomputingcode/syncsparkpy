@@ -6,6 +6,7 @@ import io
 import logging
 import time
 import zipfile
+from collections import defaultdict
 from pathlib import Path
 from time import sleep
 from typing import Any, Collection, Dict, List, Tuple, TypeVar, Union
@@ -280,9 +281,7 @@ def _get_run_information(
         return Response(error=DatabricksAPIError(**run))
 
     try:
-        cluster_id, tasks = _get_cluster_id_and_tasks_from_run_tasks(
-            run["tasks"], exclude_tasks, project_id
-        )
+        cluster_id, tasks = _get_cluster_id_and_tasks_from_run_tasks(run, exclude_tasks, project_id)
     except Exception as e:
         return Response(error=DatabricksError(message=str(e)))
 
@@ -343,9 +342,7 @@ def get_cluster_report(
         return Response(error=DatabricksAPIError(**run))
 
     try:
-        cluster_id, tasks = _get_cluster_id_and_tasks_from_run_tasks(
-            run["tasks"], exclude_tasks, project_id
-        )
+        cluster_id, tasks = _get_cluster_id_and_tasks_from_run_tasks(run, exclude_tasks, project_id)
     except Exception as e:
         return Response(error=DatabricksError(message=str(e)))
 
@@ -1027,40 +1024,50 @@ def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
 
 
 def _get_cluster_id_and_tasks_from_run_tasks(
-    all_tasks: List[dict],
+    run: dict,
     exclude_tasks: Union[Collection[str], None] = None,
     project_id: str = None,
 ) -> Tuple[str, List[dict]]:
-    cluster_id_to_tasks = {}
-    for task in all_tasks:
+    job_clusters = {c["job_cluster_key"]: c["new_cluster"] for c in run.get("job_clusters")}
+    project_cluster_ids = defaultdict(list)
+    all_cluster_tasks = defaultdict(list)
+    for task in run["tasks"]:
         if not exclude_tasks or task["task_key"] not in exclude_tasks:
             cluster_id = task["cluster_instance"]["cluster_id"]
-            if cluster_id not in cluster_id_to_tasks:
-                cluster_id_to_tasks[cluster_id] = [task]
-            else:
-                cluster_id_to_tasks[cluster_id].append(task)
+            all_cluster_tasks[task["cluster_instance"]["cluster_id"]].append(task)
 
-    num_ids = len(cluster_id_to_tasks)
-    if num_ids == 0:
-        raise Exception("No cluster found for tasks")
-    elif num_ids > 1:
-        raise Exception("More than 1 cluster found for tasks")
+            task_cluster = task.get("new_cluster")
+            if not task_cluster:
+                task_cluster = job_clusters.get(task.get("job_cluster_key"))
 
-    cluster_id, tasks = cluster_id_to_tasks.popitem()
+            if task_cluster:
+                cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
+                if cluster_project_id:
+                    project_cluster_ids[cluster_project_id] = cluster_id
+
+    project_cluster_tasks = None
     if project_id:
-        project_tasks = [
-            t
-            for t in tasks
-            if t.get("new_cluster", {}).get("custom_tags", {}).get("sync:project-id") == project_id
-        ]
-        if project_tasks:
-            tasks = project_tasks
+        cluster_ids = project_cluster_ids.get("project_id")
+        if cluster_ids:
+            project_cluster_tasks = {
+                cluster_id: tasks
+                for cluster_id, tasks in all_cluster_tasks
+                if cluster_id in cluster_ids
+            }
         else:
             logger.warning(
                 "No task clusters found matching the provided project-id - assuming all non-excluded tasks are relevant"
             )
 
-    return cluster_id, tasks
+    cluster_tasks = project_cluster_tasks or all_cluster_tasks
+
+    num_clusters = len(cluster_tasks)
+    if num_clusters == 0:
+        raise RuntimeError("No cluster found for tasks")
+    elif num_clusters > 1:
+        raise RuntimeError("More than 1 cluster found for tasks")
+
+    return next(iter(cluster_tasks.items()))
 
 
 def _get_run_spark_context_id(tasks: List[dict]) -> Response[str]:

@@ -111,6 +111,14 @@ class SyncClient(RetryableHTTPClient):
     def delete_project(self, project_id: str) -> dict:
         return self._send(self._client.build_request("DELETE", f"/v1/projects/{project_id}"))
 
+    def create_project_submission(self, project_id: str, submission: dict) -> dict:
+        headers, content = encode_json(submission)
+        return self._send(
+            self._client.build_request(
+                "POST", f"/v1/projects/{project_id}/submissions", headers=headers, content=content
+            )
+        )
+
     def _send(self, request: httpx.Request) -> dict:
         response = self._send_request(request)
 

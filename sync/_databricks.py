@@ -6,6 +6,7 @@ import io
 import logging
 import time
 import zipfile
+from collections import defaultdict
 from pathlib import Path
 from time import sleep
 from typing import Any, Collection, Dict, List, Tuple, TypeVar, Union
@@ -14,7 +15,7 @@ from urllib.parse import urlparse
 import boto3 as boto
 
 from sync.api.predictions import create_prediction_with_eventlog_bytes, get_prediction
-from sync.api.projects import get_project
+from sync.api.projects import create_project_submission_with_eventlog_bytes, get_project
 from sync.clients.databricks import get_default_client
 from sync.config import CONFIG
 from sync.models import DatabricksAPIError, DatabricksClusterReport, DatabricksError, Response
@@ -31,6 +32,7 @@ def create_prediction(
     instances: dict,
     eventlog: bytes,
     volumes: dict = None,
+    tasks: List[dict] = None,
     project_id: str = None,
 ) -> Response[str]:
     """Create a Databricks prediction
@@ -56,6 +58,10 @@ def create_prediction(
         function
     :param eventlog: encoded event log zip
     :type eventlog: bytes
+    :param tasks: The Databricks Tasks associated with the cluster
+    :type tasks: List[dict]
+    :param volumes: The EBS volumes that were attached to this cluster
+    :type volumes: dict, optional
     :param project_id: Sync project ID, defaults to None
     :type project_id: str, optional
     :return: prediction ID
@@ -70,6 +76,7 @@ def create_prediction(
             "cluster_events": cluster_events,
             "instances": instances,
             "volumes": volumes,
+            "tasks": tasks,
         },
         "eventlog.zip",
         eventlog,
@@ -134,50 +141,181 @@ def create_prediction_for_run(
     :return: prediction ID
     :rtype: Response[str]
     """
+    run_information_response = _get_run_information(
+        run_id,
+        plan_type,
+        compute_type,
+        project_id=project_id,
+        allow_incomplete_cluster_report=allow_incomplete_cluster_report,
+        exclude_tasks=exclude_tasks,
+    )
+
+    if run_information_response.error:
+        return run_information_response
+
+    cluster_report, eventlog = run_information_response.result
+    return create_prediction(
+        **cluster_report.dict(exclude_none=True),
+        eventlog=eventlog,
+        project_id=project_id,
+    )
+
+
+def create_submission(
+    plan_type: str,
+    compute_type: str,
+    project_id: str,
+    cluster: dict,
+    cluster_events: dict,
+    instances: dict,
+    eventlog: bytes,
+    tasks: List[dict] = None,
+    volumes: dict = None,
+) -> Response[str]:
+    """Create a Databricks Project submission
+
+    :param plan_type: either "Standard", "Premium" or "Enterprise"
+    :type plan_type: str
+    :param compute_type: e.g. "Jobs Compute"
+    :type compute_type: str
+    :param project_id: Sync project ID
+    :type project_id: str
+    :param cluster: The Databricks cluster definition as defined by -
+        https://docs.databricks.com/dev-tools/api/latest/clusters.html#get
+    :type cluster: dict
+    :param cluster_events: All events, including paginated events, for the cluster as defined by -
+        https://docs.databricks.com/dev-tools/api/latest/clusters.html#events
+        If the cluster is a long-running cluster, this should only include events relevant to the time window that a
+        run occurred in.
+    :type cluster_events: dict
+    :param instances: All EC2 Instances that were a part of the cluster. Expects a data format as is returned by
+        `boto3's EC2.describe_instances API <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2/client/describe_instances.html>`_
+        Instances should be narrowed to just those instances relevant to the Databricks Run. This can be done by passing
+        a `tag:ClusterId` filter to the describe_instances call like -
+        ``Filters=[{"Name": "tag:ClusterId", "Values": ["my-dbx-clusterid"]}]``
+        If there are multiple pages of instances, all pages should be accumulated into 1 dictionary and passed to this
+        function
+    :param eventlog: encoded event log zip
+    :type eventlog: bytes
+    :param tasks: The Databricks Tasks associated with the cluster
+    :type tasks: List[dict]
+    :param volumes: The EBS volumes that were attached to this cluster
+    :type volumes: dict, optional
+    :return: Submission ID
+    :rtype: Response[str]
+    """
+    return create_project_submission_with_eventlog_bytes(
+        get_default_client().get_platform(),
+        {
+            "plan_type": plan_type,
+            "compute_type": compute_type,
+            "cluster": cluster,
+            "cluster_events": cluster_events,
+            "instances": instances,
+            "volumes": volumes,
+            "tasks": tasks,
+        },
+        "eventlog.zip",
+        eventlog,
+        project_id,
+    )
+
+
+def create_submission_for_run(
+    run_id: str,
+    plan_type: str,
+    compute_type: str,
+    project_id: str,
+    allow_incomplete_cluster_report: bool = False,
+    exclude_tasks: Union[Collection[str], None] = None,
+) -> Response[str]:
+    """Create a Submission for the specified Databricks run.
+
+    :param run_id: Databricks run ID
+    :type run_id: str
+    :param plan_type: either "Standard", "Premium" or "Enterprise"
+    :type plan_type: str
+    :param compute_type: e.g. "Jobs Compute"
+    :type compute_type: str
+    :param project_id: Sync project ID, defaults to None
+    :type project_id: str, optional
+    :param allow_incomplete_cluster_report: Whether creating a prediction with incomplete cluster report data should be allowable
+    :type allow_incomplete_cluster_report: bool, optional, defaults to False
+    :param exclude_tasks: Keys of tasks (task names) to exclude from the prediction
+    :type exclude_tasks: Collection[str], optional, defaults to None
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    run_information_response = _get_run_information(
+        run_id,
+        plan_type,
+        compute_type,
+        project_id=project_id,
+        allow_failed_tasks=True,
+        allow_incomplete_cluster_report=allow_incomplete_cluster_report,
+        exclude_tasks=exclude_tasks,
+    )
+
+    if run_information_response.error:
+        return run_information_response
+
+    cluster_report, eventlog = run_information_response.result
+    return create_submission(
+        **cluster_report.dict(exclude_none=True),
+        project_id=project_id,
+        eventlog=eventlog,
+    )
+
+
+def _get_run_information(
+    run_id: str,
+    plan_type: str,
+    compute_type: str,
+    project_id: str = None,
+    allow_failed_tasks: bool = False,
+    allow_incomplete_cluster_report: bool = False,
+    exclude_tasks: Union[Collection[str], None] = None,
+) -> Response[Tuple[DatabricksClusterReport, bytes]]:
     run = get_default_client().get_run(run_id)
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    tasks = [
-        task for task in run["tasks"] if not exclude_tasks or task["task_key"] not in exclude_tasks
-    ]
+    try:
+        cluster_id, tasks = _get_cluster_id_and_tasks_from_run_tasks(run, exclude_tasks, project_id)
+    except Exception as e:
+        return Response(error=DatabricksError(message=str(e)))
 
-    if any(task["state"].get("result_state") != "SUCCESS" for task in tasks):
+    if not allow_failed_tasks and any(
+        task["state"].get("result_state") != "SUCCESS" for task in tasks
+    ):
         return Response(error=DatabricksError(message="Tasks did not complete successfully"))
 
-    cluster_id_response = _get_run_cluster_id(tasks)
-    cluster_id = cluster_id_response.result
+    # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
+    #  uploading all the event log data before we start checking for it
+    cluster_report_response = _get_cluster_report(
+        cluster_id, tasks, plan_type, compute_type, allow_incomplete_cluster_report
+    )
+    cluster_report = cluster_report_response.result
+    if cluster_report:
 
-    if cluster_id:
-        # Making these calls prior to fetching the event log allows Databricks a little extra time to finish
-        #  uploading all the event log data before we start checking for it
-        cluster_report_response = _get_cluster_report(
-            cluster_id, plan_type, compute_type, allow_incomplete_cluster_report
-        )
-        cluster_report = cluster_report_response.result
-        if cluster_report:
+        cluster = cluster_report.cluster
+        spark_context_id = _get_run_spark_context_id(tasks)
+        eventlog_response = _get_eventlog(cluster, spark_context_id.result, run.get("end_time"))
 
-            cluster = cluster_report.cluster
-            spark_context_id = _get_run_spark_context_id(tasks)
-            eventlog_response = _get_eventlog(cluster, spark_context_id.result, run.get("end_time"))
+        eventlog = eventlog_response.result
+        if eventlog:
+            # TODO - allow submissions w/out eventlog. Best way to make eventlog optional?..
+            return Response(result=(cluster_report, eventlog))
 
-            eventlog = eventlog_response.result
-            if eventlog:
-                return create_prediction(
-                    **cluster_report.dict(),
-                    eventlog=eventlog,
-                    project_id=project_id,
-                )
-
-            return eventlog_response
-        return cluster_report_response
-    return cluster_id_response
+        return eventlog_response
+    return cluster_report_response
 
 
 def get_cluster_report(
     run_id: str,
     plan_type: str,
     compute_type: str,
+    project_id: str = None,
     allow_incomplete: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[DatabricksClusterReport]:
@@ -189,6 +327,9 @@ def get_cluster_report(
     :type plan_type: str
     :param compute_type: Cluster compute type, e.g. "Jobs Compute"
     :type compute_type: str
+    :param project_id: The Sync Project ID this report should be generated for. This is good to provide in general, but
+    especially for multi-cluster jobs.
+    :type project_id: str, optional
     :param allow_incomplete: Whether creating a cluster report with incomplete data should be allowable
     :type allow_incomplete: bool, optional, defaults to False
     :param exclude_tasks: Keys of tasks (task names) to exclude from the report
@@ -200,23 +341,20 @@ def get_cluster_report(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    tasks = [
-        task for task in run["tasks"] if not exclude_tasks or task["task_key"] not in exclude_tasks
-    ]
+    try:
+        cluster_id, tasks = _get_cluster_id_and_tasks_from_run_tasks(run, exclude_tasks, project_id)
+    except Exception as e:
+        return Response(error=DatabricksError(message=str(e)))
 
-    if any(task["state"].get("result_state") != "SUCCESS" for task in tasks):
-        return Response(error=DatabricksError(message="Tasks did not complete successfully"))
-
-    cluster_id_response = _get_run_cluster_id(tasks)
-    cluster_id = cluster_id_response.result
-    if cluster_id:
-        return _get_cluster_report(cluster_id, plan_type, compute_type, allow_incomplete)
-
-    return cluster_id_response
+    return _get_cluster_report(cluster_id, tasks, plan_type, compute_type, allow_incomplete)
 
 
 def _get_cluster_report(
-    cluster_id: str, plan_type: str, compute_type: str, allow_incomplete: bool
+    cluster_id: str,
+    cluster_tasks: List[dict],
+    plan_type: str,
+    compute_type: str,
+    allow_incomplete: bool,
 ) -> Response[DatabricksClusterReport]:
     raise NotImplementedError()
 
@@ -885,16 +1023,50 @@ def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
     return Response(error=DatabricksError(message="Not all tasks use the same cluster"))
 
 
-def _get_run_cluster_id(tasks: List[dict]) -> Response[str]:
-    cluster_ids = {task["cluster_instance"]["cluster_id"] for task in tasks}
-    num_ids = len(cluster_ids)
+def _get_cluster_id_and_tasks_from_run_tasks(
+    run: dict,
+    exclude_tasks: Union[Collection[str], None] = None,
+    project_id: str = None,
+) -> Tuple[str, List[dict]]:
+    job_clusters = {c["job_cluster_key"]: c["new_cluster"] for c in run.get("job_clusters")}
+    project_cluster_ids = defaultdict(list)
+    all_cluster_tasks = defaultdict(list)
+    for task in run["tasks"]:
+        if not exclude_tasks or task["task_key"] not in exclude_tasks:
+            cluster_id = task["cluster_instance"]["cluster_id"]
+            all_cluster_tasks[cluster_id].append(task)
 
-    if num_ids == 1:
-        return Response(result=cluster_ids.pop())
-    elif num_ids == 0:
-        return Response(error=DatabricksError(message="No cluster found for tasks"))
-    else:
-        return Response(error=DatabricksError(message="More than 1 cluster found for tasks"))
+            task_cluster = task.get("new_cluster")
+            if not task_cluster:
+                task_cluster = job_clusters.get(task.get("job_cluster_key"))
+
+            if task_cluster:
+                cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
+                if cluster_project_id:
+                    project_cluster_ids[cluster_project_id].append(cluster_id)
+
+    project_cluster_tasks = None
+    if project_id:
+        cluster_ids = project_cluster_ids.get(project_id)
+        if cluster_ids:
+            project_cluster_tasks = {
+                cluster_id: tasks
+                for cluster_id, tasks in all_cluster_tasks
+                if cluster_id in cluster_ids
+            }
+        else:
+            logger.warning(
+                "No task clusters found matching the provided project-id - assuming all non-excluded tasks are relevant"
+            )
+
+    cluster_tasks = project_cluster_tasks or all_cluster_tasks
+    num_clusters = len(cluster_tasks)
+    if num_clusters == 0:
+        raise Exception("No cluster found for tasks")
+    elif num_clusters > 1:
+        raise Exception("More than 1 cluster found for tasks")
+
+    return cluster_tasks.popitem()
 
 
 def _get_run_spark_context_id(tasks: List[dict]) -> Response[str]:

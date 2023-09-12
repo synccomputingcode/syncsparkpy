@@ -103,6 +103,23 @@ def create_project_prediction(project: Dict[str, str], run_id: str = None, regio
 
 
 @aws_emr.command
+@click.argument(
+    "project", callback=validate_project, help="The project ID for which to submit data."
+)
+@click.option("-r", "--run-id")
+@click.option("-r", "--region")
+def create_submission(run_id: str, project: dict, region: str = None):
+    """Create a submission for a job run"""
+    submission_response = awsemr.create_submission(project["id"], run_id, region)
+    submission = submission_response.result
+    if submission:
+        click.echo(f"Submission ID: {submission}")
+    else:
+        click.echo(f"Failed to submit data. {submission_response.error}", err=True)
+    return
+
+
+@aws_emr.command
 @click.argument("cluster-id")
 @click.option("-r", "--region")
 def get_cluster_report(cluster_id: str, region: str = None):

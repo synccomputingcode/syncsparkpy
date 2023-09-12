@@ -1,7 +1,7 @@
 import logging
 import os
 from time import sleep
-from typing import Type, TypeVar
+from typing import List, Type, TypeVar
 from urllib.parse import urlparse
 
 import orjson
@@ -22,6 +22,7 @@ from sync._databricks import (
     create_cluster,
     create_prediction_for_run,
     create_run,
+    create_submission_for_run,
     event_log_poll_duration_seconds,
     get_cluster,
     get_cluster_report,
@@ -62,6 +63,7 @@ __all__ = [
     "create_cluster",
     "get_cluster",
     "create_prediction_for_run",
+    "create_submission_for_run",
     "get_cluster_report",
     "record_run",
     "get_prediction_job",
@@ -188,7 +190,11 @@ def get_access_report(log_url: str = None) -> AccessReport:
 
 
 def _get_cluster_report(
-    cluster_id: str, plan_type: str, compute_type: str, allow_incomplete: bool
+    cluster_id: str,
+    cluster_tasks: List[dict],
+    plan_type: str,
+    compute_type: str,
+    allow_incomplete: bool,
 ) -> Response[AzureDatabricksClusterReport]:
     # Cluster `terminated_time` can be a few seconds after the start of the next task in which
     # this may be executing.
@@ -212,6 +218,7 @@ def _get_cluster_report(
             compute_type=compute_type,
             cluster=cluster,
             cluster_events=cluster_events,
+            tasks=cluster_tasks,
             instances=instances.result,
         )
     )

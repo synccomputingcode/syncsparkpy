@@ -538,7 +538,13 @@ def test_create_prediction_for_failed_run(respx_mock):
 
     failure_response = {
         "state": {"result_state": "FAILED"},
-        "tasks": [{"task_key": "tpcds_2000GB_group_q76_q80", "state": {"result_state": "FAILED"}}],
+        "tasks": [
+            {
+                "task_key": "tpcds_2000GB_group_q76_q80",
+                "cluster_instance": {"cluster_id": 12345},
+                "state": {"result_state": "FAILED"},
+            }
+        ],
     }
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=failure_response)

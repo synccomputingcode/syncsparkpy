@@ -18,7 +18,7 @@ from dateutil.parser import parse as dateparse
 from sync import TIME_FORMAT
 from sync.api import get_access_report as get_api_access_report
 from sync.api.predictions import create_prediction, wait_for_prediction
-from sync.api.projects import get_project
+from sync.api.projects import create_project_submission, get_project
 from sync.models import (
     AccessReport,
     AccessReportLine,
@@ -30,7 +30,6 @@ from sync.models import (
 )
 
 logger = logging.getLogger(__name__)
-
 
 RUN_DIR_PATTERN_TEMPLATE = r"{project_prefix}/{project_id}/(?P<timestamp>\d{{4}}-[^/]+)/{run_id}"
 
@@ -290,6 +289,30 @@ def create_project_prediction(
 
     config, eventlog_url = response.result
     return create_prediction(Platform.AWS_EMR, config, eventlog_url, project_id)
+
+
+def create_submission(
+    project_id: str, run_id: str = None, region_name: str = None
+) -> Response[str]:
+    """Gets the report and event log URL for the latest cluster in the project or the one identified by the `run_id` if provided.
+
+    The project must be configured with an S3 URL.
+
+    :param project_id: project ID
+    :type project_id: str
+    :param run_id: run ID, defaults to None
+    :type run_id: str, optional
+    :param region_name: AWS region name, defaults to AWS configuration
+    :type region_name: str, optional
+    :return: a Submission ID
+    :rtype: Response[Tuple[dict, str]]
+    """
+    response = get_project_cluster_report(project_id, run_id, region_name)
+    if response.error:
+        return response
+
+    config, eventlog_url = response.result
+    return create_project_submission(Platform.AWS_EMR, config, eventlog_url, project_id)
 
 
 def get_project_cluster_report(  # noqa: C901

@@ -88,7 +88,11 @@ def run_job(
     type=click.Choice(DatabricksComputeType),
     default=DatabricksComputeType.JOBS_COMPUTE,
 )
-@click.option("--project", callback=validate_project)
+@click.option(
+    "--project",
+    callback=validate_project,
+    help="The project ID for which to generate a cluster report, if any. This is most relevant to runs that may utilize multiple clusters.",
+)
 @click.option(
     "--allow-incomplete",
     is_flag=True,
@@ -126,11 +130,61 @@ def create_prediction(
 
 @click.command
 @click.argument("run-id")
+@click.argument("project", callback=validate_project)
 @click.option("--plan", type=click.Choice(DatabricksPlanType), default=DatabricksPlanType.STANDARD)
 @click.option(
     "--compute",
     type=click.Choice(DatabricksComputeType),
     default=DatabricksComputeType.JOBS_COMPUTE,
+)
+@click.option(
+    "--allow-incomplete",
+    is_flag=True,
+    default=False,
+    help="Force creation of a submission even with incomplete cluster data. Some features may not be available. To ensure a complete cluster report see https://docs.synccomputing.com/sync-gradient/integrating-with-gradient/databricks-workflows.",
+)
+@click.option(
+    "--exclude-task", help="Don't consider task when finding the cluster of a run", multiple=True
+)
+@pass_platform
+def create_submission(
+    platform: Platform,
+    run_id: str,
+    plan: DatabricksPlanType,
+    compute: DatabricksComputeType,
+    project: dict,
+    allow_incomplete: bool = False,
+    exclude_task: Tuple[str, ...] = None,
+):
+    """Create a submission for a job run"""
+    if platform is Platform.AWS_DATABRICKS:
+        import sync.awsdatabricks as databricks
+    elif platform is Platform.AZURE_DATABRICKS:
+        import sync.azuredatabricks as databricks
+
+    submission_response = databricks.create_submission_for_run(
+        run_id, plan, compute, project["id"], allow_incomplete, exclude_task
+    )
+    submission = submission_response.result
+    if submission:
+        click.echo(f"Submission ID: {submission}")
+    else:
+        click.echo(f"Failed to submit data. {submission_response.error}", err=True)
+    return
+
+
+@click.command
+@click.argument("run-id")
+@click.option("--plan", type=click.Choice(DatabricksPlanType), default=DatabricksPlanType.STANDARD)
+@click.option(
+    "--compute",
+    type=click.Choice(DatabricksComputeType),
+    default=DatabricksComputeType.JOBS_COMPUTE,
+)
+@click.option(
+    "--project",
+    callback=validate_project,
+    help="The project ID for which to generate a cluster report, if any. This is most relevant to runs that may utilize multiple clusters.",
 )
 @click.option(
     "--allow-incomplete",
@@ -147,6 +201,7 @@ def get_cluster_report(
     run_id: str,
     plan: DatabricksPlanType,
     compute: DatabricksComputeType,
+    project: dict = None,
     allow_incomplete: bool = False,
     exclude_task: Tuple[str, ...] = None,
 ):
@@ -157,7 +212,7 @@ def get_cluster_report(
         import sync.azuredatabricks as databricks
 
     config_response = databricks.get_cluster_report(
-        run_id, plan, compute, allow_incomplete, exclude_task
+        run_id, plan, compute, project["id"], allow_incomplete, exclude_task
     )
 
     config = config_response.result

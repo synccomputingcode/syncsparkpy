@@ -103,8 +103,8 @@ def create_project_prediction(project: Dict[str, str], run_id: str = None, regio
 
 
 @aws_emr.command
-@click.option(
-    "--project", callback=validate_project, help="The project ID for which to submit data."
+@click.argument(
+    "project", callback=validate_project, help="The project ID for which to submit data."
 )
 @click.option("-r", "--run-id")
 @click.option("-r", "--region")

@@ -1028,7 +1028,7 @@ def _get_cluster_id_and_tasks_from_run_tasks(
     exclude_tasks: Union[Collection[str], None] = None,
     project_id: str = None,
 ) -> Tuple[str, List[dict]]:
-    job_clusters = {c["job_cluster_key"]: c["new_cluster"] for c in run.get("job_clusters")}
+    job_clusters = {c["job_cluster_key"]: c["new_cluster"] for c in run.get("job_clusters", [])}
     project_cluster_ids = defaultdict(list)
     all_cluster_tasks = defaultdict(list)
     for task in run["tasks"]:

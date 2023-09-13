@@ -319,6 +319,9 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
 def _monitor_cluster(
     cluster_log_destination, cluster_id: str, spark_context_id: int, polling_period: int
 ) -> None:
+    
+    logging.basicConfig(level=logging.INFO) # Not the right place for this, I know
+
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
     # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
     #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so

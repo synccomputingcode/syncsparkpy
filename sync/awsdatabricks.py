@@ -280,10 +280,10 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
     else:
         reservations_response = Response(result={"Reservations": cluster_info["Reservations"]})
 
-    if not cluster_info or not cluster_info["Volumes"]:
+    if not cluster_info:
         volumes_response = Response(error=DatabricksError(message=missing_message("ebs volumes")))
     else:
-        volumes_response = Response(result={"Volumes": cluster_info["Volumes"]})
+        volumes_response = Response(result={"Volumes": cluster_info.get("Volumes", [])})
 
     return reservations_response, volumes_response
 
@@ -417,6 +417,9 @@ def _get_ebs_volumes(cluster_id: str, ec2_client: "botocore.client.ec2") -> List
         volumes += response.get("Volumes", [])
         next_token = response.get("NextToken")
 
+    num_vol = len(volumes)
+    logger.info(f"Identified {num_vol} ebs volumes in cluster")
+
     return volumes
 
 
@@ -434,5 +437,10 @@ def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> Li
         response = ec2_client.describe_instances(Filters=filters, NextToken=next_token)
         reservations += response.get("Reservations", [])
         next_token = response.get("NextToken")
+
+    num_instances = 0
+    if reservations:
+        num_instances = len(reservations[0].get("Instances", []))
+    logger.info(f"Identified {num_instances} instances in cluster")
 
     return reservations

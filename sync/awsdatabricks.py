@@ -283,6 +283,7 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
     if not cluster_info:
         volumes_response = Response(error=DatabricksError(message=missing_message("ebs volumes")))
     else:
+        logger.warning(missing_message("ebs volumes"))
         volumes_response = Response(result={"Volumes": cluster_info.get("Volumes", [])})
 
     return reservations_response, volumes_response
@@ -320,8 +321,6 @@ def _monitor_cluster(
     cluster_log_destination, cluster_id: str, spark_context_id: int, polling_period: int
 ) -> None:
     
-    logging.basicConfig(level=logging.INFO) # Not the right place for this, I know
-
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
     # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
     #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so

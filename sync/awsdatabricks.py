@@ -257,10 +257,14 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
     #  are associated with this cluster
     if not cluster_info:
         ec2 = boto.client("ec2", region_name=aws_region_name)
+
+        reservations = _get_ec2_instances(cluster_id, ec2)
+        volumes = _get_ebs_volumes_for_reservations(reservations, ec2)
+
         try:
             cluster_info = {
-                "Reservations": _get_ec2_instances(cluster_id, ec2),
-                "Volumes": _get_ebs_volumes(cluster_id, ec2),
+                "Reservations": reservations,
+                "Volumes": volumes,
             }
 
         except Exception as exc:
@@ -320,7 +324,7 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
 def _monitor_cluster(
     cluster_log_destination, cluster_id: str, spark_context_id: int, polling_period: int
 ) -> None:
-    
+
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
     # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
     #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
@@ -350,6 +354,10 @@ def _monitor_cluster(
     while True:
         try:
             new_reservations = _get_ec2_instances(cluster_id, ec2)
+            new_volumes = _get_ebs_volumes_for_reservations(new_reservations, ec2)
+
+            recorded_volumes.update({v["VolumeId"]: v for v in new_volumes})
+
             new_instance_id_to_reservation = dict(
                 zip(
                     (res["Instances"][0]["InstanceId"] for res in new_reservations),
@@ -388,9 +396,6 @@ def _monitor_cluster(
 
                 reservations = [*removed_reservations, *updated_reservations, *new_reservations]
 
-            # Also record the instance ebs volumes in a separate field
-            recorded_volumes.update({v["VolumeId"]: v for v in _get_ebs_volumes(cluster_id, ec2)})
-
             write_file(
                 orjson.dumps(
                     {"Reservations": reservations, "Volumes": list(recorded_volumes.values())}
@@ -402,27 +407,6 @@ def _monitor_cluster(
             logger.error(f"Exception encountered while polling cluster: {e}")
 
         sleep(polling_period)
-
-
-def _get_ebs_volumes(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[Dict]:
-
-    filters = [
-        {"Name": "tag:Vendor", "Values": ["Databricks"]},
-        {"Name": "tag:ClusterId", "Values": [cluster_id]},
-    ]
-    response = ec2_client.describe_volumes(Filters=filters)
-    volumes = response.get("Volumes", [])
-    next_token = response.get("NextToken")
-
-    while next_token:
-        response = ec2_client.describe_volumes(Filters=filters, NextToken=next_token)
-        volumes += response.get("Volumes", [])
-        next_token = response.get("NextToken")
-
-    num_vol = len(volumes)
-    logger.info(f"Identified {num_vol} ebs volumes in cluster")
-
-    return volumes
 
 
 def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[Dict]:
@@ -446,3 +430,37 @@ def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> Li
     logger.info(f"Identified {num_instances} instances in cluster")
 
     return reservations
+
+
+def _get_ebs_volumes_for_reservations(
+    reservations: List[Dict], ec2_client: "botocore.client.ec2"
+) -> List[Dict]:
+    """Get all ebs volumes associated with a list of instance reservations"""
+
+    instance_ids = []
+    if reservations:
+        for res in reservations:
+            for instance in res.get("Instances", []):
+                if instance:
+                    instance_ids.append(instance.get("InstanceId"))
+
+    volumes = []
+    if instance_ids:
+        filters = [
+            {"Name": "tag:Vendor", "Values": ["Databricks"]},
+            {"Name": "attachment.instance-id", "Values": instance_ids},
+        ]
+
+        response = ec2_client.describe_volumes(Filters=filters)
+        volumes = response.get("Volumes", [])
+        next_token = response.get("NextToken")
+
+        while next_token:
+            response = ec2_client.describe_volumes(Filters=filters, NextToken=next_token)
+            volumes += response.get("Volumes", [])
+            next_token = response.get("NextToken")
+
+    num_vol = len(volumes)
+    logger.info(f"Identified {num_vol} ebs volumes in cluster")
+
+    return volumes

@@ -256,12 +256,12 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
     if not cluster_info:
-        ec2 = boto.client("ec2", region_name=aws_region_name)
-
-        reservations = _get_ec2_instances(cluster_id, ec2)
-        volumes = _get_ebs_volumes_for_reservations(reservations, ec2)
 
         try:
+            ec2 = boto.client("ec2", region_name=aws_region_name)
+            reservations = _get_ec2_instances(cluster_id, ec2)
+            volumes = _get_ebs_volumes_for_reservations(reservations, ec2)
+
             cluster_info = {
                 "Reservations": reservations,
                 "Volumes": volumes,

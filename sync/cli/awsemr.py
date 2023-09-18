@@ -6,6 +6,7 @@ import orjson
 
 from sync import awsemr
 from sync.api.predictions import get_prediction
+from sync.api.projects import create_project_recommendation
 from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import Platform, Preference
@@ -117,6 +118,12 @@ def create_submission(run_id: str, project: dict, region: str = None):
     else:
         click.echo(f"Failed to submit data. {submission_response.error}", err=True)
     return
+
+
+@aws_emr.command
+@click.argument("project", callback=validate_project)
+def create_recommendation(project: dict):
+    return create_project_recommendation(project["id"])
 
 
 @aws_emr.command

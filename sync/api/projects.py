@@ -182,7 +182,7 @@ def delete_project(project_id: str) -> Response[str]:
 def create_project_submission(
     platform: Platform, cluster_report: dict, eventlog_url: str, project_id: str
 ) -> Response[str]:
-    """Create prediction
+    """Create a submission
 
     :param platform: platform, e.g. "aws-emr"
     :type platform: Platform
@@ -206,13 +206,17 @@ def create_project_submission(
     else:
         return Response(error=SubmissionError(message="Unsupported event log URL scheme"))
 
+    payload = {
+        "product": platform,
+        "cluster_report": cluster_report,
+        "event_log_uri": eventlog_http_url,
+    }
+
+    logger.info(payload)
+
     response = get_default_client().create_project_submission(
         project_id,
-        {
-            "product": platform,
-            "cluster_report": cluster_report,
-            "event_log_uri": eventlog_http_url,
-        },
+        payload,
     )
 
     if response.get("error"):
@@ -228,7 +232,7 @@ def create_project_submission_with_eventlog_bytes(
     eventlog_bytes: bytes,
     project_id: str,
 ) -> Response[str]:
-    """Creates a prediction giving event log bytes instead of a URL
+    """Creates a submission given event log bytes instead of a URL
 
     :param platform: platform, e.g. "aws-emr"
     :type platform: Platform
@@ -238,8 +242,8 @@ def create_project_submission_with_eventlog_bytes(
     :type eventlog_name: str
     :param eventlog_bytes: encoded event log
     :type eventlog_bytes: bytes
-    :param project_id: ID of project to which the prediction belongs, defaults to None
-    :type project_id: str, optional
+    :param project_id: ID of project to which the submission belongs
+    :type project_id: str
     :return: prediction ID
     :rtype: Response[str]
     """
@@ -264,3 +268,29 @@ def create_project_submission_with_eventlog_bytes(
         return Response(error=SubmissionError(message="Failed to upload event log"))
 
     return Response(result=response["result"]["submission_id"])
+
+
+def create_project_recommendation(project_id: str) -> Response[str]:
+    """Creates a prediction giving event log bytes instead of a URL
+
+    :param project_id: ID of project to which the prediction belongs, defaults to None
+    :type project_id: str, optional
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    response = get_default_client().create_project_submission(project_id)
+
+    if response.get("error"):
+        return Response(**response)
+
+    return Response(result=response["result"]["recommendation_id"])
+
+
+def get_project_recommendation(project_id: str, recommendation_id: str) -> Response[dict]:
+    """ """
+    response = get_default_client().get_project_recommendation(project_id, recommendation_id)
+
+    if response.get("error"):
+        return Response(**response)
+
+    return Response(result=response["result"]["recommendation"])

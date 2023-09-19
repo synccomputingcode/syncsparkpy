@@ -277,7 +277,7 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
             + "https://docs.synccomputing.com/sync-gradient/integrating-with-gradient/databricks-workflows"
         )
 
-    if not cluster_info or not cluster_info["Reservations"]:
+    if not cluster_info or not cluster_info.get("Reservations"):
         reservations_response = Response(
             error=DatabricksError(message=missing_message("instances"))
         )
@@ -287,7 +287,6 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
     if not cluster_info:
         volumes_response = Response(error=DatabricksError(message=missing_message("ebs volumes")))
     else:
-        logger.warning(missing_message("ebs volumes"))
         volumes_response = Response(result={"Volumes": cluster_info.get("Volumes", [])})
 
     return reservations_response, volumes_response

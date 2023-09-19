@@ -1052,7 +1052,7 @@ def _get_cluster_id_and_tasks_from_run_tasks(
         if cluster_ids:
             project_cluster_tasks = {
                 cluster_id: tasks
-                for cluster_id, tasks in all_cluster_tasks
+                for cluster_id, tasks in all_cluster_tasks.items()
                 if cluster_id in cluster_ids
             }
         else:

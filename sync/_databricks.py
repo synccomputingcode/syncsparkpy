@@ -29,8 +29,8 @@ def create_prediction(
     compute_type: str,
     cluster: dict,
     cluster_events: dict,
-    instances: dict,
     eventlog: bytes,
+    instances: dict = None,
     volumes: dict = None,
     tasks: List[dict] = None,
     project_id: str = None,
@@ -49,6 +49,8 @@ def create_prediction(
         If the cluster is a long-running cluster, this should only include events relevant to the time window that a
         run occurred in.
     :type cluster_events: dict
+    :param eventlog: encoded event log zip
+    :type eventlog: bytes
     :param instances: All EC2 Instances that were a part of the cluster. Expects a data format as is returned by
         `boto3's EC2.describe_instances API <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2/client/describe_instances.html>`_
         Instances should be narrowed to just those instances relevant to the Databricks Run. This can be done by passing
@@ -56,12 +58,11 @@ def create_prediction(
         ``Filters=[{"Name": "tag:ClusterId", "Values": ["my-dbx-clusterid"]}]``
         If there are multiple pages of instances, all pages should be accumulated into 1 dictionary and passed to this
         function
-    :param eventlog: encoded event log zip
-    :type eventlog: bytes
-    :param tasks: The Databricks Tasks associated with the cluster
-    :type tasks: List[dict]
+    :type instances: dict, optional
     :param volumes: The EBS volumes that were attached to this cluster
     :type volumes: dict, optional
+    :param tasks: The Databricks Tasks associated with the cluster
+    :type tasks: List[dict]
     :param project_id: Sync project ID, defaults to None
     :type project_id: str, optional
     :return: prediction ID
@@ -1034,7 +1035,9 @@ def _get_cluster_id_and_tasks_from_run_tasks(
     all_cluster_tasks = defaultdict(list)
 
     for task in run["tasks"]:
-        if not exclude_tasks or task["task_key"] not in exclude_tasks:
+        if "cluster_instance" in task and (
+            not exclude_tasks or task["task_key"] not in exclude_tasks
+        ):
             cluster_id = task["cluster_instance"]["cluster_id"]
             all_cluster_tasks[cluster_id].append(task)
 
@@ -1064,15 +1067,17 @@ def _get_cluster_id_and_tasks_from_run_tasks(
     cluster_tasks = project_cluster_tasks or all_cluster_tasks
     num_clusters = len(cluster_tasks)
     if num_clusters == 0:
-        raise Exception("No cluster found for tasks")
+        raise RuntimeError("No cluster found for tasks")
     elif num_clusters > 1:
-        raise Exception("More than 1 cluster found for tasks")
+        raise RuntimeError("More than 1 cluster found for tasks")
 
     return cluster_tasks.popitem()
 
 
 def _get_run_spark_context_id(tasks: List[dict]) -> Response[str]:
-    context_ids = {task["cluster_instance"]["spark_context_id"] for task in tasks}
+    context_ids = {
+        task["cluster_instance"]["spark_context_id"] for task in tasks if "cluster_instance" in task
+    }
     num_ids = len(context_ids)
 
     if num_ids == 1:

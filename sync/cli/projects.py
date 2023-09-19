@@ -98,16 +98,23 @@ def create(
 @click.option("-d", "--description")
 @click.option("-l", "--location", help="S3 URL under which to store event logs and configuration")
 @click.option(
+    "-i", "--app-id", help="External identifier often based on the project's target application"
+)
+@click.option(
     "-p",
     "--preference",
     type=click.Choice(Preference),
     default=CONFIG.default_prediction_preference,
 )
 def update(
-    project_id: str, description: str = None, location: str = None, preference: Preference = None
+    project_id: str,
+    description: str = None,
+    location: str = None,
+    app_id: str = None,
+    preference: Preference = None,
 ):
     """Update a project"""
-    response = update_project(project_id, description, location, preference)
+    response = update_project(project_id, description, location, app_id, preference)
     if response.result:
         click.echo("Project updated")
     else:

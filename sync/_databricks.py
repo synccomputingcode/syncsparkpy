@@ -1033,7 +1033,9 @@ def _get_cluster_id_and_tasks_from_run_tasks(
     project_cluster_ids = defaultdict(list)
     all_cluster_tasks = defaultdict(list)
     for task in run["tasks"]:
-        if not exclude_tasks or task["task_key"] not in exclude_tasks:
+        if "cluster_instance" in task and (
+            not exclude_tasks or task["task_key"] not in exclude_tasks
+        ):
             cluster_id = task["cluster_instance"]["cluster_id"]
             all_cluster_tasks[cluster_id].append(task)
 
@@ -1063,15 +1065,17 @@ def _get_cluster_id_and_tasks_from_run_tasks(
     cluster_tasks = project_cluster_tasks or all_cluster_tasks
     num_clusters = len(cluster_tasks)
     if num_clusters == 0:
-        raise Exception("No cluster found for tasks")
+        raise RuntimeError("No cluster found for tasks")
     elif num_clusters > 1:
-        raise Exception("More than 1 cluster found for tasks")
+        raise RuntimeError("More than 1 cluster found for tasks")
 
     return cluster_tasks.popitem()
 
 
 def _get_run_spark_context_id(tasks: List[dict]) -> Response[str]:
-    context_ids = {task["cluster_instance"]["spark_context_id"] for task in tasks}
+    context_ids = {
+        task["cluster_instance"]["spark_context_id"] for task in tasks if "cluster_instance" in task
+    }
     num_ids = len(context_ids)
 
     if num_ids == 1:

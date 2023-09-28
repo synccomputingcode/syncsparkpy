@@ -196,14 +196,22 @@ def _get_cluster_report(
 
     cluster = cluster_response.result
 
-    reservations, volumes = _get_aws_cluster_info(cluster)
+    reservations_response, volumes_response = _get_aws_cluster_info(cluster)
 
-    for response in [reservations, volumes]:
-        if response.error:
-            if allow_incomplete:
-                logger.warning(response.error)
-            else:
-                return response
+    if reservations_response.error:
+        if allow_incomplete:
+            logger.warning(reservations_response.error)
+        else:
+            return reservations_response
+
+    # The volumes data is less critical than reservations, so allow
+    # the cluster report to get created even if the volumes response
+    # has an error.
+    if volumes_response.error:
+        logger.warning(volumes_response.error)
+        volumes = []
+    else:
+        volumes = volumes_response.result
 
     cluster_events = _get_all_cluster_events(cluster_id)
     return Response(
@@ -212,9 +220,9 @@ def _get_cluster_report(
             compute_type=compute_type,
             cluster=cluster,
             cluster_events=cluster_events,
-            volumes=volumes.result,
+            volumes=volumes,
             tasks=cluster_tasks,
-            instances=reservations.result,
+            instances=reservations_response.result,
         )
     )
 
@@ -284,10 +292,10 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
     else:
         reservations_response = Response(result={"Reservations": cluster_info["Reservations"]})
 
-    if not cluster_info:
+    if not cluster_info or not cluster_info.get("Volumes"):
         volumes_response = Response(error=DatabricksError(message=missing_message("ebs volumes")))
     else:
-        volumes_response = Response(result={"Volumes": cluster_info.get("Volumes", [])})
+        volumes_response = Response(result={"Volumes": cluster_info.get("Volumes")})
 
     return reservations_response, volumes_response
 

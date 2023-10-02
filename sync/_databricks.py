@@ -278,6 +278,7 @@ def _get_run_information(
     exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[Tuple[DatabricksClusterReport, bytes]]:
     run = get_default_client().get_run(run_id)
+
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
@@ -1032,6 +1033,7 @@ def _get_cluster_id_and_tasks_from_run_tasks(
     job_clusters = {c["job_cluster_key"]: c["new_cluster"] for c in run.get("job_clusters", [])}
     project_cluster_ids = defaultdict(list)
     all_cluster_tasks = defaultdict(list)
+
     for task in run["tasks"]:
         if "cluster_instance" in task and (
             not exclude_tasks or task["task_key"] not in exclude_tasks

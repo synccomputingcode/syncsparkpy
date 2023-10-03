@@ -271,14 +271,14 @@ def create_project_submission_with_eventlog_bytes(
 
 
 def create_project_recommendation(project_id: str) -> Response[str]:
-    """Creates a prediction giving event log bytes instead of a URL
+    """Creates a prediction given a project id
 
     :param project_id: ID of project to which the prediction belongs, defaults to None
     :type project_id: str, optional
     :return: prediction ID
     :rtype: Response[str]
     """
-    response = get_default_client().create_project_submission(project_id)
+    response = get_default_client().create_project_recommendation(project_id)
 
     if response.get("error"):
         return Response(**response)

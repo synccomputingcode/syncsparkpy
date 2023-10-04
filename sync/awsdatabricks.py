@@ -131,6 +131,7 @@ def get_access_report(log_url: str = None) -> AccessReport:
 
         ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
         report.add_boto_method_call(ec2.describe_instances, AccessStatusCode.YELLOW, DryRun=True)
+        report.add_boto_method_call(ec2.describe_volumes, AccessStatusCode.YELLOW, DryRun=True)
     else:
         report.append(
             AccessReportLine(

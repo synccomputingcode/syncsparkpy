@@ -45,7 +45,7 @@ def create_project(
     product_code: str,
     description: str = None,
     job_id: str = None,
-    s3_url: str = None,
+    cluster_log_dest: str = None,
     prediction_preference: Preference = Preference.ECONOMY,
     prediction_params: dict = None,
     app_id: str = None,
@@ -60,8 +60,8 @@ def create_project(
     :type description: str, optional
     :param job_id: Databricks job ID, defaults to None
     :type job_id: str, optional
-    :param s3_url: S3 URL under which to store project configurations and logs, defaults to None
-    :type s3_url: str, optional
+    :param cluster_log_dest: S3 or DBFS URL under which to store project configurations and logs, defaults to None
+    :type cluster_log_dest: str, optional
     :param prediction_preference: preferred prediction solution, defaults to `Preference.ECONOMY`
     :type prediction_preference: Preference, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/create_project_v1_projects_post>`__
@@ -78,7 +78,7 @@ def create_project(
                 "product_code": product_code,
                 "description": description,
                 "job_id": job_id,
-                "s3_url": s3_url,
+                "cluster_log_dest": cluster_log_dest,
                 "prediction_preference": prediction_preference,
                 "prediction_params": prediction_params,
                 "app_id": app_id,
@@ -101,7 +101,7 @@ def get_project(project_id: str) -> Response[dict]:
 def update_project(
     project_id: str,
     description: str = None,
-    s3_url: str = None,
+    cluster_log_dest: str = None,
     app_id: str = None,
     prediction_preference: Preference = None,
     prediction_params: dict = None,
@@ -112,8 +112,8 @@ def update_project(
     :type project_id: str
     :param description: description, defaults to None
     :type description: str, optional
-    :param s3_url: location of project event logs and configurations, defaults to None
-    :type s3_url: str, optional
+    :param cluster_log_dest: location of project event logs and configurations, defaults to None
+    :type cluster_log_dest: str, optional
     :param app_id: external identifier, defaults to None
     :type app_id: str, optional
     :param prediction_preference: default preference for predictions, defaults to None
@@ -126,8 +126,8 @@ def update_project(
     project_update = {}
     if description:
         project_update["description"] = description
-    if s3_url:
-        project_update["s3_url"] = s3_url
+    if cluster_log_dest:
+        project_update["cluster_log_dest"] = cluster_log_dest
     if app_id:
         project_update["app_id"] = app_id
     if prediction_preference:

@@ -577,13 +577,13 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
             }
         }
 
-        s3_url = project.get("s3_url")
-        if s3_url:
+        cluster_log_dest = urlparse(project.get("cluster_log_dest"))
+        if cluster_log_dest.scheme == "s3":
             result.update(
                 {
                     "cluster_log_conf": {
                         "s3": {
-                            "destination": f"{s3_url}/{project_id}",
+                            "destination": f"{cluster_log_dest.geturl()}/{project_id}",
                             "enable_encryption": True,
                             "region": region_name or boto.client("s3").meta.region_name,
                             "canned_acl": "bucket-owner-full-control",
@@ -591,6 +591,18 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
                     }
                 }
             )
+
+        if cluster_log_dest.scheme == "dbfs":
+            result.update(
+                {
+                    "cluster_log_conf": {
+                        "dbfs": {
+                            "destination": f"{cluster_log_dest.geturl()}/{project_id}",
+                        }
+                    }
+                }
+            )
+            
         return Response(result=result)
     return project_response
 
@@ -1033,7 +1045,6 @@ def _get_cluster_id_and_tasks_from_run_tasks(
     job_clusters = {c["job_cluster_key"]: c["new_cluster"] for c in run.get("job_clusters", [])}
     project_cluster_ids = defaultdict(list)
     all_cluster_tasks = defaultdict(list)
-
     for task in run["tasks"]:
         if "cluster_instance" in task and (
             not exclude_tasks or task["task_key"] not in exclude_tasks

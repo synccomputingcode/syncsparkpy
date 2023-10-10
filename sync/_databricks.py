@@ -416,11 +416,14 @@ def record_run(
     run_id: str,
     plan_type: str,
     compute_type: str,
-    project_id: str = None,
+    project_id: Union[str, None] = None,
     allow_incomplete_cluster_report: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[List[str]]:
     """See :py:func:`~create_prediction_for_run`
+
+    If project ID is provided only create a prediction for the cluster tagged with it, or the only cluster if there is such that is untagged.
+    If no project ID is provided then create a prediction for each cluster tagged with a project ID.
 
     :param run_id: Databricks run ID
     :type run_id: str
@@ -428,8 +431,8 @@ def record_run(
     :type plan_type: str
     :param compute_type: e.g. "Jobs Compute"
     :type compute_type: str
-    :param project_id: Sync project ID, defaults to None
-    :type project_id: str
+    :param project_id: Sync project ID
+    :type project_id: str, optional, defaults to None
     :param allow_incomplete_cluster_report: Whether creating a prediction with incomplete cluster report data should be allowable
     :type allow_incomplete_cluster_report: bool, optional, defaults to False
     :param exclude_tasks: Keys of tasks (task names) to exclude

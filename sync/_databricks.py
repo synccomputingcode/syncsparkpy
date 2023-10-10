@@ -457,7 +457,7 @@ def record_run(
     else:
         filtered_project_cluster_tasks = {
             cluster_project_id: cluster_tasks
-            for cluster_project_id, cluster_tasks in project_cluster_tasks
+            for cluster_project_id, cluster_tasks in project_cluster_tasks.items()
             if cluster_project_id
         }
 

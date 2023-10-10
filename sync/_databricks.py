@@ -419,7 +419,7 @@ def record_run(
     project_id: str = None,
     allow_incomplete_cluster_report: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
-) -> Response[str]:
+) -> Response[List[str]]:
     """See :py:func:`~create_prediction_for_run`
 
     :param run_id: Databricks run ID
@@ -466,7 +466,7 @@ def record_run(
         )
 
     prediction_ids = []
-    for cluster_project_id, cluster_id, tasks in filtered_project_cluster_tasks.items():
+    for cluster_project_id, (cluster_id, tasks) in filtered_project_cluster_tasks.items():
         prediction_response = _create_prediction(
             cluster_id,
             tasks,

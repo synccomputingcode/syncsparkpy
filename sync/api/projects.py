@@ -102,6 +102,7 @@ def update_project(
     project_id: str,
     description: str = None,
     s3_url: str = None,
+    app_id: str = None,
     prediction_preference: Preference = None,
     prediction_params: dict = None,
 ) -> Response[dict]:
@@ -113,6 +114,8 @@ def update_project(
     :type description: str, optional
     :param s3_url: location of project event logs and configurations, defaults to None
     :type s3_url: str, optional
+    :param app_id: external identifier, defaults to None
+    :type app_id: str, optional
     :param prediction_preference: default preference for predictions, defaults to None
     :type prediction_preference: Preference, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/update_project_v1_projects__project_id__put>`__
@@ -125,6 +128,8 @@ def update_project(
         project_update["description"] = description
     if s3_url:
         project_update["s3_url"] = s3_url
+    if app_id:
+        project_update["app_id"] = app_id
     if prediction_preference:
         project_update["prediction_preference"] = prediction_preference
     if prediction_params:

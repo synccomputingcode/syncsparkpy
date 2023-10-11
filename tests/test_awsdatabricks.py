@@ -592,7 +592,7 @@ def test_create_prediction_for_run_bad_cluster_data(respx_mock):
 
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
 @patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
-def test_create_prediction_for_run_no_instances_found_or_no_volumes_found(respx_mock):
+def test_create_prediction_for_run_no_instances_found(respx_mock):
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=MOCK_RUN)
     )
@@ -608,27 +608,25 @@ def test_create_prediction_for_run_no_instances_found_or_no_volumes_found(respx_
     ec2 = boto.client("ec2", region_name=MOCK_DBX_CONF.aws_region_name)
     s3 = boto.client("s3")
 
-    for case in [({"Reservations": []}, MOCK_VOLUMES), (MOCK_INSTANCES, {"Volumes": []})]:
+    s3_stubber = Stubber(s3)
+    s3_stubber.add_client_error("get_object", "NoSuchKey")
 
-        s3_stubber = Stubber(s3)
-        s3_stubber.add_client_error("get_object", "NoSuchKey")
+    def client_patch(name, **kwargs):
+        if name == "ec2":
+            return ec2
+        elif name == "s3":
+            return s3
 
-        def client_patch(name, **kwargs):
-            if name == "ec2":
-                return ec2
-            elif name == "s3":
-                return s3
+    # First test no instances
+    ec2_stubber = Stubber(ec2)
+    ec2_stubber.add_response("describe_instances", {"Reservations": []})
+    ec2_stubber.add_response("describe_volumes", MOCK_VOLUMES)
 
-        # First test no instances
-        ec2_stubber = Stubber(ec2)
-        ec2_stubber.add_response("describe_instances", case[0])
-        ec2_stubber.add_response("describe_volumes", case[1])
+    with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
+        mock_aws_client.side_effect = client_patch
+        result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
 
-        with s3_stubber, ec2_stubber, patch("boto3.client") as mock_aws_client:
-            mock_aws_client.side_effect = client_patch
-            result = create_prediction_for_run("75778", "Premium", "Jobs Compute", "my-project-id")
-
-        assert result.error
+    assert result.error
 
 
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)

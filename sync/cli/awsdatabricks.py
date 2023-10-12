@@ -4,10 +4,15 @@ from sync.cli._databricks import (
     access_report,
     create_prediction,
     create_submission,
+    create_workspace_config,
+    delete_workspace_config,
     get_cluster_report,
+    get_workspace_config,
+    list_workspace_configs,
     monitor_cluster,
     run_job,
     run_prediction,
+    update_workspace_config,
 )
 from sync.models import Platform
 
@@ -26,3 +31,8 @@ aws_databricks.add_command(create_prediction)
 aws_databricks.add_command(create_submission)
 aws_databricks.add_command(get_cluster_report)
 aws_databricks.add_command(monitor_cluster)
+aws_databricks.add_command(create_workspace_config)
+aws_databricks.add_command(get_workspace_config)
+aws_databricks.add_command(list_workspace_configs)
+aws_databricks.add_command(update_workspace_config)
+aws_databricks.add_command(delete_workspace_config)

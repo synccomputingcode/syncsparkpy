@@ -119,8 +119,41 @@ class SyncClient(RetryableHTTPClient):
             )
         )
 
+    def create_workspace_config(self, workspace_id: str, **config):
+        headers, content = encode_json(config)
+        return self._send(
+            self._client.build_request(
+                "POST", f"/v1/databricks/workspace/{workspace_id}", headers=headers, content=content
+            )
+        )
+
+    def get_workspace_config(self, workspace_id):
+        return self._send(
+            self._client.build_request("GET", f"/v1/databricks/workspace/{workspace_id}")
+        )
+
+    def get_workspace_configs(self):
+        return self._send(self._client.build_request("GET", "/v1/databricks/workspace"))
+
+    def update_workspace_config(self, workspace_id: str, **updates):
+        headers, content = encode_json(updates)
+        return self._send(
+            self._client.build_request(
+                "PUT", f"/v1/databricks/workspace/{workspace_id}", headers=headers, content=content
+            )
+        )
+
+    def delete_workspace_config(self, workspace_id):
+        return self._send(
+            self._client.build_request("DELETE", f"/v1/databricks/workspace/{workspace_id}")
+        )
+
     def _send(self, request: httpx.Request) -> dict:
         response = self._send_request(request)
+
+        # A temporary crutch to make this client interface consistent
+        if response.status_code == 204:
+            return {"result": "OK"}
 
         if 200 <= response.status_code < 300:
             return response.json()

@@ -142,13 +142,49 @@ def create_prediction_for_run(
     :return: prediction ID
     :rtype: Response[str]
     """
+    run = get_default_client().get_run(run_id)
+
+    if "error_code" in run:
+        return Response(error=DatabricksAPIError(**run))
+
+    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
+
+    cluster_id = None
+    if project_id:
+        if project_id in project_cluster_tasks:
+            cluster_id, tasks = project_cluster_tasks.get(project_id)
+
+    if not cluster_id:
+        if None in project_cluster_tasks and len(project_cluster_tasks) == 1:
+            # If there's only 1 cluster and it's not tagged with project ID assume that's the one for the project
+            cluster_id, tasks = project_cluster_tasks.get(None)
+
+    if not cluster_id:
+        return Response(
+            error=DatabricksError(
+                message=f"No cluster found in run {run_id} for project {project_id}"
+            )
+        )
+
+    return _create_prediction(
+        cluster_id, tasks, plan_type, compute_type, project_id, allow_incomplete_cluster_report
+    )
+
+
+def _create_prediction(
+    cluster_id: str,
+    tasks: List[dict],
+    plan_type: str,
+    compute_type: str,
+    project_id: str = None,
+    allow_incomplete_cluster_report: bool = False,
+):
     run_information_response = _get_run_information(
-        run_id,
+        cluster_id,
+        tasks,
         plan_type,
         compute_type,
-        project_id=project_id,
         allow_incomplete_cluster_report=allow_incomplete_cluster_report,
-        exclude_tasks=exclude_tasks,
     )
 
     if run_information_response.error:
@@ -247,14 +283,26 @@ def create_submission_for_run(
     :return: prediction ID
     :rtype: Response[str]
     """
+    run = get_default_client().get_run(run_id)
+
+    if "error_code" in run:
+        return Response(error=DatabricksAPIError(**run))
+
+    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
+
+    if project_id in project_cluster_tasks:
+        cluster_id, tasks = project_cluster_tasks.get(project_id)
+    elif None in project_cluster_tasks and len(project_cluster_tasks) == 1:
+        # If there's only 1 cluster and it's not tagged with project ID assume that's the one for the project
+        cluster_id, tasks = project_cluster_tasks.get(None)
+
     run_information_response = _get_run_information(
-        run_id,
+        cluster_id,
+        tasks,
         plan_type,
         compute_type,
-        project_id=project_id,
         allow_failed_tasks=True,
         allow_incomplete_cluster_report=allow_incomplete_cluster_report,
-        exclude_tasks=exclude_tasks,
     )
 
     if run_information_response.error:
@@ -269,24 +317,13 @@ def create_submission_for_run(
 
 
 def _get_run_information(
-    run_id: str,
+    cluster_id: str,
+    tasks: List[dict],
     plan_type: str,
     compute_type: str,
-    project_id: str = None,
     allow_failed_tasks: bool = False,
     allow_incomplete_cluster_report: bool = False,
-    exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[Tuple[DatabricksClusterReport, bytes]]:
-    run = get_default_client().get_run(run_id)
-
-    if "error_code" in run:
-        return Response(error=DatabricksAPIError(**run))
-
-    try:
-        cluster_id, tasks = _get_cluster_id_and_tasks_from_run_tasks(run, exclude_tasks, project_id)
-    except Exception as e:
-        return Response(error=DatabricksError(message=str(e)))
-
     if not allow_failed_tasks and any(
         task["state"].get("result_state") != "SUCCESS" for task in tasks
     ):
@@ -297,12 +334,13 @@ def _get_run_information(
     cluster_report_response = _get_cluster_report(
         cluster_id, tasks, plan_type, compute_type, allow_incomplete_cluster_report
     )
+
     cluster_report = cluster_report_response.result
     if cluster_report:
-
         cluster = cluster_report.cluster
         spark_context_id = _get_run_spark_context_id(tasks)
-        eventlog_response = _get_eventlog(cluster, spark_context_id.result, run.get("end_time"))
+        end_time = max(task["end_time"] for task in tasks)
+        eventlog_response = _get_eventlog(cluster, spark_context_id.result, end_time)
 
         eventlog = eventlog_response.result
         if eventlog:
@@ -343,12 +381,16 @@ def get_cluster_report(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    try:
-        cluster_id, tasks = _get_cluster_id_and_tasks_from_run_tasks(run, exclude_tasks, project_id)
-    except Exception as e:
-        return Response(error=DatabricksError(message=str(e)))
+    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks, project_id)
+    cluster_tasks = project_cluster_tasks.get(project_id)
+    if not cluster_tasks:
+        return Response(
+            error=DatabricksError(f"Failed to locate cluster for project ID {project_id}")
+        )
 
-    return _get_cluster_report(cluster_id, tasks, plan_type, compute_type, allow_incomplete)
+    return _get_cluster_report(
+        cluster_tasks[0], cluster_tasks[1], plan_type, compute_type, allow_incomplete
+    )
 
 
 def _get_cluster_report(
@@ -374,11 +416,14 @@ def record_run(
     run_id: str,
     plan_type: str,
     compute_type: str,
-    project_id: str,
+    project_id: Union[str, None] = None,
     allow_incomplete_cluster_report: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
-) -> Response[str]:
+) -> Response[List[str]]:
     """See :py:func:`~create_prediction_for_run`
+
+    If project ID is provided only create a prediction for the cluster tagged with it, or the only cluster if there is such that is untagged.
+    If no project ID is provided then create a prediction for each cluster tagged with a project ID.
 
     :param run_id: Databricks run ID
     :type run_id: str
@@ -386,8 +431,8 @@ def record_run(
     :type plan_type: str
     :param compute_type: e.g. "Jobs Compute"
     :type compute_type: str
-    :param project_id: Sync project ID, defaults to None
-    :type project_id: str
+    :param project_id: Sync project ID
+    :type project_id: str, optional, defaults to None
     :param allow_incomplete_cluster_report: Whether creating a prediction with incomplete cluster report data should be allowable
     :type allow_incomplete_cluster_report: bool, optional, defaults to False
     :param exclude_tasks: Keys of tasks (task names) to exclude
@@ -395,9 +440,59 @@ def record_run(
     :return: prediction ID
     :rtype: Response[str]
     """
-    return create_prediction_for_run(
-        run_id, plan_type, compute_type, project_id, allow_incomplete_cluster_report, exclude_tasks
-    )
+    run = get_default_client().get_run(run_id)
+
+    if "error_code" in run:
+        return Response(error=DatabricksAPIError(**run))
+
+    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
+
+    filtered_project_cluster_tasks = {}
+    if project_id:
+        if project_id in project_cluster_tasks:
+            filtered_project_cluster_tasks = {project_id: project_cluster_tasks.get(project_id)}
+        elif None in project_cluster_tasks and len(project_cluster_tasks) == 1:
+            # If there's only 1 cluster and it's not tagged with project ID assume that's the one for the project
+            filtered_project_cluster_tasks = {project_id: project_cluster_tasks.get(None)}
+    else:
+        filtered_project_cluster_tasks = {
+            cluster_project_id: cluster_tasks
+            for cluster_project_id, cluster_tasks in project_cluster_tasks.items()
+            if cluster_project_id
+        }
+
+    if not filtered_project_cluster_tasks:
+        return Response(
+            error=DatabricksError(
+                message=f"No cluster found in run {run_id} for project {project_id}"
+            )
+        )
+
+    prediction_ids = []
+    for cluster_project_id, (cluster_id, tasks) in filtered_project_cluster_tasks.items():
+        prediction_response = _create_prediction(
+            cluster_id,
+            tasks,
+            plan_type,
+            compute_type,
+            cluster_project_id,
+            allow_incomplete_cluster_report,
+        )
+
+        prediction_id = prediction_response.result
+        if prediction_id:
+            prediction_ids.append(prediction_id)
+        else:
+            logger.error(
+                f"Failed to create prediction for cluster {cluster_id} in project {cluster_project_id}"
+            )
+
+    if prediction_ids:
+        return Response(result=prediction_ids)
+    else:
+        return Response(
+            error=DatabricksError(message=f"Failed to create any predictions for run {run_id}")
+        )
 
 
 def get_prediction_job(
@@ -1037,20 +1132,19 @@ def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
     return Response(error=DatabricksError(message="Not all tasks use the same cluster"))
 
 
-def _get_cluster_id_and_tasks_from_run_tasks(
+def _get_project_cluster_tasks(
     run: dict,
     exclude_tasks: Union[Collection[str], None] = None,
-    project_id: str = None,
-) -> Tuple[str, List[dict]]:
+) -> Dict[str, Tuple[str, List[dict]]]:
+    """Returns a mapping of project IDs to cluster ID-tasks pairs"""
     job_clusters = {c["job_cluster_key"]: c["new_cluster"] for c in run.get("job_clusters", [])}
-    project_cluster_ids = defaultdict(list)
-    all_cluster_tasks = defaultdict(list)
+    all_project_cluster_tasks = defaultdict(lambda: defaultdict(list))
+
     for task in run["tasks"]:
         if "cluster_instance" in task and (
             not exclude_tasks or task["task_key"] not in exclude_tasks
         ):
             cluster_id = task["cluster_instance"]["cluster_id"]
-            all_cluster_tasks[cluster_id].append(task)
 
             task_cluster = task.get("new_cluster")
             if not task_cluster:
@@ -1058,31 +1152,16 @@ def _get_cluster_id_and_tasks_from_run_tasks(
 
             if task_cluster:
                 cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
-                if cluster_project_id:
-                    project_cluster_ids[cluster_project_id].append(cluster_id)
+                all_project_cluster_tasks[cluster_project_id][cluster_id].append(task)
 
-    project_cluster_tasks = None
-    if project_id:
-        cluster_ids = project_cluster_ids.get(project_id)
-        if cluster_ids:
-            project_cluster_tasks = {
-                cluster_id: tasks
-                for cluster_id, tasks in all_cluster_tasks.items()
-                if cluster_id in cluster_ids
-            }
+    filtered_project_cluster_tasks = {}
+    for project_id, cluster_tasks in all_project_cluster_tasks.items():
+        if len(cluster_tasks) > 1:
+            logger.warning(f"More than 1 cluster found for project ID {project_id}")
         else:
-            logger.warning(
-                "No task clusters found matching the provided project-id - assuming all non-excluded tasks are relevant"
-            )
+            filtered_project_cluster_tasks[project_id] = next(iter(cluster_tasks.items()))
 
-    cluster_tasks = project_cluster_tasks or all_cluster_tasks
-    num_clusters = len(cluster_tasks)
-    if num_clusters == 0:
-        raise RuntimeError("No cluster found for tasks")
-    elif num_clusters > 1:
-        raise RuntimeError("More than 1 cluster found for tasks")
-
-    return cluster_tasks.popitem()
+    return filtered_project_cluster_tasks
 
 
 def _get_run_spark_context_id(tasks: List[dict]) -> Response[str]:

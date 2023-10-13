@@ -1,3 +1,5 @@
+from typing import List
+
 from sync.clients.sync import get_default_client
 from sync.models import Response
 
@@ -13,7 +15,7 @@ def create_workspace_config(
     instance_profile_arn: str = None,
     databricks_plan_type: str = None,
     webhook_id: str = None,
-):
+) -> Response[dict]:
     return Response(
         **get_default_client().create_workspace_config(
             workspace_id,
@@ -28,11 +30,11 @@ def create_workspace_config(
     )
 
 
-def get_workspace_config(workspace_id: str):
+def get_workspace_config(workspace_id: str) -> Response[dict]:
     return Response(**get_default_client().get_workspace_config(workspace_id))
 
 
-def get_workspace_configs():
+def get_workspace_configs() -> Response[List[dict]]:
     return Response(**get_default_client().get_workspace_configs())
 
 
@@ -45,7 +47,7 @@ def update_workspace_config(
     instance_profile_arn: str = None,
     databricks_plan_type: str = None,
     webhook_id: str = None,
-):
+) -> Response[dict]:
     params = {
         key: value if value != NULL else None
         for key, value in {
@@ -63,5 +65,17 @@ def update_workspace_config(
     return Response(**get_default_client().update_workspace_config(workspace_id, **params))
 
 
-def delete_workspace_config(workspace_id: str):
+def delete_workspace_config(workspace_id: str) -> Response[str]:
     return Response(**get_default_client().delete_workspace_config(workspace_id))
+
+
+def reset_webhook_creds(workspace_id: str) -> Response[dict]:
+    return Response(**get_default_client().reset_webhook_creds(workspace_id))
+
+
+def apply_workspace_config(workspace_id: str) -> Response[str]:
+    return Response(**get_default_client().apply_workspace_config(workspace_id))
+
+
+def onboard_job(workspace_id: str, job_id: str, project_id: str) -> Response[str]:
+    return Response(**get_default_client().onboard_workflow(workspace_id, job_id, project_id))

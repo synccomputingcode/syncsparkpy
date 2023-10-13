@@ -275,7 +275,7 @@ def create_project_submission_with_eventlog_bytes(
     return Response(result=response["result"]["submission_id"])
 
 
-def create_project_recommendation(project_id: str) -> Response[str]:
+def create_project_recommendation(project_id: str, **kwargs) -> Response[str]:
     """Creates a prediction given a project id
 
     :param project_id: ID of project to which the prediction belongs, defaults to None
@@ -283,7 +283,7 @@ def create_project_recommendation(project_id: str) -> Response[str]:
     :return: prediction ID
     :rtype: Response[str]
     """
-    response = get_default_client().create_project_recommendation(project_id)
+    response = get_default_client().create_project_recommendation(project_id, **kwargs)
 
     if response.get("error"):
         return Response(**response)

@@ -2,6 +2,7 @@
 """
 import io
 import logging
+from time import sleep
 from typing import List
 from urllib.parse import urlparse
 
@@ -9,7 +10,14 @@ import httpx
 
 from sync.api.predictions import generate_presigned_url, get_predictions
 from sync.clients.sync import get_default_client
-from sync.models import Platform, Preference, ProjectError, Response, SubmissionError
+from sync.models import (
+    Platform,
+    Preference,
+    ProjectError,
+    RecommendationError,
+    Response,
+    SubmissionError,
+)
 
 logger = logging.getLogger()
 
@@ -291,6 +299,28 @@ def create_project_recommendation(project_id: str, **kwargs) -> Response[str]:
     return Response(result=response["result"]["id"])
 
 
+def wait_for_recommendation(project_id: str, recommendation_id: str) -> Response[dict]:
+    """Get a recommendation, wait if it's not ready
+
+    :param project_id: project ID
+    :type project_id: str
+    :param recommendation_id: recommendation ID
+    :type recommendation_id: str
+    :return: recommendation object
+    :rtype: Response[dict]
+    """
+    response = get_project_recommendation(project_id, recommendation_id)
+    while response:
+        result = response.result
+        if result:
+            if result["state"] == "SUCCESS":
+                return Response(result=result)
+            if result["state"] == "FAILURE":
+                return Response(error=RecommendationError(message="Recommendation failed"))
+        logger.info("Waiting for prediction")
+        sleep(10)
+
+
 def get_project_recommendation(project_id: str, recommendation_id: str) -> Response[dict]:
     """ """
     response = get_default_client().get_project_recommendation(project_id, recommendation_id)
@@ -298,4 +328,4 @@ def get_project_recommendation(project_id: str, recommendation_id: str) -> Respo
     if response.get("error"):
         return Response(**response)
 
-    return Response(result=response["result"]["recommendation"])
+    return Response(result=response["result"])

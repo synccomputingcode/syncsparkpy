@@ -507,6 +507,7 @@ def get_recommendation_job(job_id: str, project_id: str, recommendation_id: str)
     :rtype: Response[dict]
     """
     job = get_default_client().get_job(job_id)
+
     if "error_code" in job:
         return Response(error=DatabricksAPIError(**job))
 
@@ -557,7 +558,7 @@ def get_recommendation_cluster(
     :rtype: Response[dict]
     """
     recommendation_response = get_project_recommendation(project_id, recommendation_id)
-    recommendation = recommendation_response.result
+    recommendation = recommendation_response.result.get("recommendation")
     if recommendation:
         # num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
         #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster

@@ -511,14 +511,7 @@ def get_recommendation_job(job_id: str, project_id: str, recommendation_id: str)
         return Response(error=DatabricksAPIError(**job))
 
     job_settings = job["settings"]
-
-    try:
-        _, tasks = _get_cluster_id_and_tasks_from_run_tasks(
-            job_settings.get("tasks", []), project_id=project_id
-        )
-    except Exception as e:
-        return Response(error=DatabricksError(message=str(e)))
-
+    tasks = job_settings.get("tasks", [])
     if tasks:
         cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
         cluster = cluster_response.result

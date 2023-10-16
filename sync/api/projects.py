@@ -288,7 +288,7 @@ def create_project_recommendation(project_id: str, **kwargs) -> Response[str]:
     if response.get("error"):
         return Response(**response)
 
-    return Response(result=response["result"]["recommendation_id"])
+    return Response(result=response["result"]["id"])
 
 
 def get_project_recommendation(project_id: str, recommendation_id: str) -> Response[dict]:

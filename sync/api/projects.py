@@ -2,6 +2,7 @@
 """
 import io
 import logging
+from time import sleep
 from typing import List
 from urllib.parse import urlparse
 
@@ -9,7 +10,14 @@ import httpx
 
 from sync.api.predictions import generate_presigned_url, get_predictions
 from sync.clients.sync import get_default_client
-from sync.models import Platform, Preference, ProjectError, Response, SubmissionError
+from sync.models import (
+    Platform,
+    Preference,
+    ProjectError,
+    RecommendationError,
+    Response,
+    SubmissionError,
+)
 
 logger = logging.getLogger()
 
@@ -187,7 +195,7 @@ def delete_project(project_id: str) -> Response[str]:
 def create_project_submission(
     platform: Platform, cluster_report: dict, eventlog_url: str, project_id: str
 ) -> Response[str]:
-    """Create prediction
+    """Create a submission
 
     :param platform: platform, e.g. "aws-emr"
     :type platform: Platform
@@ -211,13 +219,17 @@ def create_project_submission(
     else:
         return Response(error=SubmissionError(message="Unsupported event log URL scheme"))
 
+    payload = {
+        "product": platform,
+        "cluster_report": cluster_report,
+        "event_log_uri": eventlog_http_url,
+    }
+
+    logger.info(payload)
+
     response = get_default_client().create_project_submission(
         project_id,
-        {
-            "product": platform,
-            "cluster_report": cluster_report,
-            "event_log_uri": eventlog_http_url,
-        },
+        payload,
     )
 
     if response.get("error"):
@@ -233,7 +245,7 @@ def create_project_submission_with_eventlog_bytes(
     eventlog_bytes: bytes,
     project_id: str,
 ) -> Response[str]:
-    """Creates a prediction giving event log bytes instead of a URL
+    """Creates a submission given event log bytes instead of a URL
 
     :param platform: platform, e.g. "aws-emr"
     :type platform: Platform
@@ -243,8 +255,8 @@ def create_project_submission_with_eventlog_bytes(
     :type eventlog_name: str
     :param eventlog_bytes: encoded event log
     :type eventlog_bytes: bytes
-    :param project_id: ID of project to which the prediction belongs, defaults to None
-    :type project_id: str, optional
+    :param project_id: ID of project to which the submission belongs
+    :type project_id: str
     :return: prediction ID
     :rtype: Response[str]
     """
@@ -269,3 +281,52 @@ def create_project_submission_with_eventlog_bytes(
         return Response(error=SubmissionError(message="Failed to upload event log"))
 
     return Response(result=response["result"]["submission_id"])
+
+
+def create_project_recommendation(project_id: str, **kwargs) -> Response[str]:
+    """Creates a prediction given a project id
+
+    :param project_id: ID of project to which the prediction belongs, defaults to None
+    :type project_id: str, optional
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    response = get_default_client().create_project_recommendation(project_id, **kwargs)
+
+    if response.get("error"):
+        return Response(**response)
+
+    return Response(result=response["result"]["id"])
+
+
+def wait_for_recommendation(project_id: str, recommendation_id: str) -> Response[dict]:
+    """Get a recommendation, wait if it's not ready
+
+    :param project_id: project ID
+    :type project_id: str
+    :param recommendation_id: recommendation ID
+    :type recommendation_id: str
+    :return: recommendation object
+    :rtype: Response[dict]
+    """
+    response = get_project_recommendation(project_id, recommendation_id)
+    while response:
+        result = response.result
+        if result:
+            if result["state"] == "SUCCESS":
+                return Response(result=result)
+            if result["state"] == "FAILURE":
+                return Response(error=RecommendationError(message="Recommendation failed"))
+        logger.info("Waiting for recommendation")
+        sleep(10)
+        response = get_project_recommendation(project_id, recommendation_id)
+
+
+def get_project_recommendation(project_id: str, recommendation_id: str) -> Response[dict]:
+    """ """
+    response = get_default_client().get_project_recommendation(project_id, recommendation_id)
+
+    if response.get("error"):
+        return Response(**response)
+
+    return Response(result=response["result"])

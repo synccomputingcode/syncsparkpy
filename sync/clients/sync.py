@@ -119,6 +119,31 @@ class SyncClient(RetryableHTTPClient):
             )
         )
 
+    def create_project_recommendation(self, project_id: str, **kwargs) -> dict:
+        headers, content = encode_json(kwargs)
+        return self._send(
+            self._client.build_request(
+                "POST",
+                f"/v1/projects/{project_id}/recommendations",
+                headers=headers,
+                content=content,
+            )
+        )
+
+    def get_project_recommendations(self, project_id: str, params: dict = None) -> dict:
+        return self._send(
+            self._client.build_request(
+                "GET", f"/v1/projects/{project_id}/recommendations", params=params
+            )
+        )
+
+    def get_project_recommendation(self, project_id: str, recommendation_id: str) -> dict:
+        return self._send(
+            self._client.build_request(
+                "GET", f"/v1/projects/{project_id}/recommendations/{recommendation_id}"
+            )
+        )
+
     def _send(self, request: httpx.Request) -> dict:
         response = self._send_request(request)
 

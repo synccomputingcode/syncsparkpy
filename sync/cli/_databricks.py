@@ -3,6 +3,7 @@ from typing import Tuple
 import click
 import orjson
 
+from sync.api.projects import create_project_recommendation, get_project_recommendation
 from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import DatabricksComputeType, DatabricksPlanType, Platform, Preference
@@ -171,6 +172,19 @@ def create_submission(
     else:
         click.echo(f"Failed to submit data. {submission_response.error}", err=True)
     return
+
+
+@click.command
+@click.argument("project", callback=validate_project)
+def create_recommendation(project: dict):
+    return create_project_recommendation(project["id"])
+
+
+@click.command
+@click.argument("project", callback=validate_project)
+@click.argument("prediction-id")
+def get_recommendation(project: dict, prediction_id: str):
+    return get_project_recommendation(prediction_id, project["id"])
 
 
 @click.command

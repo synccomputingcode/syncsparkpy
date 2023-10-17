@@ -317,8 +317,9 @@ def wait_for_recommendation(project_id: str, recommendation_id: str) -> Response
                 return Response(result=result)
             if result["state"] == "FAILURE":
                 return Response(error=RecommendationError(message="Recommendation failed"))
-        logger.info("Waiting for prediction")
+        logger.info("Waiting for recommendation")
         sleep(10)
+        response = get_project_recommendation(project_id, recommendation_id)
 
 
 def get_project_recommendation(project_id: str, recommendation_id: str) -> Response[dict]:

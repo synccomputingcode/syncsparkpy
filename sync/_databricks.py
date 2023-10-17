@@ -385,11 +385,11 @@ def get_cluster_report(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks, project_id)
+    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
     cluster_tasks = project_cluster_tasks.get(project_id)
     if not cluster_tasks:
         return Response(
-            error=DatabricksError(f"Failed to locate cluster for project ID {project_id}")
+            error=DatabricksError(message = f"Failed to locate cluster for project ID {project_id}")
         )
 
     return _get_cluster_report(

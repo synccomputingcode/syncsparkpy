@@ -368,7 +368,7 @@ def get_cluster_report(
     :param compute_type: Cluster compute type, e.g. "Jobs Compute"
     :type compute_type: str
     :param project_id: The Sync Project ID this report should be generated for. This is good to provide in general, but
-    especially for multi-cluster jobs.
+        especially for multi-cluster jobs.
     :type project_id: str, optional
     :param allow_incomplete: Whether creating a cluster report with incomplete data should be allowable
     :type allow_incomplete: bool, optional, defaults to False

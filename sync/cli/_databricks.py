@@ -9,6 +9,8 @@ from sync.models import DatabricksComputeType, DatabricksPlanType, Platform, Pre
 
 pass_platform = click.make_pass_decorator(Platform)
 
+OPTIONAL_DEFAULT = "none"
+
 
 @click.command
 @click.option("--log-url")

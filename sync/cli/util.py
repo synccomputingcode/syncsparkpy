@@ -3,6 +3,8 @@ from uuid import UUID
 
 from sync.api.projects import get_project_by_app_id
 
+OPTIONAL_DEFAULT = "none"
+
 
 def validate_project(ctx, param, value: Union[str, None]) -> dict:
     if not value:

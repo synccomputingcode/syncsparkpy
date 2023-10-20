@@ -389,7 +389,7 @@ def get_cluster_report(
     cluster_tasks = project_cluster_tasks.get(project_id)
     if not cluster_tasks:
         return Response(
-            error=DatabricksError(message = f"Failed to locate cluster for project ID {project_id}")
+            error=DatabricksError(message=f"Failed to locate cluster for project ID {project_id}")
         )
 
     return _get_cluster_report(
@@ -777,7 +777,7 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
                 }
             )
 
-        if cluster_log_dest.scheme == "dbfs":
+        elif cluster_log_dest.scheme == "dbfs":
             result.update(
                 {
                     "cluster_log_conf": {
@@ -787,7 +787,7 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
                     }
                 }
             )
-            
+
         return Response(result=result)
     return project_response
 

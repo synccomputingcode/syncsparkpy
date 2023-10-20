@@ -512,7 +512,7 @@ def apply_prediction(
     :type prediction_id: str, optional
     :param preference: Prediction preference, defaults to "recommended" then "economy"
     :type preference: str, optional
-    :return: Success message or error message
+    :return: ID of applied prediction
     :rtype: Response[str]
     """
     if prediction_id:
@@ -521,7 +521,8 @@ def apply_prediction(
         predictions_response = get_predictions(project_id=project_id)
         if predictions_response.error:
             return predictions_response
-        prediction_response = get_prediction(prediction_response.result[0], preference)
+        prediction_id = predictions_response.result[0]["prediction_id"]
+        prediction_response = get_prediction(prediction_id, preference)
 
     if prediction_response.error:
         return prediction_response
@@ -531,7 +532,7 @@ def apply_prediction(
     databricks_client = get_default_client()
     job = databricks_client.get_job(job_id)
 
-    job_clusters = _get_project_job_clusters
+    job_clusters = _get_project_job_clusters(job)
     project_job_path = job_clusters.get(project_id)
 
     if not project_job_path:
@@ -544,17 +545,33 @@ def apply_prediction(
                 )
             )
 
-    response = databricks_client.update_job(
-        job_id,
-        prediction["solutions"].get("recommended", prediction["solutions"]["economy"])[
-            "configuration"
-        ],
-    )
+    if preference:
+        prediction_cluster = prediction["solutions"][preference]["configuration"]
+    else:
+        prediction_cluster = prediction["solutions"].get(
+            "recommended", prediction["solutions"]["economy"]
+        )["configuration"]
+
+    if "cluster_name" in prediction_cluster:
+        del prediction_cluster["cluster_name"]
+
+    if project_job_path[0] == "job_clusters":
+        new_settings = {
+            "job_clusters": [
+                {"job_cluster_key": project_job_path[1], "new_cluster": prediction_cluster}
+            ]
+        }
+    else:
+        new_settings = {
+            "tasks": [{"task_key": project_job_path[1], "new_cluster": prediction_cluster}]
+        }
+
+    response = databricks_client.update_job(job_id, new_settings)
 
     if "error_code" in response:
         return Response(error=DatabricksAPIError(**response))
 
-    return Response(result="OK")
+    return Response(result=prediction_id)
 
 
 def get_prediction_job(
@@ -1193,13 +1210,13 @@ def _get_project_job_clusters(
     ("tasks", <task_key>) or ("job_clusters", <job_cluster_key>)
 
     Items for project IDs with more than 1 associated cluster are omitted"""
-    job_clusters = {c["job_cluster_key"]: c["new_cluster"] for c in job.get("job_clusters", [])}
+    job_clusters = {
+        c["job_cluster_key"]: c["new_cluster"] for c in job["settings"].get("job_clusters", [])
+    }
     all_project_clusters = defaultdict(list)
 
-    for task in job["tasks"]:
-        if "cluster_instance" in task and (
-            not exclude_tasks or task["task_key"] not in exclude_tasks
-        ):
+    for task in job["settings"]["tasks"]:
+        if not exclude_tasks or task["task_key"] not in exclude_tasks:
             task_cluster = task.get("new_cluster")
             if task_cluster:
                 task_cluster_path = ("tasks", task["task_key"])
@@ -1217,7 +1234,7 @@ def _get_project_job_clusters(
         if len(cluster_paths) > 1:
             logger.warning(f"More than 1 cluster found for project ID {project_id}")
         else:
-            filtered_project_clusters[project_id] = next(iter(cluster_paths.items()))
+            filtered_project_clusters[project_id] = cluster_paths[0]
 
     return filtered_project_clusters
 

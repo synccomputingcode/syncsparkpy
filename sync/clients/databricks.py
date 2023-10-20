@@ -80,7 +80,7 @@ class DatabricksClient(RetryableHTTPClient):
             self._client.build_request("GET", "/api/2.1/jobs/get", params={"job_id": job_id})
         )
 
-    def update_job(self, job_id: str, **new_settings) -> dict:
+    def update_job(self, job_id: str, new_settings: dict) -> dict:
         # https://docs.databricks.com/api/workspace/jobs/update
         headers, content = encode_json({"job_id": job_id, "new_settings": new_settings})
         return self._send(

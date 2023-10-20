@@ -2,6 +2,7 @@ import click
 
 from sync.cli._databricks import (
     access_report,
+    apply_prediction,
     create_prediction,
     create_submission,
     get_cluster_report,
@@ -25,4 +26,5 @@ azure_databricks.add_command(run_job)
 azure_databricks.add_command(create_prediction)
 azure_databricks.add_command(create_submission)
 azure_databricks.add_command(get_cluster_report)
+azure_databricks.add_command(apply_prediction)
 azure_databricks.add_command(monitor_cluster)

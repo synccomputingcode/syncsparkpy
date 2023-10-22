@@ -683,8 +683,8 @@ def create_submission_and_get_recommendation_job_for_run(
     allow_incomplete_cluster_report: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[str]:
-    """Combines several operations to create a submission, a new recommendation,
-    and retrieve updated job settings with the recommendatin applied.
+    """Combines several operations to create a submission, create a new recommendation,
+    and return the updated job settings with the new recommendation applied.
 
     :param job_id: Databricks job ID
     :type job_id: str

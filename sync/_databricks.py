@@ -16,9 +16,11 @@ import boto3 as boto
 
 from sync.api.predictions import create_prediction_with_eventlog_bytes, get_prediction
 from sync.api.projects import (
+    create_project_recommendation,
     create_project_submission_with_eventlog_bytes,
     get_project,
     get_project_recommendation,
+    wait_for_recommendation,
 )
 from sync.clients.databricks import get_default_client
 from sync.config import CONFIG
@@ -296,9 +298,9 @@ def create_submission_for_run(
 
     if project_id in project_cluster_tasks:
         cluster_id, tasks = project_cluster_tasks.get(project_id)
-    elif None in project_cluster_tasks and len(project_cluster_tasks) == 1:
-        # If there's only 1 cluster and it's not tagged with project ID assume that's the one for the project
-        cluster_id, tasks = project_cluster_tasks.get(None)
+    elif len(project_cluster_tasks) == 1:
+        # If there's only 1 cluster then assume that's the one for the project
+        cluster_id, tasks = next(iter(project_cluster_tasks.values()))
 
     run_information_response = _get_run_information(
         cluster_id,
@@ -389,7 +391,7 @@ def get_cluster_report(
     cluster_tasks = project_cluster_tasks.get(project_id)
     if not cluster_tasks:
         return Response(
-            error=DatabricksError(message = f"Failed to locate cluster for project ID {project_id}")
+            error=DatabricksError(message=f"Failed to locate cluster for project ID {project_id}")
         )
 
     return _get_cluster_report(
@@ -670,6 +672,53 @@ def get_recommendation_cluster(
 
         return Response(result=recommendation_cluster)
     return recommendation_response
+
+
+def create_submission_and_get_recommendation_job_for_run(
+    job_id: str,
+    run_id: str,
+    plan_type: str,
+    compute_type: str,
+    project_id: str,
+    allow_incomplete_cluster_report: bool = False,
+    exclude_tasks: Union[Collection[str], None] = None,
+) -> Response[str]:
+    """Combines several operations to create a submission, a new recommendation,
+    and retrieve updated job settings with the recommendatin applied.
+
+    :param job_id: Databricks job ID
+    :type job_id: str
+    :param run_id: Databricks run ID
+    :type run_id: str
+    :param plan_type: either "Standard", "Premium" or "Enterprise"
+    :type plan_type: str
+    :param compute_type: e.g. "Jobs Compute"
+    :type compute_type: str
+    :param project_id: Sync project ID, defaults to None
+    :type project_id: str, optional
+    :param allow_incomplete_cluster_report: Whether creating a prediction with incomplete cluster report data should be allowable
+    :type allow_incomplete_cluster_report: bool, optional, defaults to False
+    :param exclude_tasks: Keys of tasks (task names) to exclude from the prediction
+    :type exclude_tasks: Collection[str], optional, defaults to None
+    :return: Databricks job settings payload with recommendation applied
+    :rtype: Response[str]
+    """
+
+    response = create_submission_for_run(
+        run_id, plan_type, compute_type, project_id, allow_incomplete_cluster_report, exclude_tasks
+    )
+    if response.error:
+        return response
+
+    response = create_project_recommendation(project_id)
+    if response.error:
+        return response
+
+    response = wait_for_recommendation(project_id, response.result)
+    if response.error:
+        return response
+
+    return get_recommendation_job(job_id, project_id, response.result["id"])
 
 
 def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Response[dict]:

@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from time import sleep
 from typing import List, Type, TypeVar
 from urllib.parse import urlparse
@@ -228,9 +229,11 @@ def _get_cluster_report(
 
 
 if getattr(sync._databricks, "__claim", __name__) != __name__:
-    raise RuntimeError(
-        "Databricks modules for different cloud providers cannot be used in the same context"
-    )
+    # Unless building documentation you can't load both databricks modules in the same program
+    if not sys.argv[0].endswith("sphinx-build"):
+        raise RuntimeError(
+            "Databricks modules for different cloud providers cannot be used in the same context"
+        )
 
 sync._databricks._get_cluster_report = _get_cluster_report
 setattr(sync._databricks, "__claim", __name__)

@@ -238,6 +238,26 @@ def create_project_submission(
     return Response(result=response["result"]["submission_id"])
 
 
+def clear_cluster_report_errors(cluster_report_orig: dict) -> dict:
+    cluster_report = cluster_report_orig.copy()
+
+    def clear_error(event: dict):
+        try:
+            del event["details"]["reason"]["parameters"]["azure_error_message"]
+        except KeyError:
+            pass
+        try:
+            del event["details"]["reason"]["parameters"]["databricks_error_message"]
+        except KeyError:
+            pass
+
+    try:
+        list(map(clear_error, cluster_report["cluster_events"]["events"]))
+    except KeyError:
+        pass
+    return cluster_report
+
+
 def create_project_submission_with_eventlog_bytes(
     platform: Platform,
     cluster_report: dict,
@@ -261,8 +281,9 @@ def create_project_submission_with_eventlog_bytes(
     :rtype: Response[str]
     """
     # TODO - best way to handle "no eventlog"
+    cluster_report_clear = clear_cluster_report_errors(cluster_report)
     response = get_default_client().create_project_submission(
-        project_id, {"product_code": platform, "cluster_report": cluster_report}
+        project_id, {"product_code": platform, "cluster_report": cluster_report_clear}
     )
 
     if response.get("error"):

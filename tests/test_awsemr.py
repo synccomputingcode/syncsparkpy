@@ -113,7 +113,7 @@ def test_get_project_report(get_project, get_cluster_report):
             "id": "4f5fe783-df74-4d64-adad-a635d6319579",
             "name": "Data Insights",
             "description": "My first project",
-            "cluster_log_dest": "s3://megacorp-bucket/projects/emr",
+            "cluster_log_url": "s3://megacorp-bucket/projects/emr",
             "prediction_preference": "balanced",
         }
     )

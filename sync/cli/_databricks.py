@@ -177,14 +177,32 @@ def create_submission(
 @click.command
 @click.argument("project", callback=validate_project)
 def create_recommendation(project: dict):
-    return create_project_recommendation(project["id"])
+    rec_response = create_project_recommendation(project["id"])
+    recommendation_id = rec_response.result
+    if recommendation_id:
+        click.echo(f"Recommendation ID: {recommendation_id}")
+    else:
+        click.echo(f"Failed to create recommendation. {rec_response.error}", err=True)
 
 
 @click.command
 @click.argument("project", callback=validate_project)
-@click.argument("prediction-id")
-def get_recommendation(project: dict, prediction_id: str):
-    return get_project_recommendation(prediction_id, project["id"])
+@click.argument("recommendation-id")
+def get_recommendation(project: dict, recommendation_id: str):
+    rec_response = get_project_recommendation(project["id"], recommendation_id)
+    recommendation = rec_response.result
+    if recommendation:
+        if recommendation["state"] == "FAILURE":
+            click.echo(f"Recommendation generation failed.", err=True)
+        else:
+            click.echo(
+                orjson.dumps(
+                    recommendation,
+                    option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_UTC_Z,
+                )
+            )
+    else:
+        click.echo(f"Failed to get recommendation. {rec_response.error}", err=True)
 
 
 @click.command

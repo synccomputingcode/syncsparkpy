@@ -119,8 +119,8 @@ class SyncClient(RetryableHTTPClient):
             )
         )
 
-    def create_project_recommendation(self, project_id: str, **kwargs) -> dict:
-        headers, content = encode_json(kwargs)
+    def create_project_recommendation(self, project_id: str, **options) -> dict:
+        headers, content = encode_json(options)
         return self._send(
             self._client.build_request(
                 "POST",

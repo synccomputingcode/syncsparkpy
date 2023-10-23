@@ -344,7 +344,15 @@ def wait_for_recommendation(project_id: str, recommendation_id: str) -> Response
 
 
 def get_project_recommendation(project_id: str, recommendation_id: str) -> Response[dict]:
-    """ """
+    """Get a specific recommendation for a project id
+
+    :param project_id: project ID
+    :type project_id: str
+    :param recommendation_id: recommendation ID
+    :type recommendation_id: str
+    :return: recommendation object
+    :rtype: Response[dict]
+    """
     response = get_default_client().get_project_recommendation(project_id, recommendation_id)
 
     if response.get("error"):

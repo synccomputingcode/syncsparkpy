@@ -701,7 +701,7 @@ def create_submission_and_get_recommendation_job_for_run(
     :param exclude_tasks: Keys of tasks (task names) to exclude from the prediction
     :type exclude_tasks: Collection[str], optional, defaults to None
     :return: Databricks job settings payload with recommendation applied
-    :rtype: Response[str]
+    :rtype: Response[dict]
     """
 
     response = create_submission_for_run(

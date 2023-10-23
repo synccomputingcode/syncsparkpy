@@ -193,7 +193,7 @@ def get_recommendation(project: dict, recommendation_id: str):
     recommendation = rec_response.result
     if recommendation:
         if recommendation["state"] == "FAILURE":
-            click.echo(f"Recommendation generation failed.", err=True)
+            click.echo("Recommendation generation failed.", err=True)
         else:
             click.echo(
                 orjson.dumps(

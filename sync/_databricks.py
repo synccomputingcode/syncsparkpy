@@ -374,7 +374,7 @@ def get_cluster_report(
     :param compute_type: Cluster compute type, e.g. "Jobs Compute"
     :type compute_type: str
     :param project_id: The Sync Project ID this report should be generated for. This is good to provide in general, but
-    especially for multi-cluster jobs.
+        especially for multi-cluster jobs.
     :type project_id: str, optional
     :param allow_incomplete: Whether creating a cluster report with incomplete data should be allowable
     :type allow_incomplete: bool, optional, defaults to False
@@ -490,7 +490,7 @@ def record_run(
             prediction_ids.append(prediction_id)
         else:
             logger.error(
-                f"Failed to create prediction for cluster {cluster_id} in project {cluster_project_id}"
+                f"Failed to create prediction for cluster {cluster_id} in project {cluster_project_id} - {prediction_response.error}"
             )
 
     if prediction_ids:

@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from time import sleep
 from typing import List, Type, TypeVar
 from urllib.parse import urlparse
@@ -32,6 +33,7 @@ from sync._databricks import (
     get_project_cluster,
     get_project_cluster_settings,
     get_project_job,
+    get_recommendation_job,
     record_run,
     run_and_record_job,
     run_and_record_job_object,
@@ -70,7 +72,9 @@ __all__ = [
     "record_run",
     "get_prediction_job",
     "get_prediction_cluster",
+    "get_project_cluster",
     "get_project_job",
+    "get_recommendation_job",
     "get_project_cluster",
     "get_project_cluster_settings",
     "run_job_object",
@@ -227,9 +231,11 @@ def _get_cluster_report(
 
 
 if getattr(sync._databricks, "__claim", __name__) != __name__:
-    raise RuntimeError(
-        "Databricks modules for different cloud providers cannot be used in the same context"
-    )
+    # Unless building documentation you can't load both databricks modules in the same program
+    if not sys.argv[0].endswith("sphinx-build"):
+        raise RuntimeError(
+            "Databricks modules for different cloud providers cannot be used in the same context"
+        )
 
 sync._databricks._get_cluster_report = _get_cluster_report
 setattr(sync._databricks, "__claim", __name__)

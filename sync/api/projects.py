@@ -238,7 +238,11 @@ def create_project_submission(
     return Response(result=response["result"]["submission_id"])
 
 
-def clear_cluster_report_errors(cluster_report_orig: dict) -> dict:
+def _clear_cluster_report_errors(cluster_report_orig: dict) -> dict:
+    """Clears error messages from the cluster_events field
+    This circumvents issues where certain strange characters in the error fields of Azure cluster
+    reports were causing the client to throw errors when trying to make submissions.
+    """
     cluster_report = cluster_report_orig.copy()
 
     def clear_error(event: dict):
@@ -281,7 +285,7 @@ def create_project_submission_with_eventlog_bytes(
     :rtype: Response[str]
     """
     # TODO - best way to handle "no eventlog"
-    cluster_report_clear = clear_cluster_report_errors(cluster_report)
+    cluster_report_clear = _clear_cluster_report_errors(cluster_report)
     response = get_default_client().create_project_submission(
         project_id, {"product_code": platform, "cluster_report": cluster_report_clear}
     )

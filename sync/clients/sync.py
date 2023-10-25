@@ -196,6 +196,8 @@ class SyncClient(RetryableHTTPClient):
                 "POST",
                 "/integrations/v1/databricks/workflow/onboard",
                 params={"workspace_id": workspace_id},
+                headers=headers,
+                content=content,
             )
         )
 

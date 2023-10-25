@@ -811,13 +811,13 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
             }
         }
 
-        cluster_log_dest = urlparse(project.get("cluster_log_dest"))
-        if cluster_log_dest.scheme == "s3":
+        cluster_log_url = urlparse(project.get("cluster_log_url"))
+        if cluster_log_url.scheme == "s3":
             result.update(
                 {
                     "cluster_log_conf": {
                         "s3": {
-                            "destination": f"{cluster_log_dest.geturl()}/{project_id}",
+                            "destination": f"{cluster_log_url.geturl()}/{project_id}",
                             "enable_encryption": True,
                             "region": region_name or boto.client("s3").meta.region_name,
                             "canned_acl": "bucket-owner-full-control",
@@ -826,12 +826,12 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
                 }
             )
 
-        elif cluster_log_dest.scheme == "dbfs":
+        elif cluster_log_url.scheme == "dbfs":
             result.update(
                 {
                     "cluster_log_conf": {
                         "dbfs": {
-                            "destination": f"{cluster_log_dest.geturl()}/{project_id}",
+                            "destination": f"{cluster_log_url.geturl()}/{project_id}",
                         }
                     }
                 }

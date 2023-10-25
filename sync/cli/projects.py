@@ -82,7 +82,7 @@ def create(
         product_code,
         description=description,
         job_id=job_id,
-        s3_url=location,
+        cluster_log_url=location,
         prediction_preference=preference,
         app_id=app_id,
     )

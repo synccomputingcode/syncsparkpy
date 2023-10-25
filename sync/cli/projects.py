@@ -63,11 +63,18 @@ def get(project: dict):
     default=CONFIG.default_prediction_preference,
 )
 @click.option(
+    "--auto-apply-recs",
+    is_flag=True,
+    default=False,
+    help="Automatically apply project recommendations",
+)
+@click.option(
     "-i", "--app-id", help="External identifier often based on the project's target application"
 )
 def create(
     name: str,
     product_code: str,
+    auto_apply_recs: bool,
     description: str = None,
     job_id: str = None,
     location: str = None,
@@ -84,6 +91,7 @@ def create(
         job_id=job_id,
         s3_url=location,
         prediction_preference=preference,
+        auto_apply_recs=auto_apply_recs,
         app_id=app_id,
     )
     project = response.result
@@ -106,15 +114,24 @@ def create(
     type=click.Choice(Preference),
     default=CONFIG.default_prediction_preference,
 )
+@click.option("--auto-apply-recs", type=bool, help="Automatically apply project recommendations")
 def update(
     project_id: str,
     description: str = None,
     location: str = None,
     app_id: str = None,
     preference: Preference = None,
+    auto_apply_recs: bool = None,
 ):
     """Update a project"""
-    response = update_project(project_id, description, location, app_id, preference)
+    response = update_project(
+        project_id,
+        description=description,
+        s3_url=location,
+        app_id=app_id,
+        prediction_preference=preference,
+        auto_apply_recs=auto_apply_recs,
+    )
     if response.result:
         click.echo("Project updated")
     else:

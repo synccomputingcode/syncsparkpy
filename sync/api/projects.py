@@ -47,6 +47,7 @@ def create_project(
     job_id: str = None,
     s3_url: str = None,
     prediction_preference: Preference = Preference.ECONOMY,
+    auto_apply_recs: bool = False,
     prediction_params: dict = None,
     app_id: str = None,
 ) -> Response[dict]:
@@ -64,6 +65,8 @@ def create_project(
     :type s3_url: str, optional
     :param prediction_preference: preferred prediction solution, defaults to `Preference.ECONOMY`
     :type prediction_preference: Preference, optional
+    :param auto_apply_recs: automatically apply project recommendations, defaults to False
+    :type auto_apply_recs: bool, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/create_project_v1_projects_post>`__
     :type prediction_params: dict, optional
     :param app_id: Apache Spark application identifier, defaults to None
@@ -80,6 +83,7 @@ def create_project(
                 "job_id": job_id,
                 "s3_url": s3_url,
                 "prediction_preference": prediction_preference,
+                "auto_apply_recs": auto_apply_recs,
                 "prediction_params": prediction_params,
                 "app_id": app_id,
             }
@@ -104,6 +108,7 @@ def update_project(
     s3_url: str = None,
     app_id: str = None,
     prediction_preference: Preference = None,
+    auto_apply_recs: bool = None,
     prediction_params: dict = None,
 ) -> Response[dict]:
     """Updates a project's mutable properties
@@ -118,6 +123,8 @@ def update_project(
     :type app_id: str, optional
     :param prediction_preference: default preference for predictions, defaults to None
     :type prediction_preference: Preference, optional
+    :param auto_apply_recs: automatically apply project recommendations, defaults to None
+    :type auto_apply_recs: bool, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/update_project_v1_projects__project_id__put>`__
     :type prediction_preference: dict, optional
     :return: updated project
@@ -132,6 +139,8 @@ def update_project(
         project_update["app_id"] = app_id
     if prediction_preference:
         project_update["prediction_preference"] = prediction_preference
+    if auto_apply_recs is not None:
+        project_update["auto_apply_recs"] = auto_apply_recs
     if prediction_params:
         project_update["prediction_params"] = prediction_params
 

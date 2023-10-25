@@ -1208,7 +1208,7 @@ def terminate_cluster(cluster_id: str) -> Response[dict]:
 
 
 def _wait_for_cluster_termination(
-    cluster_id: str, timeout_seconds=300, poll_seconds=10
+    cluster_id: str, timeout_seconds=600, poll_seconds=10
 ) -> Response[dict]:
     start_seconds = time.time()
     cluster = get_default_client().get_cluster(cluster_id)

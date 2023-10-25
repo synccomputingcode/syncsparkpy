@@ -533,17 +533,18 @@ def apply_prediction(
     job = databricks_client.get_job(job_id)
 
     job_clusters = _get_project_job_clusters(job)
-    project_job_path = job_clusters.get(project_id)
+    project_cluster = job_clusters.get(project_id)
 
-    if not project_job_path:
+    if not project_cluster:
         if len(job_clusters) == 1 and None in job_clusters:
-            project_job_path = job_clusters[None]
+            project_cluster = job_clusters[None]
         else:
             return Response(
                 error=DatabricksError(
                     message=f"Unable to locate cluster in job {job_id} for project {project_id}"
                 )
             )
+    project_cluster_path, _ = project_cluster
 
     if preference:
         prediction_cluster = prediction["solutions"][preference]["configuration"]
@@ -555,15 +556,15 @@ def apply_prediction(
     if "cluster_name" in prediction_cluster:
         del prediction_cluster["cluster_name"]
 
-    if project_job_path[0] == "job_clusters":
+    if project_cluster_path[0] == "job_clusters":
         new_settings = {
             "job_clusters": [
-                {"job_cluster_key": project_job_path[1], "new_cluster": prediction_cluster}
+                {"job_cluster_key": project_cluster_path[1], "new_cluster": prediction_cluster}
             ]
         }
     else:
         new_settings = {
-            "tasks": [{"task_key": project_job_path[1], "new_cluster": prediction_cluster}]
+            "tasks": [{"task_key": project_cluster_path[1], "new_cluster": prediction_cluster}]
         }
 
     response = databricks_client.update_job(job_id, new_settings)

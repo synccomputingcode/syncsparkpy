@@ -242,6 +242,11 @@ def _clear_cluster_report_errors(cluster_report_orig: dict) -> dict:
     """Clears error messages from the cluster_events field
     This circumvents issues where certain strange characters in the error fields of Azure cluster
     reports were causing the client to throw errors when trying to make submissions.
+
+    :param cluster_report_orig: cluster_report
+    :type cluster_report_orig: dict
+    :return: cleared cluster report
+    :rtype: dict
     """
     cluster_report = cluster_report_orig.copy()
 

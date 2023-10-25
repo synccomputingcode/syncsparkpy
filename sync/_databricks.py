@@ -1413,15 +1413,17 @@ def _get_eventlog_from_s3(
         poll_num_attempts += 1
 
     if contents:
+        logger.info(f"Found eventlog at location: {prefix}.")
         eventlog_zip = io.BytesIO()
         eventlog_zip_file = zipfile.ZipFile(eventlog_zip, "a", zipfile.ZIP_DEFLATED)
+        logger.info("Initiated append write of the zip file")
 
         for content in contents:
             obj = s3.get_object(Bucket=bucket, Key=content["Key"])
             eventlog_zip_file.writestr(content["Key"].split("/")[-1], obj["Body"].read())
-
+        
         eventlog_zip_file.close()
-
+        logger.info("Completed append write of the zip file")
         return Response(result=eventlog_zip.getvalue())
 
     return Response(

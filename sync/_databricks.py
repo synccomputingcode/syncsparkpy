@@ -661,6 +661,61 @@ def get_prediction_cluster(
     return prediction_response
 
 
+def apply_project_recommendation(job_id: str, project_id: str, recommendation_id: str = None):
+    """Updates jobs with prediction configuration
+
+    :param job_id: ID of job to apply prediction to
+    :type job_id: str
+    :param project_id: Sync project ID
+    :type project_id: str
+    :param recommendation_id: Sync prediction ID, defaults to latest in project
+    :type recommendation_id: str, optional
+    :return: ID of applied recommendation
+    :rtype: Response[str]
+    """
+    databricks_client = get_default_client()
+
+    job = databricks_client.get_job(job_id)
+    job_clusters = _get_project_job_clusters(job)
+
+    project_cluster = job_clusters.get(project_id)
+    if not project_cluster:
+        if len(job_clusters) == 1 and None in job_clusters:
+            project_cluster = job_clusters[None]
+        else:
+            return Response(
+                error=DatabricksError(
+                    message=f"Unable to locate cluster in job {job_id} for project {project_id}"
+                )
+            )
+
+    project_cluster_path, project_cluster_def = project_cluster
+
+    if project_cluster_path[0] == "job_clusters":
+        new_cluster_def = get_recommendation_cluster(
+            project_cluster_def, project_id, recommendation_id
+        )
+        new_settings = {
+            "job_clusters": [
+                {"job_cluster_key": project_cluster_path[1], "new_cluster": new_cluster_def}
+            ]
+        }
+    else:
+        new_cluster_def = get_recommendation_cluster(
+            project_cluster_def, project_id, recommendation_id
+        )
+        new_settings = {
+            "tasks": [{"task_key": project_cluster_path[1], "new_cluster": new_cluster_def}]
+        }
+
+    response = databricks_client.update_job(job_id, new_settings)
+
+    if "error_code" in response:
+        return Response(error=DatabricksAPIError(**response))
+
+    return Response(result=recommendation_id)
+
+
 def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Response[dict]:
     """Apply project configuration to a job.
 
@@ -1202,8 +1257,8 @@ def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
 def _get_project_job_clusters(
     job: dict,
     exclude_tasks: Union[Collection[str], None] = None,
-) -> Dict[str, Tuple[str]]:
-    """Returns a mapping of project IDs to cluster paths.
+) -> Dict[str, Tuple[Tuple[str], dict]]:
+    """Returns a mapping of project IDs to cluster paths and clusters.
 
     Cluster paths are tuples that can be used to locate clusters in a job object, e.g.
 
@@ -1227,14 +1282,14 @@ def _get_project_job_clusters(
 
             if task_cluster:
                 cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
-                all_project_clusters[cluster_project_id].append(task_cluster_path)
+                all_project_clusters[cluster_project_id].append((task_cluster_path, task_cluster))
 
     filtered_project_clusters = {}
-    for project_id, cluster_paths in all_project_clusters.items():
-        if len(cluster_paths) > 1:
+    for project_id, clusters in all_project_clusters.items():
+        if len(clusters) > 1:
             logger.warning(f"More than 1 cluster found for project ID {project_id}")
         else:
-            filtered_project_clusters[project_id] = cluster_paths[0]
+            filtered_project_clusters[project_id] = clusters[0]
 
     return filtered_project_clusters
 

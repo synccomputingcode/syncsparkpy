@@ -150,7 +150,7 @@ def get_project_job_flow(job_flow: dict, project_id: str) -> Response[dict]:
         tags["sync:run-id"] = run_id
         result_job_flow["Tags"] = [{"Key": tag[0], "Value": tag[1]} for tag in tags.items()]
 
-        s3_url = _project.get("s3_url")
+        s3_url = _project.get("cluster_log_url")
         if s3_url:
             parsed_project_url = urlparse(f"{s3_url.strip('/')}/{project_id}")
             eventlog_props = {
@@ -335,7 +335,7 @@ def get_project_cluster_report(  # noqa: C901
 
     project = project_response.result
     if project:
-        project_url = project.get("s3_url")
+        project_url = project.get("cluster_log_url")
         if project_url:
             parsed_project_url = urlparse(f"{project_url}/{project['id']}")
             project_prefix = parsed_project_url.path.strip("/")
@@ -431,17 +431,17 @@ def run_job_flow(job_flow: dict, project_id: str = None, region_name: str = None
         if project_response.error:
             return project_response
         project = project_response.result
-        if project.get("s3_url"):
+        if project.get("cluster_log_url"):
             match = re.match(
                 RUN_DIR_PATTERN_TEMPLATE.format(
-                    project_prefix=project["s3_url"], project_id=project_id, run_id=run_id
+                    project_prefix=project["cluster_log_url"], project_id=project_id, run_id=run_id
                 ),
                 event_log_response.result or "",
             )
             if match:
                 run_dir = match.group()
             else:
-                run_dir = f"{project['s3_url']}/{project['id']}/{datetime.datetime.utcnow().strftime(TIME_FORMAT)}/{run_id}"
+                run_dir = f"{project['cluster_log_url']}/{project['id']}/{datetime.datetime.utcnow().strftime(TIME_FORMAT)}/{run_id}"
 
             error = _upload_object(
                 job_flow,
@@ -652,7 +652,7 @@ def _get_existing_run_dir(
     project_response = get_project(project_id)
     project = project_response.result
     if project:
-        s3_url = project.get("s3_url")
+        s3_url = project.get("cluster_log_url")
         if s3_url:
             parsed_s3_url = urlparse(s3_url)
             s3 = boto.client("s3")

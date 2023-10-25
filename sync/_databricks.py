@@ -19,7 +19,11 @@ from sync.api.predictions import (
     get_prediction,
     get_predictions,
 )
-from sync.api.projects import create_project_submission_with_eventlog_bytes, get_project
+from sync.api.projects import (
+    create_project_submission_with_eventlog_bytes,
+    get_project,
+    get_project_recommendation,
+)
 from sync.clients.databricks import get_default_client
 from sync.config import CONFIG
 from sync.models import DatabricksAPIError, DatabricksClusterReport, DatabricksError, Response
@@ -385,11 +389,11 @@ def get_cluster_report(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks, project_id)
+    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
     cluster_tasks = project_cluster_tasks.get(project_id)
     if not cluster_tasks:
         return Response(
-            error=DatabricksError(f"Failed to locate cluster for project ID {project_id}")
+            error=DatabricksError(message=f"Failed to locate cluster for project ID {project_id}")
         )
 
     return _get_cluster_report(
@@ -717,6 +721,92 @@ def apply_project_recommendation(job_id: str, project_id: str, recommendation_id
     return Response(result=recommendation_id)
 
 
+def get_recommendation_job(job_id: str, project_id: str, recommendation_id: str) -> Response[dict]:
+    """Apply the recommendation to the specified job.
+
+    The basis job can only have tasks that run on the same cluster. That cluster is updated with the
+    configuration from the prediction and returned in the result job configuration. Use this function
+    to apply a prediction to an existing job or test a prediction with a one-off run.
+
+    :param job_id: basis job ID
+    :type job_id: str
+    :param project_id: Sync project ID
+    :type project_id: str
+    :param recommendation_id: recommendation ID
+    :type recommendation_id: str
+    :return: job object with recommendation applied to it
+    :rtype: Response[dict]
+    """
+    job = get_default_client().get_job(job_id)
+
+    if "error_code" in job:
+        return Response(error=DatabricksAPIError(**job))
+
+    job_settings = job["settings"]
+    tasks = job_settings.get("tasks", [])
+    if tasks:
+        cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
+        cluster = cluster_response.result
+        if cluster:
+            recommendation_cluster_response = get_recommendation_cluster(
+                cluster, project_id, recommendation_id
+            )
+            recommendation_cluster = recommendation_cluster_response.result
+            if recommendation_cluster:
+                cluster_key = tasks[0].get("job_cluster_key")
+                if cluster_key:
+                    job_settings["job_clusters"] = [
+                        j
+                        for j in job_settings["job_clusters"]
+                        if j.get("job_cluster_key") != cluster_key
+                    ] + [{"job_cluster_key": cluster_key, "new_cluster": recommendation_cluster}]
+                else:
+                    # For `new_cluster` definitions, Databricks will automatically assign the newly created cluster a name,
+                    # and will reject any run submissions where the `cluster_name` is pre-populated
+                    if "cluster_name" in recommendation_cluster:
+                        del recommendation_cluster["cluster_name"]
+                    tasks[0]["new_cluster"] = recommendation_cluster
+                return Response(result=job)
+            return recommendation_cluster_response
+        return cluster_response
+    return Response(error=DatabricksError(message="No task found in job"))
+
+
+def get_recommendation_cluster(
+    cluster: dict, project_id: str, recommendation_id: str
+) -> Response[dict]:
+    """Apply the recommendation to the provided cluster.
+
+    The cluster is updated with configuration from the prediction and returned in the result.
+
+    :param cluster: Databricks cluster object
+    :type cluster: dict
+    :param project_id: Sync project ID
+    :type project_id: str
+    :param recommendation_id: The id of the recommendation to fetch and apply to the given cluster
+    :type recommendation_id: str, optional
+    :return: job object with prediction applied to it
+    :rtype: Response[dict]
+    """
+    recommendation_response = get_project_recommendation(project_id, recommendation_id)
+    recommendation = recommendation_response.result.get("recommendation")
+    if recommendation:
+        # num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
+        #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster
+        #  with `num_workers`) for a cluster that was originally autoscaled, we want to make sure to remove this
+        #  prior configuration
+        if "num_workers" in cluster:
+            del cluster["num_workers"]
+
+        if "autoscale" in cluster:
+            del cluster["autoscale"]
+
+        recommendation_cluster = _deep_update(cluster, recommendation["configuration"])
+
+        return Response(result=recommendation_cluster)
+    return recommendation_response
+
+
 def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Response[dict]:
     """Apply project configuration to a job.
 
@@ -807,13 +897,13 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
             }
         }
 
-        s3_url = project.get("s3_url")
-        if s3_url:
+        cluster_log_url = urlparse(project.get("cluster_log_url"))
+        if cluster_log_url.scheme == "s3":
             result.update(
                 {
                     "cluster_log_conf": {
                         "s3": {
-                            "destination": f"{s3_url}/{project_id}",
+                            "destination": f"{cluster_log_url.geturl()}/{project_id}",
                             "enable_encryption": True,
                             "region": region_name or boto.client("s3").meta.region_name,
                             "canned_acl": "bucket-owner-full-control",
@@ -821,6 +911,18 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
                     }
                 }
             )
+
+        elif cluster_log_url.scheme == "dbfs":
+            result.update(
+                {
+                    "cluster_log_conf": {
+                        "dbfs": {
+                            "destination": f"{cluster_log_url.geturl()}/{project_id}",
+                        }
+                    }
+                }
+            )
+
         return Response(result=result)
     return project_response
 

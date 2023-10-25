@@ -47,7 +47,9 @@ class AccessReport(List[AccessReportLine]):
         name = f"{method.__self__.meta._service_model._service_description['metadata']['serviceId']} {''.join(word.capitalize() for word in method.__func__.__name__.split('_'))}"
         try:
             method(**params)
-        except ClientError as error:  # as when the code is 'AccessDeniedException', a bad parameter like a mistyped cluster ID yields a botocore.errorfactory.InvalidRequestException with code 'InvalidRequestException'
+        except (
+            ClientError
+        ) as error:  # as when the code is 'AccessDeniedException', a bad parameter like a mistyped cluster ID yields a botocore.errorfactory.InvalidRequestException with code 'InvalidRequestException'
             if error.response.get("Error", {}).get("Code") != "DryRunOperation":
                 line = AccessReportLine(name, error_status, str(error))
         except Exception as exc:
@@ -76,6 +78,10 @@ class PredictionError(Error):
 
 class ProjectError(Error):
     code: str = Field("Project Error", const=True)
+
+
+class RecommendationError(Error):
+    code: str = Field("Recommendation Error", const=True)
 
 
 class SubmissionError(Error):

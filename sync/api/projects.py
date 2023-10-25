@@ -2,6 +2,7 @@
 """
 import io
 import logging
+from time import sleep
 from typing import List
 from urllib.parse import urlparse
 
@@ -9,7 +10,14 @@ import httpx
 
 from sync.api.predictions import generate_presigned_url, get_predictions
 from sync.clients.sync import get_default_client
-from sync.models import Platform, Preference, ProjectError, Response, SubmissionError
+from sync.models import (
+    Platform,
+    Preference,
+    ProjectError,
+    RecommendationError,
+    Response,
+    SubmissionError,
+)
 
 logger = logging.getLogger()
 
@@ -45,8 +53,9 @@ def create_project(
     product_code: str,
     description: str = None,
     job_id: str = None,
-    s3_url: str = None,
+    cluster_log_url: str = None,
     prediction_preference: Preference = Preference.ECONOMY,
+    auto_apply_recs: bool = False,
     prediction_params: dict = None,
     app_id: str = None,
 ) -> Response[dict]:
@@ -60,10 +69,12 @@ def create_project(
     :type description: str, optional
     :param job_id: Databricks job ID, defaults to None
     :type job_id: str, optional
-    :param s3_url: S3 URL under which to store project configurations and logs, defaults to None
-    :type s3_url: str, optional
+    :param cluster_log_url: S3 or DBFS URL under which to store project configurations and logs, defaults to None
+    :type cluster_log_url: str, optional
     :param prediction_preference: preferred prediction solution, defaults to `Preference.ECONOMY`
     :type prediction_preference: Preference, optional
+    :param auto_apply_recs: automatically apply project recommendations, defaults to False
+    :type auto_apply_recs: bool, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/create_project_v1_projects_post>`__
     :type prediction_params: dict, optional
     :param app_id: Apache Spark application identifier, defaults to None
@@ -78,8 +89,9 @@ def create_project(
                 "product_code": product_code,
                 "description": description,
                 "job_id": job_id,
-                "s3_url": s3_url,
+                "cluster_log_url": cluster_log_url,
                 "prediction_preference": prediction_preference,
+                "auto_apply_recs": auto_apply_recs,
                 "prediction_params": prediction_params,
                 "app_id": app_id,
             }
@@ -101,9 +113,10 @@ def get_project(project_id: str) -> Response[dict]:
 def update_project(
     project_id: str,
     description: str = None,
-    s3_url: str = None,
+    cluster_log_url: str = None,
     app_id: str = None,
     prediction_preference: Preference = None,
+    auto_apply_recs: bool = None,
     prediction_params: dict = None,
 ) -> Response[dict]:
     """Updates a project's mutable properties
@@ -112,12 +125,14 @@ def update_project(
     :type project_id: str
     :param description: description, defaults to None
     :type description: str, optional
-    :param s3_url: location of project event logs and configurations, defaults to None
-    :type s3_url: str, optional
+    :param cluster_log_url: location of project event logs and configurations, defaults to None
+    :type cluster_log_url: str, optional
     :param app_id: external identifier, defaults to None
     :type app_id: str, optional
     :param prediction_preference: default preference for predictions, defaults to None
     :type prediction_preference: Preference, optional
+    :param auto_apply_recs: automatically apply project recommendations, defaults to None
+    :type auto_apply_recs: bool, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/update_project_v1_projects__project_id__put>`__
     :type prediction_preference: dict, optional
     :return: updated project
@@ -126,12 +141,14 @@ def update_project(
     project_update = {}
     if description:
         project_update["description"] = description
-    if s3_url:
-        project_update["s3_url"] = s3_url
+    if cluster_log_url:
+        project_update["cluster_log_url"] = cluster_log_url
     if app_id:
         project_update["app_id"] = app_id
     if prediction_preference:
         project_update["prediction_preference"] = prediction_preference
+    if auto_apply_recs is not None:
+        project_update["auto_apply_recs"] = auto_apply_recs
     if prediction_params:
         project_update["prediction_params"] = prediction_params
 
@@ -187,7 +204,7 @@ def delete_project(project_id: str) -> Response[str]:
 def create_project_submission(
     platform: Platform, cluster_report: dict, eventlog_url: str, project_id: str
 ) -> Response[str]:
-    """Create prediction
+    """Create a submission
 
     :param platform: platform, e.g. "aws-emr"
     :type platform: Platform
@@ -211,19 +228,52 @@ def create_project_submission(
     else:
         return Response(error=SubmissionError(message="Unsupported event log URL scheme"))
 
+    payload = {
+        "product": platform,
+        "cluster_report": cluster_report,
+        "event_log_uri": eventlog_http_url,
+    }
+
+    logger.info(payload)
+
     response = get_default_client().create_project_submission(
         project_id,
-        {
-            "product": platform,
-            "cluster_report": cluster_report,
-            "event_log_uri": eventlog_http_url,
-        },
+        payload,
     )
 
     if response.get("error"):
         return Response(**response)
 
     return Response(result=response["result"]["submission_id"])
+
+
+def _clear_cluster_report_errors(cluster_report_orig: dict) -> dict:
+    """Clears error messages from the cluster_events field
+    This circumvents issues where certain strange characters in the error fields of Azure cluster
+    reports were causing the client to throw errors when trying to make submissions.
+
+    :param cluster_report_orig: cluster_report
+    :type cluster_report_orig: dict
+    :return: cleared cluster report
+    :rtype: dict
+    """
+    cluster_report = cluster_report_orig.copy()
+
+    def clear_error(event: dict):
+        try:
+            del event["details"]["reason"]["parameters"]["azure_error_message"]
+        except KeyError:
+            pass
+        try:
+            del event["details"]["reason"]["parameters"]["databricks_error_message"]
+        except KeyError:
+            pass
+
+    try:
+        list(map(clear_error, cluster_report["cluster_events"]["events"]))
+    except KeyError:
+        pass
+    return cluster_report
 
 
 def create_project_submission_with_eventlog_bytes(
@@ -233,7 +283,7 @@ def create_project_submission_with_eventlog_bytes(
     eventlog_bytes: bytes,
     project_id: str,
 ) -> Response[str]:
-    """Creates a prediction giving event log bytes instead of a URL
+    """Creates a submission given event log bytes instead of a URL
 
     :param platform: platform, e.g. "aws-emr"
     :type platform: Platform
@@ -243,14 +293,15 @@ def create_project_submission_with_eventlog_bytes(
     :type eventlog_name: str
     :param eventlog_bytes: encoded event log
     :type eventlog_bytes: bytes
-    :param project_id: ID of project to which the prediction belongs, defaults to None
-    :type project_id: str, optional
+    :param project_id: ID of project to which the submission belongs
+    :type project_id: str
     :return: prediction ID
     :rtype: Response[str]
     """
     # TODO - best way to handle "no eventlog"
+    cluster_report_clear = _clear_cluster_report_errors(cluster_report)
     response = get_default_client().create_project_submission(
-        project_id, {"product_code": platform, "cluster_report": cluster_report}
+        project_id, {"product_code": platform, "cluster_report": cluster_report_clear}
     )
 
     if response.get("error"):
@@ -269,3 +320,60 @@ def create_project_submission_with_eventlog_bytes(
         return Response(error=SubmissionError(message="Failed to upload event log"))
 
     return Response(result=response["result"]["submission_id"])
+
+
+def create_project_recommendation(project_id: str, **options) -> Response[str]:
+    """Creates a prediction given a project id
+
+    :param project_id: ID of project to which the prediction belongs, defaults to None
+    :type project_id: str, optional
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    response = get_default_client().create_project_recommendation(project_id, **options)
+
+    if response.get("error"):
+        return Response(**response)
+
+    return Response(result=response["result"]["id"])
+
+
+def wait_for_recommendation(project_id: str, recommendation_id: str) -> Response[dict]:
+    """Get a recommendation, wait if it's not ready
+
+    :param project_id: project ID
+    :type project_id: str
+    :param recommendation_id: recommendation ID
+    :type recommendation_id: str
+    :return: recommendation object
+    :rtype: Response[dict]
+    """
+    response = get_project_recommendation(project_id, recommendation_id)
+    while response:
+        result = response.result
+        if result:
+            if result["state"] == "SUCCESS":
+                return Response(result=result)
+            if result["state"] == "FAILURE":
+                return Response(error=RecommendationError(message="Recommendation failed"))
+        logger.info("Waiting for recommendation")
+        sleep(10)
+        response = get_project_recommendation(project_id, recommendation_id)
+
+
+def get_project_recommendation(project_id: str, recommendation_id: str) -> Response[dict]:
+    """Get a specific recommendation for a project id
+
+    :param project_id: project ID
+    :type project_id: str
+    :param recommendation_id: recommendation ID
+    :type recommendation_id: str
+    :return: recommendation object
+    :rtype: Response[dict]
+    """
+    response = get_default_client().get_project_recommendation(project_id, recommendation_id)
+
+    if response.get("error"):
+        return Response(**response)
+
+    return Response(result=response["result"])

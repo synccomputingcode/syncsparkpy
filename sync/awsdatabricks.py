@@ -15,6 +15,7 @@ from sync._databricks import (
     _get_cluster_instances_from_dbfs,
     _wait_for_cluster_termination,
     apply_prediction,
+    apply_project_recommendation,
     create_and_record_run,
     create_and_wait_for_run,
     create_cluster,
@@ -85,6 +86,7 @@ __all__ = [
     "terminate_cluster",
     "event_log_poll_duration_seconds",
     "apply_prediction",
+    "apply_project_recommendation",
 ]
 
 

@@ -293,6 +293,31 @@ def apply_prediction(
 
 
 @click.command
+@click.argument("job-id")
+@click.argument("project-id")
+@click.argument("recommendation-id")
+@pass_platform
+def apply_recommendation(
+    platform: Platform,
+    job_id: str,
+    project_id: str,
+    recommendation_id: str = None,
+):
+    """Apply a project recommendation to a job"""
+    if platform is Platform.AWS_DATABRICKS:
+        import sync.awsdatabricks as databricks
+    elif platform is Platform.AZURE_DATABRICKS:
+        import sync.azuredatabricks as databricks
+
+    response = databricks.apply_project_recommendation(job_id, project_id, recommendation_id)
+    recommendation_id = response.result
+    if recommendation_id:
+        click.echo(f"Applied recommendation {recommendation_id} to job {job_id}")
+    else:
+        click.echo(f"Failed to apply recommendation. {response.error}", err=True)
+
+
+@click.command
 @click.argument("cluster-id")
 @pass_platform
 def monitor_cluster(platform: Platform, cluster_id: str):

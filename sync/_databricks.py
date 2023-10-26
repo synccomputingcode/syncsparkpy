@@ -157,22 +157,22 @@ def create_prediction_for_run(
 
     project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
 
-    cluster_id = None
+    cluster_tasks = None
     if project_id:
-        if project_id in project_cluster_tasks:
-            cluster_id, tasks = project_cluster_tasks.get(project_id)
+        cluster_tasks = project_cluster_tasks.get(project_id)
 
-    if not cluster_id:
-        if None in project_cluster_tasks and len(project_cluster_tasks) == 1:
-            # If there's only 1 cluster and it's not tagged with project ID assume that's the one for the project
-            cluster_id, tasks = project_cluster_tasks.get(None)
-
-    if not cluster_id:
-        return Response(
-            error=DatabricksError(
-                message=f"No cluster found in run {run_id} for project {project_id}"
+    if not cluster_tasks:
+        if len(project_cluster_tasks) == 1:
+            # If there's only 1 cluster assume that's the one for the project
+            cluster_tasks = next(iter(project_cluster_tasks.values()))
+        else:
+            return Response(
+                error=DatabricksError(
+                    message=f"No cluster found in run {run_id} for project {project_id}"
+                )
             )
-        )
+
+    cluster_id, tasks = cluster_tasks
 
     return _create_prediction(
         cluster_id, tasks, plan_type, compute_type, project_id, allow_incomplete_cluster_report
@@ -298,11 +298,19 @@ def create_submission_for_run(
 
     project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
 
-    if project_id in project_cluster_tasks:
-        cluster_id, tasks = project_cluster_tasks.get(project_id)
-    elif None in project_cluster_tasks and len(project_cluster_tasks) == 1:
-        # If there's only 1 cluster and it's not tagged with project ID assume that's the one for the project
-        cluster_id, tasks = project_cluster_tasks.get(None)
+    cluster_tasks = project_cluster_tasks.get(project_id)
+    if not cluster_tasks:
+        if len(project_cluster_tasks) == 1:
+            # If there's only 1 cluster assume that's the one for the project
+            cluster_tasks = next(iter(project_cluster_tasks.values()))
+        else:
+            return Response(
+                error=DatabricksError(
+                    message=f"Unable to locate cluster in run {run_id} for project {project_id}"
+                )
+            )
+
+    cluster_id, tasks = cluster_tasks
 
     run_information_response = _get_run_information(
         cluster_id,
@@ -390,6 +398,7 @@ def get_cluster_report(
         return Response(error=DatabricksAPIError(**run))
 
     project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
+
     cluster_tasks = project_cluster_tasks.get(project_id)
     if not cluster_tasks:
         return Response(
@@ -459,9 +468,11 @@ def record_run(
     if project_id:
         if project_id in project_cluster_tasks:
             filtered_project_cluster_tasks = {project_id: project_cluster_tasks.get(project_id)}
-        elif None in project_cluster_tasks and len(project_cluster_tasks) == 1:
-            # If there's only 1 cluster and it's not tagged with project ID assume that's the one for the project
-            filtered_project_cluster_tasks = {project_id: project_cluster_tasks.get(None)}
+        elif len(project_cluster_tasks) == 1:
+            # If there's only 1 cluster assume that's the one for the project
+            filtered_project_cluster_tasks = {
+                project_id: next(iter(project_cluster_tasks.values()))
+            }
     else:
         filtered_project_cluster_tasks = {
             cluster_project_id: cluster_tasks
@@ -534,20 +545,21 @@ def apply_prediction(
     prediction = prediction_response.result
 
     databricks_client = get_default_client()
+
     job = databricks_client.get_job(job_id)
-
     job_clusters = _get_project_job_clusters(job)
-    project_cluster = job_clusters.get(project_id)
 
+    project_cluster = job_clusters.get(project_id)
     if not project_cluster:
-        if len(job_clusters) == 1 and None in job_clusters:
-            project_cluster = job_clusters[None]
+        if len(job_clusters) == 1:
+            project_cluster = next(iter(job_clusters.values()))
         else:
             return Response(
                 error=DatabricksError(
                     message=f"Unable to locate cluster in job {job_id} for project {project_id}"
                 )
             )
+
     project_cluster_path, _ = project_cluster
 
     if preference:
@@ -666,15 +678,15 @@ def get_prediction_cluster(
     return prediction_response
 
 
-def apply_project_recommendation(job_id: str, project_id: str, recommendation_id: str = None):
-    """Updates jobs with prediction configuration
+def apply_project_recommendation(job_id: str, project_id: str, recommendation_id: str):
+    """Updates jobs with project recommendation
 
     :param job_id: ID of job to apply prediction to
     :type job_id: str
     :param project_id: Sync project ID
     :type project_id: str
-    :param recommendation_id: Sync prediction ID, defaults to latest in project
-    :type recommendation_id: str, optional
+    :param recommendation_id: Sync project recommendation ID
+    :type recommendation_id: str
     :return: ID of applied recommendation
     :rtype: Response[str]
     """
@@ -685,8 +697,8 @@ def apply_project_recommendation(job_id: str, project_id: str, recommendation_id
 
     project_cluster = job_clusters.get(project_id)
     if not project_cluster:
-        if len(job_clusters) == 1 and None in job_clusters:
-            project_cluster = job_clusters[None]
+        if len(job_clusters) == 1:
+            project_cluster = next(iter(job_clusters.values()))
         else:
             return Response(
                 error=DatabricksError(
@@ -696,19 +708,20 @@ def apply_project_recommendation(job_id: str, project_id: str, recommendation_id
 
     project_cluster_path, project_cluster_def = project_cluster
 
+    new_cluster_def_response = get_recommendation_cluster(
+        project_cluster_def, project_id, recommendation_id
+    )
+    if new_cluster_def_response.error:
+        return new_cluster_def_response
+    new_cluster_def = new_cluster_def_response.result
+
     if project_cluster_path[0] == "job_clusters":
-        new_cluster_def = get_recommendation_cluster(
-            project_cluster_def, project_id, recommendation_id
-        )
         new_settings = {
             "job_clusters": [
                 {"job_cluster_key": project_cluster_path[1], "new_cluster": new_cluster_def}
             ]
         }
     else:
-        new_cluster_def = get_recommendation_cluster(
-            project_cluster_def, project_id, recommendation_id
-        )
         new_settings = {
             "tasks": [{"task_key": project_cluster_path[1], "new_cluster": new_cluster_def}]
         }

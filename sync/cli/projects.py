@@ -127,7 +127,7 @@ def update(
     response = update_project(
         project_id,
         description=description,
-        s3_url=location,
+        cluster_log_url=location,
         app_id=app_id,
         prediction_preference=preference,
         auto_apply_recs=auto_apply_recs,

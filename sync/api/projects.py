@@ -19,7 +19,7 @@ from sync.models import (
     SubmissionError,
 )
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 
 def get_prediction(project_id: str, preference: Preference = None) -> Response[dict]:

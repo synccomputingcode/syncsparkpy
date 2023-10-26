@@ -18,6 +18,8 @@ from sync._databricks import (
     _get_all_cluster_events,
     _get_cluster_instances_from_dbfs,
     _wait_for_cluster_termination,
+    apply_prediction,
+    apply_project_recommendation,
     create_and_record_run,
     create_and_wait_for_run,
     create_cluster,
@@ -32,6 +34,7 @@ from sync._databricks import (
     get_project_cluster,
     get_project_cluster_settings,
     get_project_job,
+    get_recommendation_job,
     record_run,
     run_and_record_job,
     run_and_record_job_object,
@@ -69,7 +72,9 @@ __all__ = [
     "record_run",
     "get_prediction_job",
     "get_prediction_cluster",
+    "get_project_cluster",
     "get_project_job",
+    "get_recommendation_job",
     "get_project_cluster",
     "get_project_cluster_settings",
     "run_job_object",
@@ -84,6 +89,8 @@ __all__ = [
     "wait_for_run_and_cluster",
     "terminate_cluster",
     "event_log_poll_duration_seconds",
+    "apply_prediction",
+    "apply_project_recommendation",
 ]
 
 

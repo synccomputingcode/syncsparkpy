@@ -14,8 +14,16 @@ from urllib.parse import urlparse
 
 import boto3 as boto
 
-from sync.api.predictions import create_prediction_with_eventlog_bytes, get_prediction
-from sync.api.projects import create_project_submission_with_eventlog_bytes, get_project
+from sync.api.predictions import (
+    create_prediction_with_eventlog_bytes,
+    get_prediction,
+    get_predictions,
+)
+from sync.api.projects import (
+    create_project_submission_with_eventlog_bytes,
+    get_project,
+    get_project_recommendation,
+)
 from sync.clients.databricks import get_default_client
 from sync.config import CONFIG
 from sync.models import DatabricksAPIError, DatabricksClusterReport, DatabricksError, Response
@@ -149,22 +157,22 @@ def create_prediction_for_run(
 
     project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
 
-    cluster_id = None
+    cluster_tasks = None
     if project_id:
-        if project_id in project_cluster_tasks:
-            cluster_id, tasks = project_cluster_tasks.get(project_id)
+        cluster_tasks = project_cluster_tasks.get(project_id)
 
-    if not cluster_id:
-        if None in project_cluster_tasks and len(project_cluster_tasks) == 1:
-            # If there's only 1 cluster and it's not tagged with project ID assume that's the one for the project
-            cluster_id, tasks = project_cluster_tasks.get(None)
-
-    if not cluster_id:
-        return Response(
-            error=DatabricksError(
-                message=f"No cluster found in run {run_id} for project {project_id}"
+    if not cluster_tasks:
+        if len(project_cluster_tasks) == 1:
+            # If there's only 1 cluster assume that's the one for the project
+            cluster_tasks = next(iter(project_cluster_tasks.values()))
+        else:
+            return Response(
+                error=DatabricksError(
+                    message=f"No cluster found in run {run_id} for project {project_id}"
+                )
             )
-        )
+
+    cluster_id, tasks = cluster_tasks
 
     return _create_prediction(
         cluster_id, tasks, plan_type, compute_type, project_id, allow_incomplete_cluster_report
@@ -290,11 +298,19 @@ def create_submission_for_run(
 
     project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
 
-    if project_id in project_cluster_tasks:
-        cluster_id, tasks = project_cluster_tasks.get(project_id)
-    elif None in project_cluster_tasks and len(project_cluster_tasks) == 1:
-        # If there's only 1 cluster and it's not tagged with project ID assume that's the one for the project
-        cluster_id, tasks = project_cluster_tasks.get(None)
+    cluster_tasks = project_cluster_tasks.get(project_id)
+    if not cluster_tasks:
+        if len(project_cluster_tasks) == 1:
+            # If there's only 1 cluster assume that's the one for the project
+            cluster_tasks = next(iter(project_cluster_tasks.values()))
+        else:
+            return Response(
+                error=DatabricksError(
+                    message=f"Unable to locate cluster in run {run_id} for project {project_id}"
+                )
+            )
+
+    cluster_id, tasks = cluster_tasks
 
     run_information_response = _get_run_information(
         cluster_id,
@@ -381,11 +397,12 @@ def get_cluster_report(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks, project_id)
+    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
+
     cluster_tasks = project_cluster_tasks.get(project_id)
     if not cluster_tasks:
         return Response(
-            error=DatabricksError(f"Failed to locate cluster for project ID {project_id}")
+            error=DatabricksError(message=f"Failed to locate cluster for project ID {project_id}")
         )
 
     return _get_cluster_report(
@@ -451,9 +468,11 @@ def record_run(
     if project_id:
         if project_id in project_cluster_tasks:
             filtered_project_cluster_tasks = {project_id: project_cluster_tasks.get(project_id)}
-        elif None in project_cluster_tasks and len(project_cluster_tasks) == 1:
-            # If there's only 1 cluster and it's not tagged with project ID assume that's the one for the project
-            filtered_project_cluster_tasks = {project_id: project_cluster_tasks.get(None)}
+        elif len(project_cluster_tasks) == 1:
+            # If there's only 1 cluster assume that's the one for the project
+            filtered_project_cluster_tasks = {
+                project_id: next(iter(project_cluster_tasks.values()))
+            }
     else:
         filtered_project_cluster_tasks = {
             cluster_project_id: cluster_tasks
@@ -493,6 +512,83 @@ def record_run(
         return Response(
             error=DatabricksError(message=f"Failed to create any predictions for run {run_id}")
         )
+
+
+def apply_prediction(
+    job_id: str, project_id: str, prediction_id: str = None, preference: str = None
+):
+    """Updates jobs with prediction configuration
+
+    :param job_id: ID of job to apply prediction to
+    :type job_id: str
+    :param project_id: Sync project ID
+    :type project_id: str
+    :param prediction_id: Sync prediction ID, defaults to latest in project
+    :type prediction_id: str, optional
+    :param preference: Prediction preference, defaults to "recommended" then "economy"
+    :type preference: str, optional
+    :return: ID of applied prediction
+    :rtype: Response[str]
+    """
+    if prediction_id:
+        prediction_response = get_prediction(prediction_id, preference)
+    else:
+        predictions_response = get_predictions(project_id=project_id)
+        if predictions_response.error:
+            return predictions_response
+        prediction_id = predictions_response.result[0]["prediction_id"]
+        prediction_response = get_prediction(prediction_id, preference)
+
+    if prediction_response.error:
+        return prediction_response
+
+    prediction = prediction_response.result
+
+    databricks_client = get_default_client()
+
+    job = databricks_client.get_job(job_id)
+    job_clusters = _get_project_job_clusters(job)
+
+    project_cluster = job_clusters.get(project_id)
+    if not project_cluster:
+        if len(job_clusters) == 1:
+            project_cluster = next(iter(job_clusters.values()))
+        else:
+            return Response(
+                error=DatabricksError(
+                    message=f"Unable to locate cluster in job {job_id} for project {project_id}"
+                )
+            )
+
+    project_cluster_path, _ = project_cluster
+
+    if preference:
+        prediction_cluster = prediction["solutions"][preference]["configuration"]
+    else:
+        prediction_cluster = prediction["solutions"].get(
+            "recommended", prediction["solutions"]["economy"]
+        )["configuration"]
+
+    if "cluster_name" in prediction_cluster:
+        del prediction_cluster["cluster_name"]
+
+    if project_cluster_path[0] == "job_clusters":
+        new_settings = {
+            "job_clusters": [
+                {"job_cluster_key": project_cluster_path[1], "new_cluster": prediction_cluster}
+            ]
+        }
+    else:
+        new_settings = {
+            "tasks": [{"task_key": project_cluster_path[1], "new_cluster": prediction_cluster}]
+        }
+
+    response = databricks_client.update_job(job_id, new_settings)
+
+    if "error_code" in response:
+        return Response(error=DatabricksAPIError(**response))
+
+    return Response(result=prediction_id)
 
 
 def get_prediction_job(
@@ -580,6 +676,148 @@ def get_prediction_cluster(
 
         return Response(result=prediction_cluster)
     return prediction_response
+
+
+def apply_project_recommendation(job_id: str, project_id: str, recommendation_id: str):
+    """Updates jobs with project recommendation
+
+    :param job_id: ID of job to apply prediction to
+    :type job_id: str
+    :param project_id: Sync project ID
+    :type project_id: str
+    :param recommendation_id: Sync project recommendation ID
+    :type recommendation_id: str
+    :return: ID of applied recommendation
+    :rtype: Response[str]
+    """
+    databricks_client = get_default_client()
+
+    job = databricks_client.get_job(job_id)
+    job_clusters = _get_project_job_clusters(job)
+
+    project_cluster = job_clusters.get(project_id)
+    if not project_cluster:
+        if len(job_clusters) == 1:
+            project_cluster = next(iter(job_clusters.values()))
+        else:
+            return Response(
+                error=DatabricksError(
+                    message=f"Unable to locate cluster in job {job_id} for project {project_id}"
+                )
+            )
+
+    project_cluster_path, project_cluster_def = project_cluster
+
+    new_cluster_def_response = get_recommendation_cluster(
+        project_cluster_def, project_id, recommendation_id
+    )
+    if new_cluster_def_response.error:
+        return new_cluster_def_response
+    new_cluster_def = new_cluster_def_response.result
+
+    if project_cluster_path[0] == "job_clusters":
+        new_settings = {
+            "job_clusters": [
+                {"job_cluster_key": project_cluster_path[1], "new_cluster": new_cluster_def}
+            ]
+        }
+    else:
+        new_settings = {
+            "tasks": [{"task_key": project_cluster_path[1], "new_cluster": new_cluster_def}]
+        }
+
+    response = databricks_client.update_job(job_id, new_settings)
+
+    if "error_code" in response:
+        return Response(error=DatabricksAPIError(**response))
+
+    return Response(result=recommendation_id)
+
+
+def get_recommendation_job(job_id: str, project_id: str, recommendation_id: str) -> Response[dict]:
+    """Apply the recommendation to the specified job.
+
+    The basis job can only have tasks that run on the same cluster. That cluster is updated with the
+    configuration from the prediction and returned in the result job configuration. Use this function
+    to apply a prediction to an existing job or test a prediction with a one-off run.
+
+    :param job_id: basis job ID
+    :type job_id: str
+    :param project_id: Sync project ID
+    :type project_id: str
+    :param recommendation_id: recommendation ID
+    :type recommendation_id: str
+    :return: job object with recommendation applied to it
+    :rtype: Response[dict]
+    """
+    job = get_default_client().get_job(job_id)
+
+    if "error_code" in job:
+        return Response(error=DatabricksAPIError(**job))
+
+    job_settings = job["settings"]
+    tasks = job_settings.get("tasks", [])
+    if tasks:
+        cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
+        cluster = cluster_response.result
+        if cluster:
+            recommendation_cluster_response = get_recommendation_cluster(
+                cluster, project_id, recommendation_id
+            )
+            recommendation_cluster = recommendation_cluster_response.result
+            if recommendation_cluster:
+                cluster_key = tasks[0].get("job_cluster_key")
+                if cluster_key:
+                    job_settings["job_clusters"] = [
+                        j
+                        for j in job_settings["job_clusters"]
+                        if j.get("job_cluster_key") != cluster_key
+                    ] + [{"job_cluster_key": cluster_key, "new_cluster": recommendation_cluster}]
+                else:
+                    # For `new_cluster` definitions, Databricks will automatically assign the newly created cluster a name,
+                    # and will reject any run submissions where the `cluster_name` is pre-populated
+                    if "cluster_name" in recommendation_cluster:
+                        del recommendation_cluster["cluster_name"]
+                    tasks[0]["new_cluster"] = recommendation_cluster
+                return Response(result=job)
+            return recommendation_cluster_response
+        return cluster_response
+    return Response(error=DatabricksError(message="No task found in job"))
+
+
+def get_recommendation_cluster(
+    cluster: dict, project_id: str, recommendation_id: str
+) -> Response[dict]:
+    """Apply the recommendation to the provided cluster.
+
+    The cluster is updated with configuration from the prediction and returned in the result.
+
+    :param cluster: Databricks cluster object
+    :type cluster: dict
+    :param project_id: Sync project ID
+    :type project_id: str
+    :param recommendation_id: The id of the recommendation to fetch and apply to the given cluster
+    :type recommendation_id: str, optional
+    :return: job object with prediction applied to it
+    :rtype: Response[dict]
+    """
+    recommendation_response = get_project_recommendation(project_id, recommendation_id)
+    recommendation = recommendation_response.result.get("recommendation")
+    if recommendation:
+        # num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
+        #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster
+        #  with `num_workers`) for a cluster that was originally autoscaled, we want to make sure to remove this
+        #  prior configuration
+        if "num_workers" in cluster:
+            del cluster["num_workers"]
+
+        if "autoscale" in cluster:
+            del cluster["autoscale"]
+
+        recommendation_cluster = _deep_update(cluster, recommendation["configuration"])
+
+        return Response(result=recommendation_cluster)
+    return recommendation_response
 
 
 def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Response[dict]:
@@ -672,13 +910,13 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
             }
         }
 
-        s3_url = project.get("s3_url")
-        if s3_url:
+        cluster_log_url = urlparse(project.get("cluster_log_url"))
+        if cluster_log_url.scheme == "s3":
             result.update(
                 {
                     "cluster_log_conf": {
                         "s3": {
-                            "destination": f"{s3_url}/{project_id}",
+                            "destination": f"{cluster_log_url.geturl()}/{project_id}",
                             "enable_encryption": True,
                             "region": region_name or boto.client("s3").meta.region_name,
                             "canned_acl": "bucket-owner-full-control",
@@ -686,6 +924,18 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
                     }
                 }
             )
+
+        elif cluster_log_url.scheme == "dbfs":
+            result.update(
+                {
+                    "cluster_log_conf": {
+                        "dbfs": {
+                            "destination": f"{cluster_log_url.geturl()}/{project_id}",
+                        }
+                    }
+                }
+            )
+
         return Response(result=result)
     return project_response
 
@@ -1119,6 +1369,46 @@ def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
                 return Response(result=cluster["new_cluster"])
         return Response(error=DatabricksError(message="No cluster found for task"))
     return Response(error=DatabricksError(message="Not all tasks use the same cluster"))
+
+
+def _get_project_job_clusters(
+    job: dict,
+    exclude_tasks: Union[Collection[str], None] = None,
+) -> Dict[str, Tuple[Tuple[str], dict]]:
+    """Returns a mapping of project IDs to cluster paths and clusters.
+
+    Cluster paths are tuples that can be used to locate clusters in a job object, e.g.
+
+    ("tasks", <task_key>) or ("job_clusters", <job_cluster_key>)
+
+    Items for project IDs with more than 1 associated cluster are omitted"""
+    job_clusters = {
+        c["job_cluster_key"]: c["new_cluster"] for c in job["settings"].get("job_clusters", [])
+    }
+    all_project_clusters = defaultdict(list)
+
+    for task in job["settings"]["tasks"]:
+        if not exclude_tasks or task["task_key"] not in exclude_tasks:
+            task_cluster = task.get("new_cluster")
+            if task_cluster:
+                task_cluster_path = ("tasks", task["task_key"])
+
+            if not task_cluster:
+                task_cluster = job_clusters.get(task.get("job_cluster_key"))
+                task_cluster_path = ("job_clusters", task.get("job_cluster_key"))
+
+            if task_cluster:
+                cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
+                all_project_clusters[cluster_project_id].append((task_cluster_path, task_cluster))
+
+    filtered_project_clusters = {}
+    for project_id, clusters in all_project_clusters.items():
+        if len(clusters) > 1:
+            logger.warning(f"More than 1 cluster found for project ID {project_id}")
+        else:
+            filtered_project_clusters[project_id] = clusters[0]
+
+    return filtered_project_clusters
 
 
 def _get_project_cluster_tasks(

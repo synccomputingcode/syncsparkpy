@@ -3,6 +3,7 @@ from typing import Tuple
 import click
 import orjson
 
+from sync.api.projects import create_project_recommendation, get_project_recommendation
 from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import DatabricksComputeType, DatabricksPlanType, Platform, Preference
@@ -172,7 +173,37 @@ def create_submission(
         click.echo(f"Submission ID: {submission}")
     else:
         click.echo(f"Failed to submit data. {submission_response.error}", err=True)
-    return
+
+
+@click.command
+@click.argument("project", callback=validate_project)
+def create_recommendation(project: dict):
+    rec_response = create_project_recommendation(project["id"])
+    recommendation_id = rec_response.result
+    if recommendation_id:
+        click.echo(f"Recommendation ID: {recommendation_id}")
+    else:
+        click.echo(f"Failed to create recommendation. {rec_response.error}", err=True)
+
+
+@click.command
+@click.argument("project", callback=validate_project)
+@click.argument("recommendation-id")
+def get_recommendation(project: dict, recommendation_id: str):
+    rec_response = get_project_recommendation(project["id"], recommendation_id)
+    recommendation = rec_response.result
+    if recommendation:
+        if recommendation["state"] == "FAILURE":
+            click.echo("Recommendation generation failed.", err=True)
+        else:
+            click.echo(
+                orjson.dumps(
+                    recommendation,
+                    option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_UTC_Z,
+                )
+            )
+    else:
+        click.echo(f"Failed to get recommendation. {rec_response.error}", err=True)
 
 
 @click.command
@@ -227,6 +258,63 @@ def get_cluster_report(
         )
     else:
         click.echo(f"Failed to create cluster report. {config_response.error}", err=True)
+
+
+@click.command
+@click.argument("job-id")
+@click.argument("project-id")
+@click.option("--prediction-id")
+@click.option(
+    "-p",
+    "--preference",
+    type=click.Choice([p.value for p in Preference]),
+    default=CONFIG.default_prediction_preference,
+)
+@pass_platform
+def apply_prediction(
+    platform: Platform,
+    job_id: str,
+    project_id: str,
+    prediction_id: str = None,
+    preference: str = None,
+):
+    """Apply a prediction to a job"""
+    if platform is Platform.AWS_DATABRICKS:
+        import sync.awsdatabricks as databricks
+    elif platform is Platform.AZURE_DATABRICKS:
+        import sync.azuredatabricks as databricks
+
+    response = databricks.apply_prediction(job_id, project_id, prediction_id, preference)
+    prediction_id = response.result
+    if prediction_id:
+        click.echo(f"Applied prediction {prediction_id} to job {job_id}")
+    else:
+        click.echo(f"Failed to apply prediction. {response.error}", err=True)
+
+
+@click.command
+@click.argument("job-id")
+@click.argument("project-id")
+@click.argument("recommendation-id")
+@pass_platform
+def apply_recommendation(
+    platform: Platform,
+    job_id: str,
+    project_id: str,
+    recommendation_id: str = None,
+):
+    """Apply a project recommendation to a job"""
+    if platform is Platform.AWS_DATABRICKS:
+        import sync.awsdatabricks as databricks
+    elif platform is Platform.AZURE_DATABRICKS:
+        import sync.azuredatabricks as databricks
+
+    response = databricks.apply_project_recommendation(job_id, project_id, recommendation_id)
+    recommendation_id = response.result
+    if recommendation_id:
+        click.echo(f"Applied recommendation {recommendation_id} to job {job_id}")
+    else:
+        click.echo(f"Failed to apply recommendation. {response.error}", err=True)
 
 
 @click.command

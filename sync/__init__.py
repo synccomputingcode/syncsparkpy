@@ -1,4 +1,4 @@
 """Library for leveraging the power of Sync"""
-__version__ = "0.4.4"
+__version__ = "0.4.6"
 
 TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"

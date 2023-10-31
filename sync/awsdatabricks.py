@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from time import sleep
 from typing import Dict, List, Tuple
 from urllib.parse import urlparse
@@ -203,15 +204,15 @@ def _get_cluster_report(
 
     cluster = cluster_response.result
 
-    reservations_response, volumes_response = _get_aws_cluster_info(cluster)
+    instances_response, volumes_response = _get_aws_cluster_info(cluster)
 
-    if reservations_response.error:
+    if instances_response.error:
         if allow_incomplete:
-            logger.warning(reservations_response.error)
+            logger.warning(instances_response.error)
         else:
-            return reservations_response
+            return instances_response
 
-    # The volumes data is less critical than reservations, so allow
+    # The volumes data is less critical than instances, so allow
     # the cluster report to get created even if the volumes response
     # has an error.
     if volumes_response.error:
@@ -229,7 +230,7 @@ def _get_cluster_report(
             cluster_events=cluster_events,
             volumes=volumes,
             tasks=cluster_tasks,
-            instances=reservations_response.result,
+            instances=instances_response.result,
         )
     )
 
@@ -274,12 +275,12 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
 
         try:
             ec2 = boto.client("ec2", region_name=aws_region_name)
-            reservations = _get_ec2_instances(cluster_id, ec2)
-            volumes = _get_ebs_volumes_for_reservations(reservations, ec2)
+            instances = _get_ec2_instances(cluster_id, ec2)
+            volumes = _get_ebs_volumes_for_instances(instances, ec2)
 
             cluster_info = {
-                "Reservations": reservations,
-                "Volumes": volumes,
+                "instances": instances,
+                "volumes": volumes,
             }
 
         except Exception as exc:
@@ -292,19 +293,17 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
             + "https://docs.synccomputing.com/sync-gradient/integrating-with-gradient/databricks-workflows"
         )
 
-    if not cluster_info or not cluster_info.get("Reservations"):
-        reservations_response = Response(
-            error=DatabricksError(message=missing_message("instances"))
-        )
+    if not cluster_info or not cluster_info.get("instances"):
+        instances_response = Response(error=DatabricksError(message=missing_message("instances")))
     else:
-        reservations_response = Response(result={"Reservations": cluster_info["Reservations"]})
+        instances_response = Response(result={"instances": cluster_info["instances"]})
 
-    if not cluster_info or not cluster_info.get("Volumes"):
+    if not cluster_info or not cluster_info.get("volumes"):
         volumes_response = Response(error=DatabricksError(message=missing_message("ebs volumes")))
     else:
-        volumes_response = Response(result={"Volumes": cluster_info.get("Volumes")})
+        volumes_response = Response(result={"volumes": cluster_info.get("volumes")})
 
-    return reservations_response, volumes_response
+    return instances_response, volumes_response
 
 
 def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
@@ -315,7 +314,7 @@ def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
         logger.warning(f"Failed to retrieve cluster info from S3 with key, '{file_key}': {err}")
 
 
-def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
+def monitor_cluster(cluster_id: str, polling_period: int = 10) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
 
@@ -333,6 +332,45 @@ def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
         )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
+
+
+def _update_monitored_instances(
+    current_insts: list[dict],
+    running_inst_timeline_by_id: dict[str, dict],
+    retired_inst_timeline_list: list[dict],
+) -> list[dict]:
+
+    current_datetime = datetime.now(timezone.utc)
+    current_running_ids = set({})
+    for inst in current_insts:
+        id = inst["InstanceId"]
+
+        if inst["State"]["Name"] == "running":
+            current_running_ids.add(id)
+            if id not in running_inst_timeline_by_id:
+                # A new instance in the "running" state has been detected, so add it
+                # the dict of running instances and initialize the times.
+                logger.info(f"Adding new instance timeline: {id}")
+                running_inst_timeline_by_id[id] = {
+                    "instance_id": id,
+                    "first_seen_running_time": current_datetime,
+                    "last_seen_running_time": current_datetime,
+                }
+
+            else:
+                # If an instance was already in the list of running instances then update
+                # then just update the last_seen_running_time.
+                running_inst_timeline_by_id[id]["last_seen_running_time"] = current_datetime
+
+    # If an instance that was previous "running" is no longer in that state then its moves into
+    # the retired list. That item's datetime values will no longer update.
+    ids_to_retire = set(running_inst_timeline_by_id.keys()).difference(current_running_ids)
+    if ids_to_retire:
+        for id in ids_to_retire:
+            logger.info(f"Retiring instance: {id}")
+            retired_inst_timeline_list.append(running_inst_timeline_by_id.pop(id))
+
+    return running_inst_timeline_by_id, current_running_ids, retired_inst_timeline_list
 
 
 def _monitor_cluster(
@@ -363,60 +401,41 @@ def _monitor_cluster(
             logger.info("Saving state to DBFS")
             write_dbfs_file(path, body, dbx_client)
 
-    old_reservations = []
-    recorded_volumes = {}
+    all_inst_by_id = {}
+    running_inst_timeline_by_id = {}
+    retired_inst_timeline_list = []
+    recorded_volumes_by_id = {}
     while True:
         try:
-            new_reservations = _get_ec2_instances(cluster_id, ec2)
-            new_volumes = _get_ebs_volumes_for_reservations(new_reservations, ec2)
-
-            recorded_volumes.update({v["VolumeId"]: v for v in new_volumes})
-
-            new_instance_id_to_reservation = dict(
-                zip(
-                    (res["Instances"][0]["InstanceId"] for res in new_reservations),
-                    new_reservations,
-                )
+            current_insts = _get_ec2_instances(cluster_id, ec2)
+            recorded_volumes_by_id.update(
+                {v["VolumeId"]: v for v in _get_ebs_volumes_for_instances(current_insts, ec2)}
             )
 
-            old_instance_id_to_reservation = dict(
-                zip(
-                    (res["Instances"][0]["InstanceId"] for res in old_reservations),
-                    old_reservations,
-                )
+            # Update all_instances with any instance carrying the cluster tag
+            for inst in current_insts:
+                all_inst_by_id[inst["InstanceId"]] = inst
+
+            # Update the
+            (
+                running_inst_timeline_by_id,
+                current_running_ids,
+                retired_inst_timeline_list,
+            ) = _update_monitored_instances(
+                current_insts, running_inst_timeline_by_id, retired_inst_timeline_list
             )
 
-            old_instance_ids = set(old_instance_id_to_reservation)
-            new_instance_ids = set(new_instance_id_to_reservation)
-
-            # If we have the exact same set of instances, prefer the new set...
-            if old_instance_ids == new_instance_ids:
-                reservations = new_reservations
-            else:
-                # Otherwise, update old references and include any new instances in the list
-                newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
-                updated_instance_ids = new_instance_ids.intersection(old_instance_ids)
-                removed_instance_ids = old_instance_ids.difference(new_instance_ids)
-
-                removed_reservations = [
-                    old_instance_id_to_reservation[id] for id in removed_instance_ids
-                ]
-                updated_reservations = [
-                    new_instance_id_to_reservation[id] for id in updated_instance_ids
-                ]
-                new_reservations = [
-                    new_instance_id_to_reservation[id] for id in newly_added_instance_ids
-                ]
-
-                reservations = [*removed_reservations, *updated_reservations, *new_reservations]
+            all_timelines = retired_inst_timeline_list + list(running_inst_timeline_by_id.values())
 
             write_file(
                 orjson.dumps(
-                    {"Reservations": reservations, "Volumes": list(recorded_volumes.values())}
+                    {
+                        "instances": list(all_inst_by_id.values()),
+                        "instance_timelines": all_timelines,
+                        "volumes": list(recorded_volumes_by_id.values()),
+                    }
                 )
             )
-
-            old_reservations = reservations
         except Exception as e:
             logger.error(f"Exception encountered while polling cluster: {e}")
 
@@ -438,25 +457,24 @@ def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> Li
         reservations += response.get("Reservations", [])
         next_token = response.get("NextToken")
 
-    num_instances = 0
-    if reservations:
-        num_instances = len(reservations[0].get("Instances", []))
-    logger.info(f"Identified {num_instances} instances in cluster")
+    instances = []
+    for res in reservations:
+        for inst in res.get("Instances", []):
+            instances.append(inst)
+    logger.info(f"Identified {len(instances)} instances in cluster")
 
-    return reservations
+    return instances
 
 
-def _get_ebs_volumes_for_reservations(
-    reservations: List[Dict], ec2_client: "botocore.client.ec2"
+def _get_ebs_volumes_for_instances(
+    instances: List[Dict], ec2_client: "botocore.client.ec2"
 ) -> List[Dict]:
     """Get all ebs volumes associated with a list of instance reservations"""
 
     instance_ids = []
-    if reservations:
-        for res in reservations:
-            for instance in res.get("Instances", []):
-                if instance:
-                    instance_ids.append(instance.get("InstanceId"))
+    if instances:
+        for instance in instances:
+            instance_ids.append(instance.get("InstanceId"))
 
     volumes = []
     if instance_ids:

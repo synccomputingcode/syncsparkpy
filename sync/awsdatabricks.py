@@ -244,10 +244,10 @@ sync._databricks._get_cluster_report = _get_cluster_report
 setattr(sync._databricks, "__claim", __name__)
 
 
-def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]]:
-    cluster_info = None
-    aws_region_name = DB_CONFIG.aws_region_name
+def _load_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]]:
 
+    cluster_info = None
+    cluster_id = None
     cluster_log_dest = _cluster_log_destination(cluster)
 
     if cluster_log_dest:
@@ -272,9 +272,8 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
     if not cluster_info:
-
         try:
-            ec2 = boto.client("ec2", region_name=aws_region_name)
+            ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
             instances = _get_ec2_instances(cluster_id, ec2)
             volumes = _get_ebs_volumes_for_instances(instances, ec2)
 
@@ -286,6 +285,15 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
         except Exception as exc:
             logger.warning(exc)
 
+    return cluster_info, cluster_id
+
+
+def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]]:
+
+    aws_region_name = DB_CONFIG.aws_region_name
+
+    cluster_info, cluster_id = _load_aws_cluster_info(cluster)
+
     def missing_message(input: str) -> str:
         return (
             f"Unable to find any active or recently terminated {input} for cluster `{cluster_id}` in `{aws_region_name}`. "
@@ -295,8 +303,17 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
 
     if not cluster_info or not cluster_info.get("instances"):
         instances_response = Response(error=DatabricksError(message=missing_message("instances")))
+    elif not cluster_info or not cluster_info.get("instance_timelines"):
+        instances_response = Response(
+            error=DatabricksError(message=missing_message("instance timelines"))
+        )
     else:
-        instances_response = Response(result={"instances": cluster_info["instances"]})
+        instances_response = Response(
+            result={
+                "instances": cluster_info["instances"],
+                "timelines": cluster_info["instance_timelines"],
+            }
+        )
 
     if not cluster_info or not cluster_info.get("volumes"):
         volumes_response = Response(error=DatabricksError(message=missing_message("ebs volumes")))

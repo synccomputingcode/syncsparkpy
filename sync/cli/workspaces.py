@@ -4,6 +4,7 @@ import orjson
 from sync.api import workspace
 from sync.cli.util import OPTIONAL_DEFAULT, validate_project
 from sync.config import API_KEY, DB_CONFIG
+from sync.models import DatabricksPlanType
 
 
 @click.group
@@ -18,16 +19,30 @@ def workspaces():
     "--instance-profile-arn",
     help="Instance profile to apply to Sync reporting job and on-boarded Databricks jobs",
 )
-@click.option("--databricks-plan-type", help="e.g. 'Standard' or 'Premium'")
+@click.option(
+    "--databricks-plan-type",
+    type=click.Choice(DatabricksPlanType),
+    default=DatabricksPlanType.STANDARD,
+)
 @click.option(
     "--databricks-webhook-id",
     help="UUID of Sync Computing notification destination in the Databricks workspace",
+)
+@click.option(
+    "--aws-region",
+    help="Workspace region",
+)
+@click.option(
+    "--cluster-policy-id",
+    help="ID of cluster policy to apply to Sync job reporting cluster",
 )
 def create_workspace_config(
     workspace_id: str,
     instance_profile_arn: str = None,
     databricks_plan_type: str = None,
     databricks_webhook_id: str = None,
+    aws_region: str = None,
+    cluster_policy_id: str = None,
 ):
     databricks_host = click.prompt(
         "Databricks host (prefix with https://)", default=DB_CONFIG.host if DB_CONFIG else None
@@ -55,6 +70,8 @@ def create_workspace_config(
         instance_profile_arn=instance_profile_arn,
         webhook_id=databricks_webhook_id,
         databricks_plan_type=databricks_plan_type,
+        aws_region=aws_region,
+        cluster_policy_id=cluster_policy_id,
     )
     config = response.result
     if config:
@@ -104,12 +121,22 @@ def list_workspace_configs():
     "--databricks-webhook-id",
     help="UUID of Sync Computing notification destination in the Databricks workspace",
 )
-@click.option("--databricks-plan-type", help="e.g. 'Standard' or 'Premium'")
+@click.option("--databricks-plan-type", type=click.Choice(DatabricksPlanType))
+@click.option(
+    "--aws-region",
+    help="Workspace region",
+)
+@click.option(
+    "--cluster-policy-id",
+    help="ID of cluster policy to apply to Sync job reporting cluster",
+)
 def update_workspace_config(
     workspace_id: str,
     instance_profile_arn: str = None,
     databricks_plan_type: str = None,
     databricks_webhook_id: str = None,
+    aws_region: str = None,
+    cluster_policy_id: str = None,
 ):
     current_config_response = workspace.get_workspace_config(workspace_id)
     current_config = current_config_response.result
@@ -140,6 +167,8 @@ def update_workspace_config(
             instance_profile_arn=instance_profile_arn,
             webhook_id=databricks_webhook_id,
             databricks_plan_type=databricks_plan_type,
+            aws_region=aws_region,
+            cluster_policy_id=cluster_policy_id,
         )
         config = update_config_response.result
         if config:

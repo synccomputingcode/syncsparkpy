@@ -148,35 +148,38 @@ class SyncClient(RetryableHTTPClient):
         headers, content = encode_json(config)
         return self._send(
             self._client.build_request(
-                "POST", f"/v1/databricks/workspace/{workspace_id}", headers=headers, content=content
+                "POST",
+                f"/v1/databricks/workspaces/{workspace_id}",
+                headers=headers,
+                content=content,
             )
         )
 
     def get_workspace_config(self, workspace_id: str) -> dict:
         return self._send(
-            self._client.build_request("GET", f"/v1/databricks/workspace/{workspace_id}")
+            self._client.build_request("GET", f"/v1/databricks/workspaces/{workspace_id}")
         )
 
     def get_workspace_configs(self) -> dict:
-        return self._send(self._client.build_request("GET", "/v1/databricks/workspace"))
+        return self._send(self._client.build_request("GET", "/v1/databricks/workspaces"))
 
     def update_workspace_config(self, workspace_id: str, **updates) -> dict:
         headers, content = encode_json(updates)
         return self._send(
             self._client.build_request(
-                "PUT", f"/v1/databricks/workspace/{workspace_id}", headers=headers, content=content
+                "PUT", f"/v1/databricks/workspaces/{workspace_id}", headers=headers, content=content
             )
         )
 
     def delete_workspace_config(self, workspace_id: str) -> dict:
         return self._send(
-            self._client.build_request("DELETE", f"/v1/databricks/workspace/{workspace_id}")
+            self._client.build_request("DELETE", f"/v1/databricks/workspaces/{workspace_id}")
         )
 
     def reset_webhook_creds(self, workspace_id: str) -> dict:
         return self._send(
             self._client.build_request(
-                "POST", f"/v1/databricks/workspace/{workspace_id}/webhook-credentials"
+                "POST", f"/v1/databricks/workspaces/{workspace_id}/webhook-credentials"
             )
         )
 
@@ -184,8 +187,7 @@ class SyncClient(RetryableHTTPClient):
         return self._send(
             self._client.build_request(
                 "POST",
-                "/integrations/v1/databricks/workspace/setup",
-                params={"workspace_id": workspace_id},
+                f"/v1/databricks/workspaces/{workspace_id}/setup",
             )
         )
 
@@ -194,8 +196,7 @@ class SyncClient(RetryableHTTPClient):
         return self._send(
             self._client.build_request(
                 "POST",
-                "/integrations/v1/databricks/workflow/onboard",
-                params={"workspace_id": workspace_id},
+                f"/v1/databricks/workspaces/{workspace_id}/onboard-workflow",
                 headers=headers,
                 content=content,
             )
@@ -205,7 +206,7 @@ class SyncClient(RetryableHTTPClient):
         response = self._send_request(request)
 
         # A temporary crutch to make this client interface consistent
-        # This was added for DELETE /v1/databricks/workspace/{workspace_id}
+        # This was added for DELETE /v1/databricks/workspaces/{workspace_id}
         if response.status_code == 204:
             return {"result": "OK"}
 

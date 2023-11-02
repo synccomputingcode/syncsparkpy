@@ -15,6 +15,8 @@ def create_workspace_config(
     instance_profile_arn: str = None,
     databricks_plan_type: str = None,
     webhook_id: str = None,
+    aws_region: str = None,
+    cluster_policy_id: str = None,
 ) -> Response[dict]:
     return Response(
         **get_default_client().create_workspace_config(
@@ -26,6 +28,8 @@ def create_workspace_config(
             instance_profile_arn=instance_profile_arn,
             webhook_id=webhook_id,
             plan_type=databricks_plan_type,
+            aws_region=aws_region,
+            cluster_policy_id=cluster_policy_id,
         )
     )
 
@@ -47,6 +51,8 @@ def update_workspace_config(
     instance_profile_arn: str = None,
     databricks_plan_type: str = None,
     webhook_id: str = None,
+    aws_region: str = None,
+    cluster_policy_id: str = None,
 ) -> Response[dict]:
     params = {
         key: value if value != NULL else None
@@ -58,6 +64,8 @@ def update_workspace_config(
             "instance_profile_arn": instance_profile_arn,
             "webhook_id": webhook_id,
             "plan_type": databricks_plan_type,
+            "aws_region": aws_region,
+            "cluster_policy_id": cluster_policy_id,
         }.items()
         if value is not None
     }

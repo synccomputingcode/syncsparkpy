@@ -798,7 +798,7 @@ def get_recommendation_cluster(
     :type project_id: str
     :param recommendation_id: The id of the recommendation to fetch and apply to the given cluster
     :type recommendation_id: str, optional
-    :return: job object with prediction applied to it
+    :return: cluster object with prediction applied to it
     :rtype: Response[dict]
     """
     recommendation_response = get_project_recommendation(project_id, recommendation_id)

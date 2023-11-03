@@ -136,6 +136,11 @@ def get_config() -> Configuration:
 
 
 def get_databricks_config() -> DatabricksConf:
+    """Gets Databricks configuration
+
+    :return: Databricks configuration
+    :rtype: DatabricksConf
+    """
     global _db_config
     if _db_config is None:
         try:
@@ -155,8 +160,16 @@ def get_profile() -> str:
 
 
 def set_profile(profile: str):
-    global _active_profile
+    """Sets the active profile
+
+    :param profile: profile name
+    :type profile: str
+    """
+    global _active_profile, _config, _api_key, _db_config
     _active_profile = profile
+    _config = Configuration(profile=profile)
+    _api_key = APIKey(profile=profile)
+    _db_config = DatabricksConf(profile=profile)
 
 
 CONFIG: Configuration
@@ -178,6 +191,13 @@ def __getattr__(name):
         return get_databricks_config()
     else:
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
+
+def clear_configurations():
+    global _config, _api_key, _db_config
+    _config = None
+    _api_key = None
+    _db_config = None
 
 
 def _get_profile_dir(profile: str) -> Path:

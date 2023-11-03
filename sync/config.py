@@ -156,6 +156,7 @@ def get_profile() -> str:
     :return: active profile
     :rtype: str
     """
+    global _active_profile
     return _active_profile
 
 
@@ -167,9 +168,9 @@ def set_profile(profile: str):
     """
     global _active_profile, _config, _api_key, _db_config
     _active_profile = profile
-    _config = Configuration(profile=profile)
-    _api_key = APIKey(profile=profile)
-    _db_config = DatabricksConf(profile=profile)
+    _config = Configuration()
+    _api_key = APIKey()
+    _db_config = DatabricksConf()
 
 
 CONFIG: Configuration
@@ -193,8 +194,9 @@ def __getattr__(name):
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-def clear_configurations():
-    global _config, _api_key, _db_config
+def clear_configurations(profile: str = "default"):
+    global _config, _api_key, _db_config, _active_profile
+    _active_profile = profile
     _config = None
     _api_key = None
     _db_config = None

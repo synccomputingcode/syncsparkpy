@@ -1,9 +1,11 @@
-import click
-from sync.config import set_profile, get_profile, clear_configurations
-from sync.cli.util import configure_profile
 from pathlib import Path
 
-# Path to the profiles directory
+import click
+
+from sync.cli.util import configure_profile
+from sync.config import set_profile, get_profile, clear_configurations
+
+
 PROFILES_DIR = Path("~/.sync/profiles").expanduser()
 
 
@@ -24,17 +26,17 @@ def create(profile_name, force=False):
     :param force: overwrite existing profile, defaults to False
     :type force: bool, optional
     """
-    if (PROFILES_DIR / profile_name).exists() and not force:
+    profile_dir = PROFILES_DIR / profile_name
+    if profile_dir.exists() and not force:
         click.echo(f"Profile '{profile_name}' already exists. Use -f or --force to overwrite.")
         return
-    elif (PROFILES_DIR / profile_name).exists() and force:
+    elif profile_dir.exists() and force:
         set_given_profile(profile_name)
         click.echo(f"Profile '{profile_name}' already exists. Overwriting.")
-        configure_profile(profile_name)
     else:
-        # clear existing profile config for prompts
-        clear_configurations()
-        configure_profile(profile=profile_name)
+        clear_configurations(profile_name)
+
+    configure_profile(profile=profile_name)
 
 
 @profiles.command()
@@ -46,7 +48,7 @@ def set(profile_name):
     :type profile_name: str
     """
     set_given_profile(profile_name)
-    click.echo(f"Profile set to '{profile_name}'.")
+    click.echo(f"Profile set to '{profile_name}'")
 
 
 @profiles.command()
@@ -77,7 +79,7 @@ def set_given_profile(profile_name):
     """
     profile_dir = PROFILES_DIR / profile_name
     if not profile_dir.exists():
-        click.echo(f"Profile '{profile_name}' does not exist.")
+        click.echo(f"Profile '{profile_name}' does not exist")
         return
 
     set_profile(profile_name)

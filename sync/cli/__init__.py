@@ -7,7 +7,7 @@ import click
 
 from sync.api.predictions import get_products
 from sync.cli import awsdatabricks, awsemr, azuredatabricks, predictions, profiles, projects, workspaces
-from sync.cli.util import OPTIONAL_DEFAULT, configure_profile
+from sync.cli.util import configure_profile
 from sync.clients.sync import get_default_client
 
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"

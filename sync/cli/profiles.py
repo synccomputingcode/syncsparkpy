@@ -21,8 +21,18 @@ def create(profile_name, force=False):
     if (PROFILES_DIR / profile_name).exists() and not force:
         click.echo(f"Profile '{profile_name}' already exists. Use --force to overwrite.")
         return
-    else:
+    elif (PROFILES_DIR / profile_name).exists() and force:
+        set_given_profile(profile_name)
+        click.echo(f"Profile '{profile_name}' already exists. Overwriting.")
         configure_profile(profile_name)
+    else:
+        configure_profile(api_key_id=None,
+                          api_key_secret=None,
+                          prediction_preference=None,
+                          databricks_host=None,
+                          databricks_token=None,
+                          databricks_region=None,
+                          profile=profile_name)
 
 
 @profiles.command()
@@ -30,6 +40,7 @@ def create(profile_name, force=False):
 def set(profile_name):
     """Set the active profile."""
     set_given_profile(profile_name)
+    click.echo(f"Profile set to '{profile_name}'.")
 
 
 @profiles.command()
@@ -60,4 +71,3 @@ def set_given_profile(profile_name):
         return
 
     set_profile(profile_name)
-    click.echo(f"Profile set to '{profile_name}'.")

@@ -1,7 +1,6 @@
 import click
-from sync.config import init
+from sync.config import set_profile, get_profile
 from sync.cli.util import configure_profile
-import json
 from pathlib import Path
 
 # Path to the profiles directory
@@ -24,14 +23,13 @@ def create(profile_name, force=False):
         return
     else:
         configure_profile(profile_name)
-        set_profile(profile_name)
 
 
 @profiles.command()
 @click.argument("profile-name")
 def set(profile_name):
     """Set the active profile."""
-    set_profile(profile_name)
+    set_given_profile(profile_name)
 
 
 @profiles.command()
@@ -47,25 +45,19 @@ def list():
 
 
 @profiles.command()
-def current():
+def get():
     """Return the current profile."""
-    current_profile_dir = PROFILES_DIR / "current_profile"
-    if not current_profile_dir.exists():
-        click.echo("No profile set.")
-        return None
-    else:
-        click.echo(f"Current profile: {current_profile_dir.resolve().name}")
-        return
+    current_profile = get_profile
+    click.echo(f"Current profile: {current_profile}")
+    return
 
 
-def set_profile(profile_name):
+def set_given_profile(profile_name):
     """Set the active profile."""
     profile_dir = PROFILES_DIR / profile_name
     if not profile_dir.exists():
         click.echo(f"Profile '{profile_name}' does not exist.")
         return
 
-    current_profile_dir = PROFILES_DIR / "current_profile"
-    current_profile_dir.symlink_to(profile_dir, target_is_directory=True)
-
+    set_profile(profile_name)
     click.echo(f"Profile set to '{profile_name}'.")

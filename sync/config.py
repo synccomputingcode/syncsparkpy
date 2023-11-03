@@ -36,7 +36,7 @@ class APIKey(BaseSettings):
     class Config:
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return (init_settings, env_settings, json_config_settings_source(CREDENTIALS_FILE, _active_profile))
+            return init_settings, env_settings, json_config_settings_source(CREDENTIALS_FILE, _active_profile)
 
 
 class Configuration(BaseSettings):
@@ -48,7 +48,7 @@ class Configuration(BaseSettings):
 
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return (init_settings, env_settings, json_config_settings_source(CONFIG_FILE, _active_profile))
+            return init_settings, env_settings, json_config_settings_source(CONFIG_FILE, _active_profile)
 
 
 class DatabricksConf(BaseSettings):

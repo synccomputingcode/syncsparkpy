@@ -47,7 +47,7 @@ def list():
 @profiles.command()
 def get():
     """Return the current profile."""
-    current_profile = get_profile
+    current_profile = get_profile()
     click.echo(f"Current profile: {current_profile}")
     return
 

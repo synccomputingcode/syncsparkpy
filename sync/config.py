@@ -17,9 +17,10 @@ CONFIG_FILE = "config"
 DATABRICKS_CONFIG_FILE = "databrickscfg"
 
 
-def json_config_settings_source(path: str) -> Callable[[BaseSettings], Dict[str, Any]]:
+def json_config_settings_source(path: str, profile: str) -> Callable[[BaseSettings], Dict[str, Any]]:
     def source(settings: BaseSettings) -> Dict[str, Any]:
-        config_path = _get_config_dir().joinpath(path)
+        profile_dir = _get_profile_dir(profile)
+        config_path = profile_dir.joinpath(path)
         if config_path.exists():
             with open(config_path) as fobj:
                 return json.load(fobj)
@@ -71,7 +72,7 @@ class DatabricksConf(BaseSettings):
             )
 
 
-def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = None):
+def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = None, profile: str = "default"):
     """Initializes configuration files. Currently only Linux-based systems are supported.
 
     :param api_key: API key
@@ -80,8 +81,10 @@ def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = Non
     :type config: Configuration
     :param db_config: Databricks configuration, defaults to None
     :type db_config: DatabricksConf, optional
+    :param profile: profile name, defaults to "default"
+    :type profile: str, optional
     """
-    config_dir = _get_config_dir()
+    config_dir = _get_profile_dir(profile)
     config_dir.mkdir(exist_ok=True)
 
     credentials_path = config_dir.joinpath(CREDENTIALS_FILE)
@@ -141,6 +144,14 @@ def get_databricks_config() -> DatabricksConf:
     return _db_config
 
 
+def migrate_legacy_config() -> None:
+    """Migrates the old config files to a default profile without the need to run the configure command"""
+    global _profile_compatibility_migration
+    if not _profile_compatibility_migration:
+        _migrate_legacy_config()
+        _profile_compatibility_migration = True
+
+
 CONFIG: Configuration
 _config = None
 API_KEY: APIKey
@@ -148,8 +159,11 @@ _api_key = None
 DB_CONFIG: DatabricksConf
 _db_config = None
 
+_profile_compatibility_migration = False
+
 
 def __getattr__(name):
+    migrate_legacy_config()
     if name == "CONFIG":
         return get_config()
     elif name == "API_KEY":
@@ -160,5 +174,16 @@ def __getattr__(name):
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-def _get_config_dir() -> Path:
-    return Path("~/.sync").expanduser()
+def _migrate_legacy_config() -> None:
+    """ migrating the old config files to a default profile without the need to run the configure command"""
+    default_profile_dir = _get_profile_dir("default")
+    if not default_profile_dir.exists():
+        sync_config_dir = Path("~/.sync").expanduser()
+        if sync_config_dir.is_dir():
+            default_profile_dir.mkdir(parents=True)
+            for config_file in sync_config_dir.glob("*"):
+                config_file.rename(default_profile_dir / config_file.name)
+
+
+def _get_profile_dir(profile: str) -> Path:
+    return Path(f"~/.sync/profiles/{profile}").expanduser()

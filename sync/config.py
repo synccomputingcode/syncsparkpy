@@ -144,12 +144,12 @@ def get_databricks_config() -> DatabricksConf:
     return _db_config
 
 
-def migrate_legacy_config() -> None:
-    """Migrates the old config files to a default profile without the need to run the configure command"""
-    global _profile_compatibility_migration
-    if not _profile_compatibility_migration:
-        _migrate_legacy_config()
-        _profile_compatibility_migration = True
+# def migrate_legacy_config() -> None:
+#     """Migrates the old config files to a default profile without the need to run the configure command"""
+#     global _profile_compatibility_migration
+#     if not _profile_compatibility_migration:
+#         _migrate_legacy_config()
+#         _profile_compatibility_migration = True
 
 
 CONFIG: Configuration
@@ -159,11 +159,11 @@ _api_key = None
 DB_CONFIG: DatabricksConf
 _db_config = None
 
-_profile_compatibility_migration = False
+# _profile_compatibility_migration = False
 
 
 def __getattr__(name):
-    migrate_legacy_config()
+    # migrate_legacy_config()
     if name == "CONFIG":
         return get_config()
     elif name == "API_KEY":
@@ -174,15 +174,15 @@ def __getattr__(name):
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-def _migrate_legacy_config() -> None:
-    """ migrating the old config files to a default profile without the need to run the configure command"""
-    default_profile_dir = _get_profile_dir("default")
-    if not default_profile_dir.exists():
-        sync_config_dir = Path("~/.sync").expanduser()
-        if sync_config_dir.is_dir():
-            default_profile_dir.mkdir(parents=True)
-            for config_file in sync_config_dir.glob("*"):
-                config_file.rename(default_profile_dir / config_file.name)
+# def _migrate_legacy_config() -> None:
+#     """ migrating the old config files to a default profile without the need to run the configure command"""
+#     default_profile_dir = _get_profile_dir("default")
+#     if not default_profile_dir.exists():
+#         sync_config_dir = Path("~/.sync").expanduser()
+#         if sync_config_dir.is_dir():
+#             default_profile_dir.mkdir(parents=True)
+#             for config_file in sync_config_dir.glob("*"):
+#                 config_file.rename(default_profile_dir / config_file.name)
 
 
 def _get_profile_dir(profile: str) -> Path:

@@ -118,6 +118,7 @@ def update_project(
     prediction_preference: Preference = None,
     auto_apply_recs: bool = None,
     prediction_params: dict = None,
+    job_id: str = None,
 ) -> Response[dict]:
     """Updates a project's mutable properties
 
@@ -135,6 +136,8 @@ def update_project(
     :type auto_apply_recs: bool, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/update_project_v1_projects__project_id__put>`__
     :type prediction_preference: dict, optional
+    :param job_id: Databricks job id, defaults to None
+    :type job_id: str, optional
     :return: updated project
     :rtype: Response[dict]
     """
@@ -151,6 +154,8 @@ def update_project(
         project_update["auto_apply_recs"] = auto_apply_recs
     if prediction_params:
         project_update["prediction_params"] = prediction_params
+    if job_id:
+        project_update["job_id"] = job_id
 
     return Response(
         **get_default_client().update_project(

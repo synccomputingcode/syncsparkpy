@@ -514,6 +514,91 @@ def record_run(
         )
 
 
+def submit_job_run(
+    run_id: str,
+    plan_type: str,
+    compute_type: str,
+    project_id: Union[str, None] = None,
+    allow_incomplete_cluster_report: bool = False,
+    exclude_tasks: Union[Collection[str], None] = None,
+) -> Response[List[str]]:
+    """See :py:func:`~create_prediction_for_run`
+
+    If project ID is provided only create a prediction for the cluster tagged with it, or the only cluster if there is such that is untagged.
+    If no project ID is provided then create a prediction for each cluster tagged with a project ID.
+
+    :param run_id: Databricks run ID
+    :type run_id: str
+    :param plan_type: either "Standard", "Premium" or "Enterprise"
+    :type plan_type: str
+    :param compute_type: e.g. "Jobs Compute"
+    :type compute_type: str
+    :param project_id: Sync project ID
+    :type project_id: str, optional, defaults to None
+    :param allow_incomplete_cluster_report: Whether creating a prediction with incomplete cluster report data should be allowable
+    :type allow_incomplete_cluster_report: bool, optional, defaults to False
+    :param exclude_tasks: Keys of tasks (task names) to exclude
+    :type exclude_tasks: Collection[str], optional, defaults to None
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    run = get_default_client().get_run(run_id)
+
+    if "error_code" in run:
+        return Response(error=DatabricksAPIError(**run))
+
+    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
+
+    filtered_project_cluster_tasks = {}
+    if project_id:
+        if project_id in project_cluster_tasks:
+            filtered_project_cluster_tasks = {project_id: project_cluster_tasks.get(project_id)}
+        elif len(project_cluster_tasks) == 1:
+            # If there's only 1 cluster assume that's the one for the project
+            filtered_project_cluster_tasks = {
+                project_id: next(iter(project_cluster_tasks.values()))
+            }
+    else:
+        filtered_project_cluster_tasks = {
+            cluster_project_id: cluster_tasks
+            for cluster_project_id, cluster_tasks in project_cluster_tasks.items()
+            if cluster_project_id
+        }
+
+    if not filtered_project_cluster_tasks:
+        return Response(
+            error=DatabricksError(
+                message=f"No cluster found in run {run_id} for project {project_id}"
+            )
+        )
+
+    prediction_ids = []
+    for cluster_project_id, (cluster_id, tasks) in filtered_project_cluster_tasks.items():
+        prediction_response = _create_prediction(
+            cluster_id,
+            tasks,
+            plan_type,
+            compute_type,
+            cluster_project_id,
+            allow_incomplete_cluster_report,
+        )
+
+        prediction_id = prediction_response.result
+        if prediction_id:
+            prediction_ids.append(prediction_id)
+        else:
+            logger.error(
+                f"Failed to create prediction for cluster {cluster_id} in project {cluster_project_id} - {prediction_response.error}"
+            )
+
+    if prediction_ids:
+        return Response(result=prediction_ids)
+    else:
+        return Response(
+            error=DatabricksError(message=f"Failed to create any predictions for run {run_id}")
+        )
+
+
 def apply_prediction(
     job_id: str, project_id: str, prediction_id: str = None, preference: str = None
 ):

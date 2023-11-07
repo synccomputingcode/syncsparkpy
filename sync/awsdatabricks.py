@@ -1,7 +1,6 @@
 import logging
-from datetime import datetime, timezone
 from time import sleep
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -14,6 +13,7 @@ from sync._databricks import (
     _cluster_log_destination,
     _get_all_cluster_events,
     _get_cluster_instances_from_dbfs,
+    _update_monitored_timelines,
     _wait_for_cluster_termination,
     apply_prediction,
     apply_project_recommendation,
@@ -204,7 +204,7 @@ def _get_cluster_report(
 
     cluster = cluster_response.result
 
-    instances_response, volumes_response = _get_aws_cluster_info(cluster)
+    instances_response, timeline_response, volumes_response = _get_aws_cluster_info(cluster)
 
     if instances_response.error:
         if allow_incomplete:
@@ -221,6 +221,12 @@ def _get_cluster_report(
     else:
         volumes = volumes_response.result
 
+    if timeline_response.error:
+        logger.warning(timeline_response.error)
+        timelines = []
+    else:
+        timelines = timeline_response.result
+
     cluster_events = _get_all_cluster_events(cluster_id)
     return Response(
         result=AWSDatabricksClusterReport(
@@ -231,6 +237,7 @@ def _get_cluster_report(
             volumes=volumes,
             tasks=cluster_tasks,
             instances=instances_response.result,
+            instance_timelines=timelines,
         )
     )
 
@@ -288,7 +295,7 @@ def _load_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict
     return cluster_info, cluster_id
 
 
-def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]]:
+def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict], Response[dict]]:
 
     aws_region_name = DB_CONFIG.aws_region_name
 
@@ -303,24 +310,20 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
 
     if not cluster_info or not cluster_info.get("instances"):
         instances_response = Response(error=DatabricksError(message=missing_message("instances")))
-    elif not cluster_info or not cluster_info.get("instance_timelines"):
-        instances_response = Response(
-            error=DatabricksError(message=missing_message("instance timelines"))
-        )
     else:
-        instances_response = Response(
-            result={
-                "instances": cluster_info["instances"],
-                "timelines": cluster_info["instance_timelines"],
-            }
-        )
+        instances_response = Response(result=cluster_info["instances"])
+
+    if not cluster_info or not cluster_info.get("instance_timelines"):
+        timeline_response = Response(error=DatabricksError(message=missing_message("timelines")))
+    else:
+        timeline_response = Response(result=cluster_info["instance_timelines"])
 
     if not cluster_info or not cluster_info.get("volumes"):
         volumes_response = Response(error=DatabricksError(message=missing_message("ebs volumes")))
     else:
-        volumes_response = Response(result={"volumes": cluster_info.get("volumes")})
+        volumes_response = Response(result=cluster_info.get("volumes"))
 
-    return instances_response, volumes_response
+    return instances_response, timeline_response, volumes_response
 
 
 def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
@@ -349,45 +352,6 @@ def monitor_cluster(cluster_id: str, polling_period: int = 10) -> None:
         )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
-
-
-def _update_monitored_instances(
-    current_insts: list[dict],
-    running_inst_timeline_by_id: dict[str, dict],
-    retired_inst_timeline_list: list[dict],
-) -> list[dict]:
-
-    current_datetime = datetime.now(timezone.utc)
-    current_running_ids = set({})
-    for inst in current_insts:
-        id = inst["InstanceId"]
-
-        if inst["State"]["Name"] == "running":
-            current_running_ids.add(id)
-            if id not in running_inst_timeline_by_id:
-                # A new instance in the "running" state has been detected, so add it
-                # the dict of running instances and initialize the times.
-                logger.info(f"Adding new instance timeline: {id}")
-                running_inst_timeline_by_id[id] = {
-                    "instance_id": id,
-                    "first_seen_running_time": current_datetime,
-                    "last_seen_running_time": current_datetime,
-                }
-
-            else:
-                # If an instance was already in the list of running instances then update
-                # then just update the last_seen_running_time.
-                running_inst_timeline_by_id[id]["last_seen_running_time"] = current_datetime
-
-    # If an instance that was previous "running" is no longer in that state then its moves into
-    # the retired list. That item's datetime values will no longer update.
-    ids_to_retire = set(running_inst_timeline_by_id.keys()).difference(current_running_ids)
-    if ids_to_retire:
-        for id in ids_to_retire:
-            logger.info(f"Retiring instance: {id}")
-            retired_inst_timeline_list.append(running_inst_timeline_by_id.pop(id))
-
-    return running_inst_timeline_by_id, current_running_ids, retired_inst_timeline_list
 
 
 def _monitor_cluster(
@@ -419,8 +383,8 @@ def _monitor_cluster(
             write_dbfs_file(path, body, dbx_client)
 
     all_inst_by_id = {}
-    running_inst_timeline_by_id = {}
-    retired_inst_timeline_list = []
+    active_timelines_by_id = {}
+    retired_timelines = []
     recorded_volumes_by_id = {}
     while True:
         try:
@@ -429,20 +393,20 @@ def _monitor_cluster(
                 {v["VolumeId"]: v for v in _get_ebs_volumes_for_instances(current_insts, ec2)}
             )
 
-            # Update all_instances with any instance carrying the cluster tag
+            # Record new (or overrwite) existing instances.
+            # Separately record the ids of those that are in the "running" state.
+            running_inst_ids = set({})
             for inst in current_insts:
                 all_inst_by_id[inst["InstanceId"]] = inst
+                if inst["State"]["Name"] == "running":
+                    running_inst_ids.add(inst["InstanceId"])
 
-            # Update the
-            (
-                running_inst_timeline_by_id,
-                current_running_ids,
-                retired_inst_timeline_list,
-            ) = _update_monitored_instances(
-                current_insts, running_inst_timeline_by_id, retired_inst_timeline_list
+            active_timelines_by_id, new_retired_timelines = _update_monitored_timelines(
+                running_inst_ids, active_timelines_by_id
             )
 
-            all_timelines = retired_inst_timeline_list + list(running_inst_timeline_by_id.values())
+            retired_timelines.extend(new_retired_timelines)
+            all_timelines = retired_timelines + list(active_timelines_by_id.values())
 
             write_file(
                 orjson.dumps(
@@ -459,7 +423,7 @@ def _monitor_cluster(
         sleep(polling_period)
 
 
-def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[Dict]:
+def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[dict]:
 
     filters = [
         {"Name": "tag:Vendor", "Values": ["Databricks"]},
@@ -484,8 +448,8 @@ def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> Li
 
 
 def _get_ebs_volumes_for_instances(
-    instances: List[Dict], ec2_client: "botocore.client.ec2"
-) -> List[Dict]:
+    instances: List[dict], ec2_client: "botocore.client.ec2"
+) -> List[dict]:
     """Get all ebs volumes associated with a list of instance reservations"""
 
     instance_ids = []

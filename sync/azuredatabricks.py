@@ -17,6 +17,7 @@ from sync._databricks import (
     _cluster_log_destination,
     _get_all_cluster_events,
     _get_cluster_instances_from_dbfs,
+    _update_monitored_timelines,
     _wait_for_cluster_termination,
     apply_prediction,
     apply_project_recommendation,
@@ -227,7 +228,8 @@ def _get_cluster_report(
             cluster=cluster,
             cluster_events=cluster_events,
             tasks=cluster_tasks,
-            instances=instances.result,
+            instances=instances.result.get("instances"),
+            instance_timelines=instances.result.get("timelines"),
         )
     )
 
@@ -278,16 +280,23 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
         compute = _get_azure_client(ComputeManagementClient)
         if resource_group_name:
             vms = compute.virtual_machines.list(resource_group_name=resource_group_name)
+
+            for vm in vms:
+                compute.virtual_machines.instance_view(
+                    resource_group_name=resource_group_name,
+                )
         else:
             logger.warning("Failed to find Databricks managed resource group")
             vms = compute.virtual_machines.list_all()
 
-        cluster_instances = [
-            vm.as_dict()
-            for vm in vms
-            if vm.tags.get("Vendor") == "Databricks"
-            and vm.tags.get("ClusterId") == cluster["cluster_id"]
-        ]
+        cluster_instances = {
+            "instances": [
+                vm.as_dict()
+                for vm in vms
+                if vm.tags.get("Vendor") == "Databricks"
+                and vm.tags.get("ClusterId") == cluster["cluster_id"]
+            ]
+        }
 
     if not cluster_instances:
         no_instances_message = (
@@ -300,10 +309,9 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
     return Response(result=cluster_instances)
 
 
-def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
+def monitor_cluster(cluster_id: str, polling_period: int = 5) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
-
     while not spark_context_id:
         # This is largely just a convenience for when this command is run by someone locally
         logger.info("Waiting for cluster startup...")
@@ -329,6 +337,9 @@ def _monitor_cluster(
     #  we make sure to re-strip our final Prefix
     file_key = f"{base_prefix}/sync_data/{spark_context_id}/cluster_instances.json".strip("/")
 
+    azure_logger = logging.getLogger("azure.core.pipeline.policies.http_logging_policy")
+    azure_logger.setLevel(logging.WARNING)
+
     if filesystem == "dbfs":
         path = format_dbfs_filepath(file_key)
         dbx_client = get_default_client()
@@ -342,64 +353,34 @@ def _monitor_cluster(
         logger.warning("Failed to find Databricks managed resource group")
 
     compute = _get_azure_client(ComputeManagementClient)
-    previous_instances = {}
 
+    all_vms_by_id = {}
+    active_timelines_by_id = {}
+    retired_timelines = []
     while True:
         try:
-            if resource_group_name:
-                vms = compute.virtual_machines.list(resource_group_name=resource_group_name)
-            else:
-                vms = compute.virtual_machines.list_all()
-            new_instances = [
-                vm.as_dict()
-                for vm in vms
-                if vm.tags.get("Vendor") == "Databricks" and vm.tags.get("ClusterId") == cluster_id
-            ]
+            running_vms_by_id = _get_running_vms_by_id(compute, resource_group_name, cluster_id)
 
-            new_instance_id_to_reservation = dict(
-                zip(
-                    (vm["id"] for vm in new_instances),
-                    new_instances,
+            for vm in running_vms_by_id.values():
+                all_vms_by_id[vm["name"]] = vm
+
+            active_timelines_by_id, new_retired_timelines = _update_monitored_timelines(
+                set(running_vms_by_id.keys()), active_timelines_by_id
+            )
+            retired_timelines.extend(new_retired_timelines)
+            all_timelines = retired_timelines + list(active_timelines_by_id.values())
+
+            write_file(
+                orjson.dumps(
+                    {
+                        "instances": list(all_vms_by_id),
+                        "timelines": all_timelines,
+                    }
                 )
             )
 
-            old_instance_id_to_reservation = dict(
-                zip(
-                    (vm["id"] for vm in previous_instances),
-                    previous_instances,
-                )
-            )
-
-            old_instance_ids = set(old_instance_id_to_reservation)
-            new_instance_ids = set(new_instance_id_to_reservation)
-
-            # If we have the exact same set of instances, prefer the new set...
-            if old_instance_ids == new_instance_ids:
-                instances = new_instances
-            else:
-                # Otherwise, update old references and include any new instances in the list
-                newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
-                updated_instance_ids = new_instance_ids.intersection(old_instance_ids)
-                removed_instance_ids = old_instance_ids.difference(new_instance_ids)
-
-                removed_instances = [
-                    old_instance_id_to_reservation[id] for id in removed_instance_ids
-                ]
-                updated_instances = [
-                    new_instance_id_to_reservation[id] for id in updated_instance_ids
-                ]
-                new_instances = [
-                    new_instance_id_to_reservation[id] for id in newly_added_instance_ids
-                ]
-
-                instances = [*removed_instances, *updated_instances, *new_instances]
-
-            write_file(orjson.dumps(instances))
-
-            previous_instances = instances
         except Exception as e:
             logger.error(f"Exception encountered while polling cluster: {e}")
-
         sleep(polling_period)
 
 
@@ -435,3 +416,35 @@ def _get_azure_client(azure_client_class: Type[AzureClient]) -> AzureClient:
 
 def _get_azure_subscription_id():
     return os.getenv("AZURE_SUBSCRIPTION_ID") or get_cli_profile().get_login_credentials()[1]
+
+
+def _get_running_vms_by_id(
+    compute: AzureClient, resource_group_name: str | None, cluster_id: str
+) -> dict[str, dict]:
+
+    if resource_group_name:
+        vms = compute.virtual_machines.list(resource_group_name=resource_group_name)
+    else:
+        vms = compute.virtual_machines.list_all()
+
+    current_vms = [
+        vm.as_dict()
+        for vm in vms
+        if vm.tags.get("Vendor") == "Databricks" and vm.tags.get("ClusterId") == cluster_id
+    ]
+
+    # A separate api call is required for each vm to see its power state.
+    # Use a conservative default of assuming the vm is running if the resource group name
+    # is missing and the api call can't be made.
+    running_vms_by_id = {}
+    for vm in current_vms:
+        if resource_group_name:
+            vm_state = compute.virtual_machines.instance_view(
+                resource_group_name=resource_group_name, vm_name=vm["name"]
+            )
+            if len(vm_state.statuses) > 1 and vm_state.statuses[1].code == "PowerState/running":
+                running_vms_by_id[vm["name"]] = vm
+        else:
+            running_vms_by_id[vm["name"]] = vm
+
+    return running_vms_by_id

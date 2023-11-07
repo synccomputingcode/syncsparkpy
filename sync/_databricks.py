@@ -7,9 +7,10 @@ import logging
 import time
 import zipfile
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 from time import sleep
-from typing import Any, Collection, Dict, List, Tuple, TypeVar, Union
+from typing import Any, Collection, Dict, List, Set, Tuple, TypeVar, Union
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -1715,6 +1716,46 @@ def _get_all_cluster_events(cluster_id: str):
         all_events["events"].extend(response["events"])
 
     return all_events
+
+
+def _update_monitored_timelines(
+    running_instance_ids: Set[str],
+    active_timelines_by_id: Dict[str, dict],
+) -> Tuple[Dict[str, dict], List[dict]]:
+    """
+    Shared monitoring method for both Azure and Databricks to reduce complexity.
+    Compares the current running instances (keyed by id) to the running
+    instance timelines (also keyed by id). Instance timeline elements that are
+    still running are updated, while the rest are returned in a "retired" list.
+    """
+
+    current_datetime = datetime.now(timezone.utc)
+    for id in running_instance_ids:
+        if id not in active_timelines_by_id:
+            # A new instance in the "running" state has been detected, so add it
+            # the dict of running instances and initialize the times.
+            logger.info(f"Adding new instance timeline: {id}")
+            active_timelines_by_id[id] = {
+                "instance_id": id,
+                "first_seen_running_time": current_datetime,
+                "last_seen_running_time": current_datetime,
+            }
+
+        else:
+            # If an instance was already in the list of running instances then update
+            # then just update the last_seen_running_time.
+            active_timelines_by_id[id]["last_seen_running_time"] = current_datetime
+
+    # If an instance in the active timeline is no longer in the running state then
+    # it should be moved over the retired timeline list.
+    retired_inst_timeline_list = []
+    ids_to_retire = set(active_timelines_by_id.keys()).difference(running_instance_ids)
+    if ids_to_retire:
+        for id in ids_to_retire:
+            logger.info(f"Retiring instance: {id}")
+            retired_inst_timeline_list.append(active_timelines_by_id.pop(id))
+
+    return active_timelines_by_id, retired_inst_timeline_list
 
 
 KeyType = TypeVar("KeyType")

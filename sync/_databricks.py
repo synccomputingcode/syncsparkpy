@@ -18,15 +18,24 @@ from sync.api.predictions import (
     create_prediction_with_eventlog_bytes,
     get_prediction,
     get_predictions,
+    wait_for_final_prediction_status,
 )
 from sync.api.projects import (
+    create_project_recommendation,
     create_project_submission_with_eventlog_bytes,
     get_project,
     get_project_recommendation,
+    wait_for_recommendation,
 )
 from sync.clients.databricks import get_default_client
 from sync.config import CONFIG
-from sync.models import DatabricksAPIError, DatabricksClusterReport, DatabricksError, Response
+from sync.models import (
+    DatabricksAPIError,
+    DatabricksClusterReport,
+    DatabricksError,
+    PredictionError,
+    Response,
+)
 from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file
 
 logger = logging.getLogger(__name__)
@@ -386,19 +395,24 @@ def _get_cluster_instances_from_dbfs(filepath: str):
         logger.error(f"Unexpected error encountered while attempting to fetch {filepath}: {ex}")
 
 
-def record_run(
+def handle_successful_job_run(
+    job_id: str,
     run_id: str,
     plan_type: str,
     compute_type: str,
     project_id: Union[str, None] = None,
     allow_incomplete_cluster_report: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
-) -> Response[List[str]]:
-    """See :py:func:`~create_prediction_for_run`
+) -> Response[dict[str, str]]:
+    """Create's Sync project submissions for each eligible cluster in the run (see :py:func:`~run_job_object`)
 
-    If project ID is provided only create a prediction for the cluster tagged with it, or the only cluster if there is such.
-    If no project ID is provided then create a prediction for each cluster tagged with a project ID.
+    If project ID is provided only submit run data for the cluster tagged with it, or the only cluster if there is such.
+    If no project ID is provided then submit run data for each cluster tagged with a project ID.
 
+    For projects with auto_apply_recs=True, apply latest recommended cluster configurations.
+
+    :param job_id: Databricks job ID
+    :type job_id: str
     :param run_id: Databricks run ID
     :type run_id: str
     :param plan_type: either "Standard", "Premium" or "Enterprise"
@@ -411,51 +425,101 @@ def record_run(
     :type allow_incomplete_cluster_report: bool, optional, defaults to False
     :param exclude_tasks: Keys of tasks (task names) to exclude
     :type exclude_tasks: Collection[str], optional, defaults to None
-    :return: prediction ID
+    :return: map of project ID to submission or prediction ID
+    :rtype: Response[dict[str, str]]
+    """
+    submission_response = record_run(
+        run_id, plan_type, compute_type, project_id, allow_incomplete_cluster_report, exclude_tasks
+    )
+
+    if submission_response.error:
+        return submission_response
+
+    for project_id, submission_id in submission_response.result.items():
+        project_response = get_project(project_id)
+
+        if project_response.error:
+            logger.error(f"Failed to retrieve project {project_id} - {project_response.error}")
+            continue
+
+        project = project_response.result
+        if project["auto_apply_recs"]:
+            if project["project_model_id"] in {"GRADIENT_ML", "UNASSIGNED"}:
+                recommendation_response = create_and_apply_project_recommendation(
+                    project_id, job_id
+                )
+                if recommendation_response.error:
+                    logger.error(
+                        f"Failed to create and apply project {project_id} recommendation to job {job_id} - {recommendation_response.error}"
+                    )
+            elif project["project_model_id"] == "AUTOTUNER":
+                prediction_response = wait_for_and_apply_prediction(
+                    project_id, submission_id, job_id
+                )
+                if prediction_response.error:
+                    logger.error(
+                        f"Failed to apply prediction {submission_id} to job {job_id} - {prediction_response.error}"
+                    )
+            else:
+                logger.error(
+                    f"Unexpected project_model_id for project {project_id}: {project['project_model_id']}"
+                )
+
+
+def create_and_apply_project_recommendation(project_id: str, job_id: str) -> Response[str]:
+    """Create recommendation for project and apply it to the job
+
+    :param job_id: ID of job to which the recommendation should be applied
+    :type job_id: str
+    :param project_id: ID of project for job
+    :type project_id: str
+    :return: ID of applied recommendation
     :rtype: Response[str]
     """
-    run = get_default_client().get_run(run_id)
+    recommendation_response = create_project_recommendation(project_id)
 
-    if "error_code" in run:
-        return Response(error=DatabricksAPIError(**run))
+    if recommendation_response.error:
+        return recommendation_response
 
-    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
+    recommendation_id = recommendation_response.result
 
-    if not project_cluster_tasks:
-        return Response(
-            error=DatabricksError(
-                message=f"No cluster found in run {run_id} for project {project_id}"
-            )
-        )
+    recommendation_wait_response = wait_for_recommendation(project_id, recommendation_id)
 
-    prediction_ids = []
-    for cluster_project_id, (cluster_id, tasks) in project_cluster_tasks.items():
-        prediction_response = _create_prediction(
-            cluster_id,
-            tasks,
-            plan_type,
-            compute_type,
-            cluster_project_id,
-            allow_incomplete_cluster_report,
-        )
+    if recommendation_wait_response.error:
+        return recommendation_wait_response
 
-        prediction_id = prediction_response.result
-        if prediction_id:
-            prediction_ids.append(prediction_id)
-        else:
-            logger.error(
-                f"Failed to create prediction for cluster {cluster_id} in project {cluster_project_id} - {prediction_response.error}"
-            )
-
-    if prediction_ids:
-        return Response(result=prediction_ids)
-    else:
-        return Response(
-            error=DatabricksError(message=f"Failed to create any predictions for run {run_id}")
-        )
+    return apply_project_recommendation(job_id, project_id, recommendation_id)
 
 
-def submit_job_run(
+def wait_for_and_apply_prediction(
+    project_id: str, prediction_id: str, job_id: str
+) -> Response[str]:
+    """Wait for prediction and apply it to the job
+
+    :param project_id: ID of project for job
+    :type project_id: str
+    :param prediction_id: ID of project for job
+    :type prediction_id: str
+    :param job_id: ID of job to which the recommendation should be applied
+    :type job_id: str
+    :return: ID of applied recommendation
+    :rtype: Response[str]
+    """
+    prediction_status_response = wait_for_final_prediction_status(prediction_id)
+
+    if prediction_status_response.error:
+        return prediction_status_response
+
+    prediction_status = prediction_status_response.result
+    if prediction_status == "SUCCESS":
+        return apply_prediction(job_id, project_id, prediction_id)
+
+    return Response(
+        error=PredictionError(f"Prediction {prediction_id} failed. Status: {prediction_status}")
+    )
+
+
+def record_run(
     run_id: str,
     plan_type: str,
     compute_type: str,
@@ -509,22 +573,22 @@ def submit_job_run(
 
         project = project_response.result
 
-        if project["project_model_id"] == "AUTOTUNER":
-            submission_response = _create_prediction(
-                cluster_id,
-                tasks,
-                plan_type,
-                compute_type,
-                cluster_project_id,
-                allow_incomplete_cluster_report,
-            )
-        elif project["project_model_id"] in {"GRADIENT_ML", "UNASSIGNED"}:
+        if project["project_model_id"] in {"GRADIENT_ML", "UNASSIGNED"}:
             submission_response = _create_submission(
                 cluster_id,
                 tasks,
                 plan_type,
                 compute_type,
                 project_id,
+                allow_incomplete_cluster_report,
+            )
+        elif project["project_model_id"] == "AUTOTUNER":
+            submission_response = _create_prediction(
+                cluster_id,
+                tasks,
+                plan_type,
+                compute_type,
+                cluster_project_id,
                 allow_incomplete_cluster_report,
             )
         else:
@@ -713,7 +777,9 @@ def get_prediction_cluster(
     return prediction_response
 
 
-def apply_project_recommendation(job_id: str, project_id: str, recommendation_id: str):
+def apply_project_recommendation(
+    job_id: str, project_id: str, recommendation_id: str
+) -> Response[str]:
     """Updates jobs with project recommendation
 
     :param job_id: ID of job to apply prediction to

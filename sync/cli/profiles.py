@@ -3,8 +3,7 @@ from pathlib import Path
 import click
 
 from sync.cli.util import configure_profile
-from sync.config import set_profile, get_profile, clear_configurations
-
+from sync.config import set_profile, get_profile_name
 
 PROFILES_DIR = Path("~/.sync/profiles").expanduser()
 
@@ -27,36 +26,42 @@ def create(profile_name, force=False):
     :type force: bool, optional
     """
     profile_dir = PROFILES_DIR / profile_name
+
     if profile_dir.exists() and not force:
         click.echo(f"Profile '{profile_name}' already exists. Use -f or --force to overwrite.")
         return
     elif profile_dir.exists() and force:
-        set_given_profile(profile_name)
+        set_profile(profile_name)
         click.echo(f"Profile '{profile_name}' already exists. Overwriting.")
     else:
-        clear_configurations(profile_name)
+        set_profile(profile_name)
 
     configure_profile(profile=profile_name)
 
 
 @profiles.command()
 @click.argument("profile-name")
-def set(profile_name):
-    """Set the active profile
+def switch(profile_name):
+    """switch the active profile
 
     :param profile_name: name of the profile to set
     :type profile_name: str
     """
-    set_given_profile(profile_name)
-    click.echo(f"Profile set to '{profile_name}'")
+    profile_dir = PROFILES_DIR / profile_name
+    if not profile_dir.exists():
+        click.echo(f"Profile '{profile_name}' does not exist.")
+        return
+    set_profile(profile_name)
+    click.echo(f"Switched to profile '{profile_name}'")
 
 
 @profiles.command()
 def list():
     """List available profiles"""
-    avail_profiles = [profile.name for profile in PROFILES_DIR.glob("*") if profile.is_dir()]
+    avail_profiles = [profile.name for profile in PROFILES_DIR.glob("*") if
+                      profile.is_dir() and profile.name != "current"]
     if not avail_profiles:
-        click.echo("No profiles found.")
+        click.echo("No profiles found")
     else:
         click.echo("Available profiles:")
         for profile in avail_profiles:
@@ -64,22 +69,10 @@ def list():
 
 
 @profiles.command()
-def get():
+def active():
     """Return the current profile."""
-    current_profile = get_profile()
-    click.echo(f"Current profile: {current_profile}")
-    return
-
-
-def set_given_profile(profile_name):
-    """Set the active profile
-
-    :param profile_name: name of the profile to set
-    :type profile_name: str
-    """
-    profile_dir = PROFILES_DIR / profile_name
-    if not profile_dir.exists():
-        click.echo(f"Profile '{profile_name}' does not exist")
-        return
-
-    set_profile(profile_name)
+    current_profile = get_profile_name()
+    if current_profile == "current":
+        click.echo("No active profile. Use `sync-cli profiles <switch/create>` to set or create one.")
+    else:
+        click.echo(f"Current profile: {current_profile}")

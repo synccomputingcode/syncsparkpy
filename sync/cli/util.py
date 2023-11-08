@@ -4,7 +4,7 @@ from uuid import UUID
 import click
 
 from sync.api.projects import get_project_by_app_id
-from sync.config import API_KEY, CONFIG, DB_CONFIG, APIKey, Configuration, DatabricksConf, init
+from sync.config import APIKey, Configuration, DatabricksConf, init, get_api_key, get_config, get_databricks_config
 from sync.models import Preference
 
 OPTIONAL_DEFAULT = "none"
@@ -35,13 +35,14 @@ def configure_profile(
         databricks_region: str = None,
         profile: str = "default",
 ):
+
     """Configure Sync Library"""
     api_key_id = api_key_id or click.prompt(
-        "Sync API key ID", default=API_KEY.id if API_KEY else None
+        "Sync API key ID", default=get_api_key().id if get_api_key() else None
     )
     api_key_secret = api_key_secret or click.prompt(
         "Sync API key secret",
-        default=API_KEY.secret if API_KEY else None,
+        default=get_api_key().secret if get_api_key() else None,
         hide_input=True,
         show_default=False,
     )
@@ -49,28 +50,29 @@ def configure_profile(
     prediction_preference = prediction_preference or click.prompt(
         "Default prediction preference",
         type=click.Choice([p.value for p in Preference]),
-        default=(CONFIG.default_prediction_preference or Preference.ECONOMY).value,
+        default=(get_config().default_prediction_preference or Preference.ECONOMY).value,
     )
 
     dbx_host = databricks_host or OPTIONAL_DEFAULT
     dbx_token = databricks_token or OPTIONAL_DEFAULT
     dbx_region = databricks_region or OPTIONAL_DEFAULT
+
     # Skip only if all are provided since all are required to initialize the configuration below
     if any(param == OPTIONAL_DEFAULT for param in (dbx_host, dbx_token, dbx_region)):
         if click.confirm("Would you like to configure a Databricks workspace?"):
             dbx_host = click.prompt(
                 "Databricks host (prefix with https://)",
-                default=DB_CONFIG.host if DB_CONFIG else OPTIONAL_DEFAULT,
+                default=get_databricks_config().host if get_databricks_config() else OPTIONAL_DEFAULT,
             )
             dbx_token = click.prompt(
                 "Databricks token",
-                default=DB_CONFIG.token if DB_CONFIG else OPTIONAL_DEFAULT,
+                default=get_databricks_config().token if get_databricks_config() else OPTIONAL_DEFAULT,
                 hide_input=True,
                 show_default=False,
             )
             dbx_region = click.prompt(
                 "Databricks AWS region name",
-                default=DB_CONFIG.aws_region_name if DB_CONFIG else OPTIONAL_DEFAULT,
+                default=get_databricks_config().aws_region_name if get_databricks_config() else OPTIONAL_DEFAULT,
             )
 
     init(
@@ -79,9 +81,7 @@ def configure_profile(
             default_prediction_preference=prediction_preference,
         ),
         DatabricksConf(host=dbx_host, token=dbx_token, aws_region_name=dbx_region)
-        if dbx_host != OPTIONAL_DEFAULT
-           and dbx_token != OPTIONAL_DEFAULT
-           and dbx_region != OPTIONAL_DEFAULT
+        if dbx_host != OPTIONAL_DEFAULT and dbx_token != OPTIONAL_DEFAULT and dbx_region != OPTIONAL_DEFAULT
         else None,
         profile=profile,
     )

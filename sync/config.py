@@ -36,7 +36,7 @@ class APIKey(BaseSettings):
     class Config:
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return init_settings, env_settings, json_config_settings_source(CREDENTIALS_FILE, _active_profile)
+            return init_settings, env_settings, json_config_settings_source(CREDENTIALS_FILE, get_profile_name())
 
 
 class Configuration(BaseSettings):
@@ -48,7 +48,7 @@ class Configuration(BaseSettings):
 
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return init_settings, env_settings, json_config_settings_source(CONFIG_FILE, _active_profile)
+            return init_settings, env_settings, json_config_settings_source(CONFIG_FILE, get_profile_name())
 
 
 class DatabricksConf(BaseSettings):
@@ -68,7 +68,7 @@ class DatabricksConf(BaseSettings):
             return (
                 init_settings,
                 env_settings,
-                json_config_settings_source(DATABRICKS_CONFIG_FILE, _active_profile),
+                json_config_settings_source(DATABRICKS_CONFIG_FILE, get_profile_name()),
             )
 
 
@@ -84,6 +84,9 @@ def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = Non
     :param profile: profile name, defaults to "default"
     :type profile: str, optional
     """
+    global _active_profile
+    _active_profile = profile
+
     config_dir = _get_profile_dir(profile)
     config_dir.mkdir(exist_ok=True)
 
@@ -105,7 +108,7 @@ def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = Non
             db_config_out.write(db_config.json(exclude_none=True, indent=2))
         global _db_config
         _db_config = db_config
-    set_profile(profile)
+    set_profile(_active_profile)
 
 
 def get_api_key() -> APIKey:
@@ -150,27 +153,17 @@ def get_databricks_config() -> DatabricksConf:
     return _db_config
 
 
-def get_profile() -> str:
+def get_profile_name() -> str:
     """Gets the active profile
 
     :return: active profile
     :rtype: str
     """
     global _active_profile
+    _active_profile = _current_profile_dir().resolve().name
+    if not _active_profile:
+        raise ValueError("No active profile found")
     return _active_profile
-
-
-def set_profile(profile: str):
-    """Sets the active profile
-
-    :param profile: profile name
-    :type profile: str
-    """
-    global _active_profile, _config, _api_key, _db_config
-    _active_profile = profile
-    _config = Configuration()
-    _api_key = APIKey()
-    _db_config = DatabricksConf()
 
 
 CONFIG: Configuration
@@ -179,8 +172,8 @@ API_KEY: APIKey
 _api_key = None
 DB_CONFIG: DatabricksConf
 _db_config = None
-PROFILE: str
-_active_profile = "default"
+# PROFILE: str
+_active_profile: str = "default"
 
 
 def __getattr__(name):
@@ -194,13 +187,47 @@ def __getattr__(name):
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-def clear_configurations(profile: str = "default"):
-    global _config, _api_key, _db_config, _active_profile
-    _active_profile = profile
+def clear_configurations():
+    global _config, _api_key, _db_config
     _config = None
     _api_key = None
     _db_config = None
 
 
+def refresh_configurations(profile_name: str):
+    """Refreshes the global configurations to reflect the new active profile."""
+    global _active_profile, _api_key, _config, _db_config
+
+    _active_profile = profile_name
+    _api_key = None
+    _config = None
+    _db_config = None
+
+    _api_key = get_api_key()
+    _config = get_config()
+    _db_config = get_databricks_config()
+
+
+def create_symlink(profile_name: str = "default"):
+    """Creates a symlink to the current profile."""
+    current_symlink = Path("~/.sync/profiles/current").expanduser()
+    target_dir = _get_profile_dir(profile_name).resolve()
+    if current_symlink.is_symlink():
+        current_symlink.unlink()
+    current_symlink.symlink_to(target_dir, target_is_directory=True)
+    
+
+def set_profile(profile_name: str):
+    """Sets the active profile."""
+    global _active_profile
+    _active_profile = profile_name
+    create_symlink(_active_profile)
+    refresh_configurations(_active_profile)
+
+
 def _get_profile_dir(profile: str) -> Path:
     return Path(f"~/.sync/profiles/{profile}").expanduser()
+
+
+def _current_profile_dir() -> Path:
+    return Path(f"~/.sync/profiles/current").expanduser().resolve()

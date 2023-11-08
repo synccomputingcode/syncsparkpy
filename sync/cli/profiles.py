@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import click
-
+import re
 from sync.cli.util import configure_profile
 from sync.config import set_profile, get_profile_name
 
@@ -14,8 +14,15 @@ def profiles():
     pass
 
 
+def validate_profile_name(ctx, param, value):
+    """Validate that the profile name is alphanumeric and does not contain spaces or special characters."""
+    if not re.match("^[a-zA-Z0-9_-]+$", value):
+        raise click.BadParameter('Profile name must only contain letters, numbers, underscores, or hyphens.')
+    return value
+
+
 @profiles.command()
-@click.argument("profile_name", required=True)
+@click.argument("profile-name", required=True, callback=validate_profile_name)
 @click.option("-f", "--force", is_flag=True, help="Overwrite existing profile")
 def create(profile_name, force=False):
     """Create and activate new profile
@@ -37,6 +44,7 @@ def create(profile_name, force=False):
         set_profile(profile_name)
 
     configure_profile(profile=profile_name)
+    click.echo(f"Activated profile '{profile_name}'")
 
 
 @profiles.command()
@@ -73,6 +81,8 @@ def active():
     """Return the current profile."""
     current_profile = get_profile_name()
     if current_profile == "current":
-        click.echo("No active profile. Use `sync-cli profiles <switch/create>` to set or create one.")
+        click.echo(
+            "No active profile. \n"
+            "Use  sync-cli profiles switch <profile_name> or sync-cli profiles create <profile_name>.")
     else:
         click.echo(f"Current profile: {current_profile}")

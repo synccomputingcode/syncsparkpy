@@ -172,7 +172,6 @@ API_KEY: APIKey
 _api_key = None
 DB_CONFIG: DatabricksConf
 _db_config = None
-# PROFILE: str
 _active_profile: str = "default"
 
 
@@ -215,7 +214,7 @@ def create_symlink(profile_name: str = "default"):
     if current_symlink.is_symlink():
         current_symlink.unlink()
     current_symlink.symlink_to(target_dir, target_is_directory=True)
-    
+
 
 def set_profile(profile_name: str):
     """Sets the active profile."""

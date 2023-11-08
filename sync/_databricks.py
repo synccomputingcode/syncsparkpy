@@ -1484,7 +1484,7 @@ def _get_project_job_clusters(
     job_clusters = {
         c["job_cluster_key"]: c["new_cluster"] for c in job["settings"].get("job_clusters", [])
     }
-    all_project_clusters = defaultdict(list)
+    all_project_clusters = defaultdict(dict)
 
     for task in job["settings"]["tasks"]:
         if not exclude_tasks or task["task_key"] not in exclude_tasks:
@@ -1498,14 +1498,14 @@ def _get_project_job_clusters(
 
             if task_cluster:
                 cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
-                all_project_clusters[cluster_project_id].append((task_cluster_path, task_cluster))
+                all_project_clusters[cluster_project_id][task_cluster_path] = task_cluster
 
     filtered_project_clusters = {}
     for project_id, clusters in all_project_clusters.items():
         if len(clusters) > 1:
             logger.warning(f"More than 1 cluster found for project ID {project_id}")
         else:
-            filtered_project_clusters[project_id] = clusters[0]
+            filtered_project_clusters[project_id] = next(iter(clusters.items()))
 
     return filtered_project_clusters
 

@@ -213,7 +213,8 @@ def create_submission(
     project_id: str,
     cluster: dict,
     cluster_events: dict,
-    instances: dict,
+    instances: List[dict],
+    instance_timelines: List[dict],
     eventlog: bytes,
     tasks: List[dict] = None,
     volumes: dict = None,
@@ -241,26 +242,33 @@ def create_submission(
         ``Filters=[{"Name": "tag:ClusterId", "Values": ["my-dbx-clusterid"]}]``
         If there are multiple pages of instances, all pages should be accumulated into 1 dictionary and passed to this
         function
+    :type instance: List[dict]
     :param eventlog: encoded event log zip
     :type eventlog: bytes
     :param tasks: The Databricks Tasks associated with the cluster
-    :type tasks: List[dict]
+    :type tasks: List[dict], optional
     :param volumes: The EBS volumes that were attached to this cluster
-    :type volumes: dict, optional
+    :type volumes: List[dict], optional
     :return: Submission ID
     :rtype: Response[str]
     """
+
+    cluster_report = {
+        "plan_type": plan_type,
+        "compute_type": compute_type,
+        "cluster": cluster,
+        "cluster_events": cluster_events,
+        "instances": instances,
+        "instance_timelines": instance_timelines,
+    }
+    if volumes:
+        cluster_report["volumes"] = volumes
+    if tasks:
+        cluster_report["tasks"] = tasks
+
     return create_project_submission_with_eventlog_bytes(
         get_default_client().get_platform(),
-        {
-            "plan_type": plan_type,
-            "compute_type": compute_type,
-            "cluster": cluster,
-            "cluster_events": cluster_events,
-            "instances": instances,
-            "volumes": volumes,
-            "tasks": tasks,
-        },
+        cluster_report,
         "eventlog.zip",
         eventlog,
         project_id,

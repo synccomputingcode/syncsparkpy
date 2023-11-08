@@ -373,7 +373,7 @@ def _monitor_cluster(
             write_file(
                 orjson.dumps(
                     {
-                        "instances": list(all_vms_by_id),
+                        "instances": list(all_vms_by_id.values()),
                         "timelines": all_timelines,
                     }
                 )

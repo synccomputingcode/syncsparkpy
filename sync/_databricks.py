@@ -274,8 +274,6 @@ def _create_submission(
     project_id: str,
     allow_incomplete_cluster_report: bool = False,
 ) -> Response[str]:
-    cluster_id, tasks = tasks
-
     run_information_response = _get_run_information(
         cluster_id,
         tasks,
@@ -403,7 +401,7 @@ def handle_successful_job_run(
     project_id: Union[str, None] = None,
     allow_incomplete_cluster_report: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
-) -> Response[dict[str, str]]:
+) -> Response[Dict[str, str]]:
     """Create's Sync project submissions for each eligible cluster in the run (see :py:func:`~run_job_object`)
 
     If project ID is provided only submit run data for the cluster tagged with it, or the only cluster if there is such.
@@ -426,7 +424,7 @@ def handle_successful_job_run(
     :param exclude_tasks: Keys of tasks (task names) to exclude
     :type exclude_tasks: Collection[str], optional, defaults to None
     :return: map of project ID to submission or prediction ID
-    :rtype: Response[dict[str, str]]
+    :rtype: Response[Dict[str, str]]
     """
     submission_response = record_run(
         run_id, plan_type, compute_type, project_id, allow_incomplete_cluster_report, exclude_tasks
@@ -464,6 +462,8 @@ def handle_successful_job_run(
                 logger.error(
                     f"Unexpected project_model_id for project {project_id}: {project['project_model_id']}"
                 )
+
+    return submission_response
 
 
 def create_and_apply_project_recommendation(project_id: str, job_id: str) -> Response[str]:
@@ -526,7 +526,7 @@ def record_run(
     project_id: Union[str, None] = None,
     allow_incomplete_cluster_report: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
-) -> Response[dict[str, str]]:
+) -> Response[Dict[str, str]]:
     """Create's Sync project submissions for each eligible cluster in the run.
 
     If project ID is provided only submit run data for the cluster tagged with it, or the only cluster if there is such.
@@ -545,7 +545,7 @@ def record_run(
     :param exclude_tasks: Keys of tasks (task names) to exclude
     :type exclude_tasks: Collection[str], optional, defaults to None
     :return: map of project ID to submission or prediction ID
-    :rtype: Response[dict[str, str]]
+    :rtype: Response[Dict[str, str]]
     """
     run = get_default_client().get_run(run_id)
 
@@ -561,7 +561,7 @@ def record_run(
             )
         )
 
-    result_ids = defaultdict(list)
+    result_ids = {}
     for cluster_project_id, (cluster_id, tasks) in project_cluster_tasks.items():
         project_response = get_project(cluster_project_id)
 
@@ -579,7 +579,7 @@ def record_run(
                 tasks,
                 plan_type,
                 compute_type,
-                project_id,
+                cluster_project_id,
                 allow_incomplete_cluster_report,
             )
         elif project["project_model_id"] == "AUTOTUNER":
@@ -599,7 +599,7 @@ def record_run(
 
         submission_id = submission_response.result
         if submission_id:
-            result_ids[cluster_project_id].append(submission_id)
+            result_ids[cluster_project_id] = submission_id
         else:
             logger.error(
                 f"Failed to submit run data for cluster {cluster_id} in project {cluster_project_id} - {submission_response.error}"
@@ -607,10 +607,8 @@ def record_run(
 
     if result_ids:
         return Response(result=result_ids)
-    else:
-        return Response(
-            error=DatabricksError(message=f"Failed to submit run {run_id} to any projects")
-        )
+
+    return Response(error=DatabricksError(message=f"Failed to submit run {run_id} to any projects"))
 
 
 def apply_prediction(
@@ -1515,6 +1513,7 @@ def _get_project_job_clusters(
 def _get_project_cluster_tasks(
     run: dict, project_id: str = None, exclude_tasks: Union[Collection[str], None] = None
 ):
+    """Returns a mapping of project IDs to cluster-ID-tasks pairs"""
     project_cluster_tasks = _get_cluster_tasks(run, exclude_tasks)
 
     filtered_project_cluster_tasks = {}

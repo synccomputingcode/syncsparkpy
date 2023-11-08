@@ -402,7 +402,7 @@ def handle_successful_job_run(
     allow_incomplete_cluster_report: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[Dict[str, str]]:
-    """Create's Sync project submissions for each eligible cluster in the run (see :py:func:`~run_job_object`)
+    """Create's Sync project submissions for each eligible cluster in the run (see :py:func:`~record_run`)
 
     If project ID is provided only submit run data for the cluster tagged with it, or the only cluster if there is such.
     If no project ID is provided then submit run data for each cluster tagged with a project ID.

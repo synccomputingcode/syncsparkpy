@@ -19,15 +19,24 @@ from sync.api.predictions import (
     create_prediction_with_eventlog_bytes,
     get_prediction,
     get_predictions,
+    wait_for_final_prediction_status,
 )
 from sync.api.projects import (
+    create_project_recommendation,
     create_project_submission_with_eventlog_bytes,
     get_project,
     get_project_recommendation,
+    wait_for_recommendation,
 )
 from sync.clients.databricks import get_default_client
 from sync.config import CONFIG
-from sync.models import DatabricksAPIError, DatabricksClusterReport, DatabricksError, Response
+from sync.models import (
+    DatabricksAPIError,
+    DatabricksClusterReport,
+    DatabricksError,
+    PredictionError,
+    Response,
+)
 from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file
 
 logger = logging.getLogger(__name__)
@@ -156,7 +165,7 @@ def create_prediction_for_run(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
+    project_cluster_tasks = _get_cluster_tasks(run, exclude_tasks)
 
     cluster_tasks = None
     if project_id:
@@ -207,74 +216,6 @@ def _create_prediction(
     )
 
 
-def create_submission(
-    plan_type: str,
-    compute_type: str,
-    project_id: str,
-    cluster: dict,
-    cluster_events: dict,
-    instances: List[dict],
-    instance_timelines: List[dict],
-    eventlog: bytes,
-    tasks: List[dict] = None,
-    volumes: dict = None,
-) -> Response[str]:
-    """Create a Databricks Project submission
-
-    :param plan_type: either "Standard", "Premium" or "Enterprise"
-    :type plan_type: str
-    :param compute_type: e.g. "Jobs Compute"
-    :type compute_type: str
-    :param project_id: Sync project ID
-    :type project_id: str
-    :param cluster: The Databricks cluster definition as defined by -
-        https://docs.databricks.com/dev-tools/api/latest/clusters.html#get
-    :type cluster: dict
-    :param cluster_events: All events, including paginated events, for the cluster as defined by -
-        https://docs.databricks.com/dev-tools/api/latest/clusters.html#events
-        If the cluster is a long-running cluster, this should only include events relevant to the time window that a
-        run occurred in.
-    :type cluster_events: dict
-    :param instances: All EC2 Instances that were a part of the cluster. Expects a data format as is returned by
-        `boto3's EC2.describe_instances API <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2/client/describe_instances.html>`_
-        Instances should be narrowed to just those instances relevant to the Databricks Run. This can be done by passing
-        a `tag:ClusterId` filter to the describe_instances call like -
-        ``Filters=[{"Name": "tag:ClusterId", "Values": ["my-dbx-clusterid"]}]``
-        If there are multiple pages of instances, all pages should be accumulated into 1 dictionary and passed to this
-        function
-    :type instance: List[dict]
-    :param eventlog: encoded event log zip
-    :type eventlog: bytes
-    :param tasks: The Databricks Tasks associated with the cluster
-    :type tasks: List[dict], optional
-    :param volumes: The EBS volumes that were attached to this cluster
-    :type volumes: List[dict], optional
-    :return: Submission ID
-    :rtype: Response[str]
-    """
-
-    cluster_report = {
-        "plan_type": plan_type,
-        "compute_type": compute_type,
-        "cluster": cluster,
-        "cluster_events": cluster_events,
-        "instances": instances,
-        "instance_timelines": instance_timelines,
-    }
-    if volumes:
-        cluster_report["volumes"] = volumes
-    if tasks:
-        cluster_report["tasks"] = tasks
-
-    return create_project_submission_with_eventlog_bytes(
-        get_default_client().get_platform(),
-        cluster_report,
-        "eventlog.zip",
-        eventlog,
-        project_id,
-    )
-
-
 def create_submission_for_run(
     run_id: str,
     plan_type: str,
@@ -305,7 +246,7 @@ def create_submission_for_run(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
+    project_cluster_tasks = _get_cluster_tasks(run, exclude_tasks)
 
     cluster_tasks = project_cluster_tasks.get(project_id)
     if not cluster_tasks:
@@ -321,6 +262,19 @@ def create_submission_for_run(
 
     cluster_id, tasks = cluster_tasks
 
+    return _create_submission(
+        cluster_id, tasks, plan_type, compute_type, project_id, allow_incomplete_cluster_report
+    )
+
+
+def _create_submission(
+    cluster_id: str,
+    tasks: List[dict],
+    plan_type: str,
+    compute_type: str,
+    project_id: str,
+    allow_incomplete_cluster_report: bool = False,
+) -> Response[str]:
     run_information_response = _get_run_information(
         cluster_id,
         tasks,
@@ -334,10 +288,12 @@ def create_submission_for_run(
         return run_information_response
 
     cluster_report, eventlog = run_information_response.result
-    return create_submission(
-        **cluster_report.dict(exclude_none=True),
-        project_id=project_id,
-        eventlog=eventlog,
+    return create_project_submission_with_eventlog_bytes(
+        get_default_client().get_platform(),
+        cluster_report.dict(exclude_none=True),
+        "eventlog.zip",
+        eventlog,
+        project_id,
     )
 
 
@@ -406,7 +362,7 @@ def get_cluster_report(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
+    project_cluster_tasks = _get_cluster_tasks(run, exclude_tasks)
 
     cluster_tasks = project_cluster_tasks.get(project_id)
     if not cluster_tasks:
@@ -438,6 +394,132 @@ def _get_cluster_instances_from_dbfs(filepath: str):
         logger.error(f"Unexpected error encountered while attempting to fetch {filepath}: {ex}")
 
 
+def handle_successful_job_run(
+    job_id: str,
+    run_id: str,
+    plan_type: str,
+    compute_type: str,
+    project_id: Union[str, None] = None,
+    allow_incomplete_cluster_report: bool = False,
+    exclude_tasks: Union[Collection[str], None] = None,
+) -> Response[Dict[str, str]]:
+    """Create's Sync project submissions for each eligible cluster in the run (see :py:func:`~record_run`)
+
+    If project ID is provided only submit run data for the cluster tagged with it, or the only cluster if there is such.
+    If no project ID is provided then submit run data for each cluster tagged with a project ID.
+
+    For projects with auto_apply_recs=True, apply latest recommended cluster configurations.
+
+    :param job_id: Databricks job ID
+    :type job_id: str
+    :param run_id: Databricks run ID
+    :type run_id: str
+    :param plan_type: either "Standard", "Premium" or "Enterprise"
+    :type plan_type: str
+    :param compute_type: e.g. "Jobs Compute"
+    :type compute_type: str
+    :param project_id: Sync project ID
+    :type project_id: str, optional, defaults to None
+    :param allow_incomplete_cluster_report: Whether creating a prediction with incomplete cluster report data should be allowable
+    :type allow_incomplete_cluster_report: bool, optional, defaults to False
+    :param exclude_tasks: Keys of tasks (task names) to exclude
+    :type exclude_tasks: Collection[str], optional, defaults to None
+    :return: map of project ID to submission or prediction ID
+    :rtype: Response[Dict[str, str]]
+    """
+    submission_response = record_run(
+        run_id, plan_type, compute_type, project_id, allow_incomplete_cluster_report, exclude_tasks
+    )
+
+    if submission_response.error:
+        return submission_response
+
+    for project_id, submission_id in submission_response.result.items():
+        project_response = get_project(project_id)
+
+        if project_response.error:
+            logger.error(f"Failed to retrieve project {project_id} - {project_response.error}")
+            continue
+
+        project = project_response.result
+        if project["auto_apply_recs"]:
+            if project["project_model_id"] in {"GRADIENT_ML", "UNASSIGNED"}:
+                recommendation_response = create_and_apply_project_recommendation(
+                    project_id, job_id
+                )
+                if recommendation_response.error:
+                    logger.error(
+                        f"Failed to create and apply project {project_id} recommendation to job {job_id} - {recommendation_response.error}"
+                    )
+            elif project["project_model_id"] == "AUTOTUNER":
+                prediction_response = wait_for_and_apply_prediction(
+                    project_id, submission_id, job_id
+                )
+                if prediction_response.error:
+                    logger.error(
+                        f"Failed to apply prediction {submission_id} to job {job_id} - {prediction_response.error}"
+                    )
+            else:
+                logger.error(
+                    f"Unexpected project_model_id for project {project_id}: {project['project_model_id']}"
+                )
+
+    return submission_response
+
+
+def create_and_apply_project_recommendation(project_id: str, job_id: str) -> Response[str]:
+    """Create recommendation for project and apply it to the job
+
+    :param job_id: ID of job to which the recommendation should be applied
+    :type job_id: str
+    :param project_id: ID of project for job
+    :type project_id: str
+    :return: ID of applied recommendation
+    :rtype: Response[str]
+    """
+    recommendation_response = create_project_recommendation(project_id)
+
+    if recommendation_response.error:
+        return recommendation_response
+
+    recommendation_id = recommendation_response.result
+
+    recommendation_wait_response = wait_for_recommendation(project_id, recommendation_id)
+
+    if recommendation_wait_response.error:
+        return recommendation_wait_response
+
+    return apply_project_recommendation(job_id, project_id, recommendation_id)
+
+
+def wait_for_and_apply_prediction(
+    project_id: str, prediction_id: str, job_id: str
+) -> Response[str]:
+    """Wait for prediction and apply it to the job
+
+    :param project_id: ID of project for job
+    :type project_id: str
+    :param prediction_id: ID of project for job
+    :type prediction_id: str
+    :param job_id: ID of job to which the recommendation should be applied
+    :type job_id: str
+    :return: ID of applied recommendation
+    :rtype: Response[str]
+    """
+    prediction_status_response = wait_for_final_prediction_status(prediction_id)
+
+    if prediction_status_response.error:
+        return prediction_status_response
+
+    prediction_status = prediction_status_response.result
+    if prediction_status == "SUCCESS":
+        return apply_prediction(job_id, project_id, prediction_id)
+
+    return Response(
+        error=PredictionError(f"Prediction {prediction_id} failed. Status: {prediction_status}")
+    )
+
+
 def record_run(
     run_id: str,
     plan_type: str,
@@ -445,11 +527,11 @@ def record_run(
     project_id: Union[str, None] = None,
     allow_incomplete_cluster_report: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
-) -> Response[List[str]]:
-    """See :py:func:`~create_prediction_for_run`
+) -> Response[Dict[str, str]]:
+    """Create's Sync project submissions for each eligible cluster in the run.
 
-    If project ID is provided only create a prediction for the cluster tagged with it, or the only cluster if there is such that is untagged.
-    If no project ID is provided then create a prediction for each cluster tagged with a project ID.
+    If project ID is provided only submit run data for the cluster tagged with it, or the only cluster if there is such.
+    If no project ID is provided then submit run data for each cluster tagged with a project ID.
 
     :param run_id: Databricks run ID
     :type run_id: str
@@ -463,64 +545,71 @@ def record_run(
     :type allow_incomplete_cluster_report: bool, optional, defaults to False
     :param exclude_tasks: Keys of tasks (task names) to exclude
     :type exclude_tasks: Collection[str], optional, defaults to None
-    :return: prediction ID
-    :rtype: Response[str]
+    :return: map of project ID to submission or prediction ID
+    :rtype: Response[Dict[str, str]]
     """
     run = get_default_client().get_run(run_id)
 
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    project_cluster_tasks = _get_project_cluster_tasks(run, exclude_tasks)
+    project_cluster_tasks = _get_project_cluster_tasks(run, project_id, exclude_tasks)
 
-    filtered_project_cluster_tasks = {}
-    if project_id:
-        if project_id in project_cluster_tasks:
-            filtered_project_cluster_tasks = {project_id: project_cluster_tasks.get(project_id)}
-        elif len(project_cluster_tasks) == 1:
-            # If there's only 1 cluster assume that's the one for the project
-            filtered_project_cluster_tasks = {
-                project_id: next(iter(project_cluster_tasks.values()))
-            }
-    else:
-        filtered_project_cluster_tasks = {
-            cluster_project_id: cluster_tasks
-            for cluster_project_id, cluster_tasks in project_cluster_tasks.items()
-            if cluster_project_id
-        }
-
-    if not filtered_project_cluster_tasks:
+    if not project_cluster_tasks:
         return Response(
             error=DatabricksError(
                 message=f"No cluster found in run {run_id} for project {project_id}"
             )
         )
 
-    prediction_ids = []
-    for cluster_project_id, (cluster_id, tasks) in filtered_project_cluster_tasks.items():
-        prediction_response = _create_prediction(
-            cluster_id,
-            tasks,
-            plan_type,
-            compute_type,
-            cluster_project_id,
-            allow_incomplete_cluster_report,
-        )
+    result_ids = {}
+    for cluster_project_id, (cluster_id, tasks) in project_cluster_tasks.items():
+        project_response = get_project(cluster_project_id)
 
-        prediction_id = prediction_response.result
-        if prediction_id:
-            prediction_ids.append(prediction_id)
+        if project_response.error:
+            logger.error(
+                f"Failed to retrieve project {cluster_project_id} - {project_response.error}"
+            )
+            continue
+
+        project = project_response.result
+
+        if project["project_model_id"] in {"GRADIENT_ML", "UNASSIGNED"}:
+            submission_response = _create_submission(
+                cluster_id,
+                tasks,
+                plan_type,
+                compute_type,
+                cluster_project_id,
+                allow_incomplete_cluster_report,
+            )
+        elif project["project_model_id"] == "AUTOTUNER":
+            submission_response = _create_prediction(
+                cluster_id,
+                tasks,
+                plan_type,
+                compute_type,
+                cluster_project_id,
+                allow_incomplete_cluster_report,
+            )
         else:
             logger.error(
-                f"Failed to create prediction for cluster {cluster_id} in project {cluster_project_id} - {prediction_response.error}"
+                f"Unexpected project_model_id for project {cluster_project_id}: {project['project_model_id']}"
+            )
+            continue
+
+        submission_id = submission_response.result
+        if submission_id:
+            result_ids[cluster_project_id] = submission_id
+        else:
+            logger.error(
+                f"Failed to submit run data for cluster {cluster_id} in project {cluster_project_id} - {submission_response.error}"
             )
 
-    if prediction_ids:
-        return Response(result=prediction_ids)
-    else:
-        return Response(
-            error=DatabricksError(message=f"Failed to create any predictions for run {run_id}")
-        )
+    if result_ids:
+        return Response(result=result_ids)
+
+    return Response(error=DatabricksError(message=f"Failed to submit run {run_id} to any projects"))
 
 
 def apply_prediction(
@@ -687,7 +776,9 @@ def get_prediction_cluster(
     return prediction_response
 
 
-def apply_project_recommendation(job_id: str, project_id: str, recommendation_id: str):
+def apply_project_recommendation(
+    job_id: str, project_id: str, recommendation_id: str
+) -> Response[str]:
     """Updates jobs with project recommendation
 
     :param job_id: ID of job to apply prediction to
@@ -1394,7 +1485,7 @@ def _get_project_job_clusters(
     job_clusters = {
         c["job_cluster_key"]: c["new_cluster"] for c in job["settings"].get("job_clusters", [])
     }
-    all_project_clusters = defaultdict(list)
+    all_project_clusters = defaultdict(dict)
 
     for task in job["settings"]["tasks"]:
         if not exclude_tasks or task["task_key"] not in exclude_tasks:
@@ -1408,19 +1499,44 @@ def _get_project_job_clusters(
 
             if task_cluster:
                 cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
-                all_project_clusters[cluster_project_id].append((task_cluster_path, task_cluster))
+                all_project_clusters[cluster_project_id][task_cluster_path] = task_cluster
 
     filtered_project_clusters = {}
     for project_id, clusters in all_project_clusters.items():
         if len(clusters) > 1:
             logger.warning(f"More than 1 cluster found for project ID {project_id}")
         else:
-            filtered_project_clusters[project_id] = clusters[0]
+            filtered_project_clusters[project_id] = next(iter(clusters.items()))
 
     return filtered_project_clusters
 
 
 def _get_project_cluster_tasks(
+    run: dict, project_id: str = None, exclude_tasks: Union[Collection[str], None] = None
+):
+    """Returns a mapping of project IDs to cluster-ID-tasks pairs"""
+    project_cluster_tasks = _get_cluster_tasks(run, exclude_tasks)
+
+    filtered_project_cluster_tasks = {}
+    if project_id:
+        if project_id in project_cluster_tasks:
+            filtered_project_cluster_tasks = {project_id: project_cluster_tasks.get(project_id)}
+        elif len(project_cluster_tasks) == 1:
+            # If there's only 1 cluster assume that's the one for the project
+            filtered_project_cluster_tasks = {
+                project_id: next(iter(project_cluster_tasks.values()))
+            }
+    else:
+        filtered_project_cluster_tasks = {
+            cluster_project_id: cluster_tasks
+            for cluster_project_id, cluster_tasks in project_cluster_tasks.items()
+            if cluster_project_id
+        }
+
+    return filtered_project_cluster_tasks
+
+
+def _get_cluster_tasks(
     run: dict,
     exclude_tasks: Union[Collection[str], None] = None,
 ) -> Dict[str, Tuple[str, List[dict]]]:

@@ -1511,16 +1511,29 @@ def _get_project_job_clusters(
 
 
 def _get_project_cluster_tasks(
-    run: dict, project_id: str = None, exclude_tasks: Union[Collection[str], None] = None
+    run: dict,
+    project_id: str = None,
+    cluster_path: str = None,
+    exclude_tasks: Union[Collection[str], None] = None,
 ):
     """Returns a mapping of project IDs to cluster-ID-tasks pairs"""
     project_cluster_tasks = _get_cluster_tasks(run, exclude_tasks)
+
+    if cluster_path:
+        cluster_id = _get_cluster_id(cluster_path, run)
 
     filtered_project_cluster_tasks = {}
     if project_id:
         if project_id in project_cluster_tasks:
             filtered_project_cluster_tasks = {project_id: project_cluster_tasks.get(project_id)}
-        elif len(project_cluster_tasks) == 1:
+        elif cluster_id:
+            filtered_project_cluster_tasks = {
+                cluster_project_id: cluster_tasks
+                for cluster_project_id, cluster_tasks in project_cluster_tasks.items()
+                if cluster_tasks[0] == cluster_id
+            }
+
+        if not filtered_project_cluster_tasks and len(project_cluster_tasks) == 1:
             # If there's only 1 cluster assume that's the one for the project
             filtered_project_cluster_tasks = {
                 project_id: next(iter(project_cluster_tasks.values()))
@@ -1529,10 +1542,30 @@ def _get_project_cluster_tasks(
         filtered_project_cluster_tasks = {
             cluster_project_id: cluster_tasks
             for cluster_project_id, cluster_tasks in project_cluster_tasks.items()
-            if cluster_project_id
+            if cluster_project_id and (not cluster_id or cluster_tasks[0] == cluster_id)
         }
 
     return filtered_project_cluster_tasks
+
+
+def _get_cluster_id(cluster_path: str, run: dict):
+    cluster_path_parts = cluster_path.split("/", maxsplit=1)
+    if cluster_path_parts[0] == "tasks":
+        task = next(
+            (task for task in run["tasks"] if task["task_key"] == cluster_path_parts[1]), None
+        )
+    elif cluster_path_parts[0] == "job_clusters":
+        task = next(
+            (task for task in run["tasks"] if task["job_cluster_key"] == cluster_path_parts[1]),
+            None,
+        )
+    else:
+        logger.error(f"Invalid cluster path: {cluster_path}")
+
+    if task:
+        return task["cluster_instance"]["cluster_id"]
+
+    logger.error(f"No tasks found for cluster at {cluster_path}")
 
 
 def _get_cluster_tasks(

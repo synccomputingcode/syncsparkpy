@@ -17,7 +17,9 @@ def profiles():
 def validate_profile_name(ctx, param, value):
     """Validate that the profile name is alphanumeric and does not contain spaces or special characters."""
     if not re.match("^[a-zA-Z0-9_-]+$", value):
-        raise click.BadParameter('Profile name must only contain letters, numbers, underscores, or hyphens.')
+        raise click.BadParameter(
+            "Profile name must only contain letters, numbers, underscores, or hyphens."
+        )
     return value
 
 
@@ -66,8 +68,11 @@ def switch(profile_name):
 @profiles.command()
 def list():
     """List available profiles"""
-    avail_profiles = [profile.name for profile in PROFILES_DIR.glob("*") if
-                      profile.is_dir() and profile.name != "current"]
+    avail_profiles = [
+        profile.name
+        for profile in PROFILES_DIR.glob("*")
+        if profile.is_dir() and profile.name != "current"
+    ]
     if not avail_profiles:
         click.echo("No profiles found")
     else:
@@ -83,6 +88,7 @@ def active():
     if current_profile == "current":
         click.echo(
             "No active profile. \n"
-            "Use  sync-cli profiles switch <profile_name> or sync-cli profiles create <profile_name>.")
+            "Use  sync-cli profiles switch <profile_name> or sync-cli profiles create <profile_name>."
+        )
     else:
         click.echo(f"Current profile: {current_profile}")

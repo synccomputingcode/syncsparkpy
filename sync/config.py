@@ -17,7 +17,9 @@ CONFIG_FILE = "config"
 DATABRICKS_CONFIG_FILE = "databrickscfg"
 
 
-def json_config_settings_source(path: str, profile: str) -> Callable[[BaseSettings], Dict[str, Any]]:
+def json_config_settings_source(
+    path: str, profile: str
+) -> Callable[[BaseSettings], Dict[str, Any]]:
     def source(settings: BaseSettings) -> Dict[str, Any]:
         profile_dir = _get_profile_dir(profile)
         config_path = profile_dir.joinpath(path)
@@ -36,7 +38,11 @@ class APIKey(BaseSettings):
     class Config:
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return init_settings, env_settings, json_config_settings_source(CREDENTIALS_FILE, get_profile_name())
+            return (
+                init_settings,
+                env_settings,
+                json_config_settings_source(CREDENTIALS_FILE, get_profile_name()),
+            )
 
 
 class Configuration(BaseSettings):
@@ -48,7 +54,11 @@ class Configuration(BaseSettings):
 
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return init_settings, env_settings, json_config_settings_source(CONFIG_FILE, get_profile_name())
+            return (
+                init_settings,
+                env_settings,
+                json_config_settings_source(CONFIG_FILE, get_profile_name()),
+            )
 
 
 class DatabricksConf(BaseSettings):
@@ -72,7 +82,12 @@ class DatabricksConf(BaseSettings):
             )
 
 
-def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = None, profile: str = "default"):
+def init(
+    api_key: APIKey,
+    config: Configuration,
+    db_config: DatabricksConf = None,
+    profile: str = "default",
+):
     """Initializes configuration files. Currently only Linux-based systems are supported.
 
     :param api_key: API key
@@ -229,4 +244,4 @@ def _get_profile_dir(profile: str) -> Path:
 
 
 def _current_profile_dir() -> Path:
-    return Path(f"~/.sync/profiles/current").expanduser().resolve()
+    return Path("~/.sync/profiles/current").expanduser().resolve()

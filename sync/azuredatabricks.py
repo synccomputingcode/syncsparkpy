@@ -258,7 +258,7 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
         cluster_id = cluster["cluster_id"]
         spark_context_id = cluster["spark_context_id"]
         cluster_instances_file_key = (
-            f"{base_prefix}/sync_data/{spark_context_id}/cluster_instances.json"
+            f"{base_prefix}/sync_data/{spark_context_id}/azure_cluster_info.json"
         )
 
         cluster_instances_file_response = None
@@ -337,7 +337,7 @@ def _monitor_cluster(
     # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
     #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
     #  we make sure to re-strip our final Prefix
-    file_key = f"{base_prefix}/sync_data/{spark_context_id}/cluster_instances.json".strip("/")
+    file_key = f"{base_prefix}/sync_data/{spark_context_id}/azure_cluster_info.json".strip("/")
 
     azure_logger = logging.getLogger("azure.core.pipeline.policies.http_logging_policy")
     azure_logger.setLevel(logging.WARNING)

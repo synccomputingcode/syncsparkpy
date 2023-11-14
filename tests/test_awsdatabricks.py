@@ -564,14 +564,9 @@ def test_create_prediction_for_failed_run(respx_mock):
 def test_create_prediction_for_run_bad_cluster_data(respx_mock):
     # Test too many clusters found
     run_with_multiple_clusters = copy.deepcopy(MOCK_RUN)
-
     run_with_multiple_clusters["tasks"][0]["cluster_instance"][
         "cluster_id"
     ] = "different_cluster_id"
-    del run_with_multiple_clusters["tasks"][0]["job_cluster_key"]
-    run_with_multiple_clusters["tasks"][0]["new_cluster"] = run_with_multiple_clusters[
-        "job_clusters"
-    ][0]["new_cluster"]
 
     run_with_multiple_clusters["tasks"] = [
         MOCK_RUN["tasks"][0],

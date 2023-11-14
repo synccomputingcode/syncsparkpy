@@ -1593,10 +1593,12 @@ def _get_cluster_tasks(
     run: dict,
     exclude_tasks: Union[Collection[str], None] = None,
 ) -> Dict[str, Dict[str, Tuple[str, List[dict]]]]:
-    """Returns a mapping of project IDs to cluster ID-tasks pairs"""
+    """Returns a mapping of project IDs to cluster paths to cluster IDs and tasks"""
     job_clusters = {c["job_cluster_key"]: c["new_cluster"] for c in run.get("job_clusters", [])}
-    project_cluster_tasks = defaultdict(lambda: defaultdict(list))
-    cluster_ids = {}
+
+    cluster_id_tasks = defaultdict(list)
+    cluster_path_ids = defaultdict(list)
+    cluster_project_paths = defaultdict(list)
 
     for task in run["tasks"]:
         if "cluster_instance" in task and (
@@ -1613,18 +1615,27 @@ def _get_cluster_tasks(
 
             if task_cluster:
                 cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
-                project_cluster_tasks[cluster_project_id][cluster_path].append(task)
-                cluster_ids[cluster_path] = cluster_id
+                cluster_id_tasks[cluster_id].append(task)
+                cluster_path_ids[cluster_path].append(cluster_id)
+                cluster_project_paths[cluster_project_id].append(cluster_path)
 
-    result_project_cluster_tasks = {}
-    for project_id, cluster_tasks in project_cluster_tasks.items():
-        result_cluster_tasks = {}
-        for cluster_path, tasks in cluster_tasks.items():
-            result_cluster_tasks[cluster_path] = (cluster_ids[cluster_path], tasks)
+    result_cluster_project_tasks = {}
+    for project_id, cluster_paths in cluster_project_paths.items():
+        cluster_path_tasks = {}
+        for cluster_path in cluster_paths:
+            if len(cluster_path_ids[cluster_path]) == 1:
+                cluster_id = cluster_path_ids[cluster_path][0]
+                cluster_path_tasks[cluster_path] = (cluster_id, cluster_id_tasks[cluster_id])
+            else:
+                # Maybe this will happen if the same job cluster is used by 2 non adjacent tasks
+                logger.warning(
+                    f"More than 1 cluster instance found for the cluster at {cluster_path}"
+                )
 
-        result_project_cluster_tasks[project_id] = result_cluster_tasks
+        if cluster_path_tasks:
+            result_cluster_project_tasks[project_id] = cluster_path_tasks
 
-    return result_project_cluster_tasks
+    return result_cluster_project_tasks
 
 
 def _get_run_spark_context_id(tasks: List[dict]) -> Response[str]:

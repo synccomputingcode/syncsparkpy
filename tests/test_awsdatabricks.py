@@ -948,13 +948,9 @@ def test_create_prediction_for_run_with_pending_task(respx_mock):
 
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
 @patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
-@patch("sync.awsdatabricks.event_log_poll_duration_seconds")
+@patch("sync._databricks._event_log_poll_duration_seconds", Mock(return_value=0))
 @patch("sync._databricks.get_project", Mock(return_value=SyncResponse(result={})))
-def test_create_prediction_for_run_event_log_upload_delay(
-    event_log_poll_duration_seconds, respx_mock
-):
-    event_log_poll_duration_seconds.return_value = 0
-
+def test_create_prediction_for_run_event_log_upload_delay(respx_mock):
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=MOCK_RUN)
     )

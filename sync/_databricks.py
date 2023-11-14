@@ -1708,7 +1708,7 @@ def _dbfs_directory_has_all_rollover_logs(contents: dict, run_end_time_millis: f
     )
 
 
-def event_log_poll_duration_seconds():
+def _event_log_poll_duration_seconds():
     """Convenience function to aid testing"""
     return 15
 
@@ -1861,7 +1861,7 @@ def _get_eventlog(
     #   https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1
     # So we will poll this location for *up to* 5 minutes until we see all the eventlog files we are expecting
     # in the S3 bucket
-    poll_duration_seconds = event_log_poll_duration_seconds()
+    poll_duration_seconds = _event_log_poll_duration_seconds()
 
     if filesystem == "s3":
         return _get_eventlog_from_s3(

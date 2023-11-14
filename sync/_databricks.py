@@ -588,6 +588,23 @@ def record_run(
             )
         )
 
+    result_ids = _record_project_clusters(
+        project_cluster_tasks, plan_type, compute_type, allow_incomplete_cluster_report
+    )
+
+    if result_ids:
+        return Response(result=result_ids)
+
+    return Response(error=DatabricksError(message=f"Failed to submit run {run_id} to any projects"))
+
+
+def _record_project_clusters(
+    project_cluster_tasks: Dict[str, Tuple[str, List[dict]]],
+    plan_type: str,
+    compute_type: str,
+    allow_incomplete_cluster_report: bool,
+) -> Dict[str, str]:
+    """Creates project submissions/predictions and returns a map of project IDs to the new submissions/predictions IDs"""
     result_ids = {}
     for cluster_project_id, (cluster_id, tasks) in project_cluster_tasks.items():
         project_response = get_project(cluster_project_id)
@@ -632,10 +649,7 @@ def record_run(
                 f"Failed to submit run data for cluster {cluster_id} in project {cluster_project_id} - {submission_response.error}"
             )
 
-    if result_ids:
-        return Response(result=result_ids)
-
-    return Response(error=DatabricksError(message=f"Failed to submit run {run_id} to any projects"))
+    return result_ids
 
 
 def apply_prediction(
@@ -1572,7 +1586,7 @@ def _get_project_cluster_tasks(
             if cluster_project_id and (not cluster_path or cluster_path in cluster_tasks)
         }
 
-    assert not None in filtered_project_cluster_tasks
+    assert None not in filtered_project_cluster_tasks
 
     result_project_cluster_tasks = {}
     for project_id, cluster_tasks in filtered_project_cluster_tasks.items():

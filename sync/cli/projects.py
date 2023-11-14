@@ -55,6 +55,12 @@ def get(project: dict):
 @click.argument("product_code")
 @click.option("-d", "--description")
 @click.option("-j", "--job-id", help="Databricks job ID")
+@click.option(
+    "-c",
+    "--cluster-path",
+    help="Path to cluster definition in job object, e.g. 'job_clusters/Job_cluster'",
+)
+@click.option("-w", "--workspace-id", help="Databricks workspace ID")
 @click.option("-l", "--location", help="S3 URL under which to store event logs and configuration")
 @click.option(
     "-p",
@@ -77,6 +83,8 @@ def create(
     auto_apply_recs: bool,
     description: str = None,
     job_id: str = None,
+    cluster_path: str = None,
+    workspace_id: str = None,
     location: str = None,
     preference: Preference = None,
     app_id: str = None,
@@ -89,6 +97,8 @@ def create(
         product_code,
         description=description,
         job_id=job_id,
+        cluster_path=cluster_path,
+        workspace_id=workspace_id,
         cluster_log_url=location,
         prediction_preference=preference,
         auto_apply_recs=auto_apply_recs,
@@ -109,6 +119,12 @@ def create(
     "-i", "--app-id", help="External identifier often based on the project's target application"
 )
 @click.option(
+    "-c",
+    "--cluster-path",
+    help="Path to cluster definition in job object, e.g. 'job_clusters/Job_cluster'",
+)
+@click.option("-w", "--workspace-id", help="Databricks workspace ID")
+@click.option(
     "-p",
     "--preference",
     type=click.Choice(Preference),
@@ -120,6 +136,8 @@ def update(
     description: str = None,
     location: str = None,
     app_id: str = None,
+    cluster_path: str = None,
+    workspace_id: str = None,
     preference: Preference = None,
     auto_apply_recs: bool = None,
 ):
@@ -129,6 +147,8 @@ def update(
         description=description,
         cluster_log_url=location,
         app_id=app_id,
+        cluster_path=cluster_path,
+        workspace_id=workspace_id,
         prediction_preference=preference,
         auto_apply_recs=auto_apply_recs,
     )

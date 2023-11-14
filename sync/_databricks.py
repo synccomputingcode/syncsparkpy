@@ -164,22 +164,27 @@ def create_prediction_for_run(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    project_cluster_tasks = _get_cluster_tasks(run, exclude_tasks)
+    cluster_path = None
+    if project_id:
+        project_response = get_project(project_id)
+        if project_response.error:
+            return project_response
+        cluster_path = project_response.result.get("cluster_path")
+
+    project_cluster_tasks = _get_project_cluster_tasks(run, project_id, cluster_path, exclude_tasks)
 
     cluster_tasks = None
     if project_id:
         cluster_tasks = project_cluster_tasks.get(project_id)
+    elif len(project_cluster_tasks) == 1:
+        cluster_tasks = next(iter(project_cluster_tasks.values()))
 
     if not cluster_tasks:
-        if len(project_cluster_tasks) == 1:
-            # If there's only 1 cluster assume that's the one for the project
-            cluster_tasks = next(iter(project_cluster_tasks.values()))
-        else:
-            return Response(
-                error=DatabricksError(
-                    message=f"No cluster found in run {run_id} for project {project_id}"
-                )
+        return Response(
+            error=DatabricksError(
+                message=f"Failed to locate cluster in run {run_id} for project {project_id}"
             )
+        )
 
     cluster_id, tasks = cluster_tasks
 
@@ -245,19 +250,20 @@ def create_submission_for_run(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    project_cluster_tasks = _get_cluster_tasks(run, exclude_tasks)
+    project_response = get_project(project_id)
+    if project_response.error:
+        return project_response
+    cluster_path = project_response.result.get("cluster_path")
+
+    project_cluster_tasks = _get_project_cluster_tasks(run, project_id, cluster_path, exclude_tasks)
 
     cluster_tasks = project_cluster_tasks.get(project_id)
     if not cluster_tasks:
-        if len(project_cluster_tasks) == 1:
-            # If there's only 1 cluster assume that's the one for the project
-            cluster_tasks = next(iter(project_cluster_tasks.values()))
-        else:
-            return Response(
-                error=DatabricksError(
-                    message=f"Unable to locate cluster in run {run_id} for project {project_id}"
-                )
+        return Response(
+            error=DatabricksError(
+                message=f"Failed to locate cluster in run {run_id} for project {project_id}"
             )
+        )
 
     cluster_id, tasks = cluster_tasks
 
@@ -361,17 +367,31 @@ def get_cluster_report(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    project_cluster_tasks = _get_cluster_tasks(run, exclude_tasks)
+    cluster_path = None
+    if project_id:
+        project_response = get_project(project_id)
+        if project_response.error:
+            return project_response
+        cluster_path = project_response.result.get("cluster_path")
 
-    cluster_tasks = project_cluster_tasks.get(project_id)
+    project_cluster_tasks = _get_project_cluster_tasks(run, project_id, cluster_path, exclude_tasks)
+
+    cluster_tasks = None
+    if project_id:
+        cluster_tasks = project_cluster_tasks.get(project_id)
+    elif len(project_cluster_tasks) == 1:
+        cluster_tasks = next(iter(project_cluster_tasks.values()))
+
     if not cluster_tasks:
         return Response(
-            error=DatabricksError(message=f"Failed to locate cluster for project ID {project_id}")
+            error=DatabricksError(
+                message=f"Failed to locate cluster in run {run_id} for project {project_id}"
+            )
         )
 
-    return _get_cluster_report(
-        cluster_tasks[0], cluster_tasks[1], plan_type, compute_type, allow_incomplete
-    )
+    cluster_id, tasks = cluster_tasks
+
+    return _get_cluster_report(cluster_id, tasks, plan_type, compute_type, allow_incomplete)
 
 
 def _get_cluster_report(
@@ -552,15 +572,39 @@ def record_run(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    project_cluster_tasks = _get_project_cluster_tasks(run, project_id, exclude_tasks)
+    cluster_path = None
+    if project_id:
+        project_response = get_project(project_id)
+        if project_response.error:
+            return project_response
+        cluster_path = project_response.result.get("cluster_path")
+
+    project_cluster_tasks = _get_project_cluster_tasks(run, project_id, cluster_path, exclude_tasks)
 
     if not project_cluster_tasks:
         return Response(
             error=DatabricksError(
-                message=f"No cluster found in run {run_id} for project {project_id}"
+                message=f"Failed to locate cluster in run {run_id} for project {project_id}"
             )
         )
 
+    result_ids = _record_project_clusters(
+        project_cluster_tasks, plan_type, compute_type, allow_incomplete_cluster_report
+    )
+
+    if result_ids:
+        return Response(result=result_ids)
+
+    return Response(error=DatabricksError(message=f"Failed to submit run {run_id} to any projects"))
+
+
+def _record_project_clusters(
+    project_cluster_tasks: Dict[str, Tuple[str, List[dict]]],
+    plan_type: str,
+    compute_type: str,
+    allow_incomplete_cluster_report: bool,
+) -> Dict[str, str]:
+    """Creates project submissions/predictions and returns a map of project IDs to the new submissions/predictions IDs"""
     result_ids = {}
     for cluster_project_id, (cluster_id, tasks) in project_cluster_tasks.items():
         project_response = get_project(cluster_project_id)
@@ -605,10 +649,7 @@ def record_run(
                 f"Failed to submit run data for cluster {cluster_id} in project {cluster_project_id} - {submission_response.error}"
             )
 
-    if result_ids:
-        return Response(result=result_ids)
-
-    return Response(error=DatabricksError(message=f"Failed to submit run {run_id} to any projects"))
+    return result_ids
 
 
 def apply_prediction(
@@ -653,7 +694,7 @@ def apply_prediction(
         else:
             return Response(
                 error=DatabricksError(
-                    message=f"Unable to locate cluster in job {job_id} for project {project_id}"
+                    message=f"Failed to locate cluster in job {job_id} for project {project_id}"
                 )
             )
 
@@ -801,7 +842,7 @@ def apply_project_recommendation(
         else:
             return Response(
                 error=DatabricksError(
-                    message=f"Unable to locate cluster in job {job_id} for project {project_id}"
+                    message=f"Failed to locate cluster in job {job_id} for project {project_id}"
                 )
             )
 
@@ -1511,8 +1552,11 @@ def _get_project_job_clusters(
 
 
 def _get_project_cluster_tasks(
-    run: dict, project_id: str = None, exclude_tasks: Union[Collection[str], None] = None
-):
+    run: dict,
+    project_id: str = None,
+    cluster_path: str = None,
+    exclude_tasks: Union[Collection[str], None] = None,
+) -> Dict[str, Tuple[str, List[dict]]]:
     """Returns a mapping of project IDs to cluster-ID-tasks pairs"""
     project_cluster_tasks = _get_cluster_tasks(run, exclude_tasks)
 
@@ -1520,28 +1564,55 @@ def _get_project_cluster_tasks(
     if project_id:
         if project_id in project_cluster_tasks:
             filtered_project_cluster_tasks = {project_id: project_cluster_tasks.get(project_id)}
-        elif len(project_cluster_tasks) == 1:
+        elif cluster_path:
+            # A cluster can only be tagged with 1 project so this dict will only have 1 item at most
+            filtered_project_cluster_tasks = {
+                project_id: cluster_tasks
+                for _, cluster_tasks in project_cluster_tasks.items()
+                if cluster_path in cluster_tasks
+            }
+
+        if not filtered_project_cluster_tasks and len(project_cluster_tasks) == 1:
             # If there's only 1 cluster assume that's the one for the project
             filtered_project_cluster_tasks = {
                 project_id: next(iter(project_cluster_tasks.values()))
             }
+
+        assert not filtered_project_cluster_tasks or len(filtered_project_cluster_tasks) == 1
     else:
         filtered_project_cluster_tasks = {
             cluster_project_id: cluster_tasks
             for cluster_project_id, cluster_tasks in project_cluster_tasks.items()
-            if cluster_project_id
+            if cluster_project_id and (not cluster_path or cluster_path in cluster_tasks)
         }
 
-    return filtered_project_cluster_tasks
+    assert None not in filtered_project_cluster_tasks
+
+    result_project_cluster_tasks = {}
+    for project_id, cluster_tasks in filtered_project_cluster_tasks.items():
+        result_cluster_tasks = None
+        if len(cluster_tasks) > 1:  # if 2 clusters are tagged with the same project ID
+            if cluster_path in cluster_tasks:
+                result_cluster_tasks = cluster_tasks[cluster_path]
+        else:
+            result_cluster_tasks = next(iter(cluster_tasks.values()))
+
+        if result_cluster_tasks:
+            result_project_cluster_tasks[project_id] = result_cluster_tasks
+
+    return result_project_cluster_tasks
 
 
 def _get_cluster_tasks(
     run: dict,
     exclude_tasks: Union[Collection[str], None] = None,
-) -> Dict[str, Tuple[str, List[dict]]]:
-    """Returns a mapping of project IDs to cluster ID-tasks pairs"""
+) -> Dict[str, Dict[str, Tuple[str, List[dict]]]]:
+    """Returns a mapping of project IDs to cluster paths to cluster IDs and tasks"""
     job_clusters = {c["job_cluster_key"]: c["new_cluster"] for c in run.get("job_clusters", [])}
-    all_project_cluster_tasks = defaultdict(lambda: defaultdict(list))
+
+    cluster_id_tasks = defaultdict(list)
+    cluster_path_ids = defaultdict(list)
+    cluster_project_paths = defaultdict(list)
 
     for task in run["tasks"]:
         if "cluster_instance" in task and (
@@ -1550,21 +1621,35 @@ def _get_cluster_tasks(
             cluster_id = task["cluster_instance"]["cluster_id"]
 
             task_cluster = task.get("new_cluster")
-            if not task_cluster:
+            if task_cluster:
+                cluster_path = f"tasks/{task['task_key']}"
+            else:
                 task_cluster = job_clusters.get(task.get("job_cluster_key"))
+                cluster_path = f"job_clusters/{task.get('job_cluster_key')}"
 
             if task_cluster:
                 cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
-                all_project_cluster_tasks[cluster_project_id][cluster_id].append(task)
+                cluster_id_tasks[cluster_id].append(task)
+                cluster_path_ids[cluster_path].append(cluster_id)
+                cluster_project_paths[cluster_project_id].append(cluster_path)
 
-    filtered_project_cluster_tasks = {}
-    for project_id, cluster_tasks in all_project_cluster_tasks.items():
-        if len(cluster_tasks) > 1:
-            logger.warning(f"More than 1 cluster found for project ID {project_id}")
-        else:
-            filtered_project_cluster_tasks[project_id] = next(iter(cluster_tasks.items()))
+    result_cluster_project_tasks = {}
+    for project_id, cluster_paths in cluster_project_paths.items():
+        cluster_path_tasks = {}
+        for cluster_path in cluster_paths:
+            if len(cluster_path_ids[cluster_path]) == 1:
+                cluster_id = cluster_path_ids[cluster_path][0]
+                cluster_path_tasks[cluster_path] = (cluster_id, cluster_id_tasks[cluster_id])
+            else:
+                # Maybe this will happen if the same job cluster is used by 2 non adjacent tasks
+                logger.warning(
+                    f"More than 1 cluster instance found for the cluster at {cluster_path}"
+                )
 
-    return filtered_project_cluster_tasks
+        if cluster_path_tasks:
+            result_cluster_project_tasks[project_id] = cluster_path_tasks
+
+    return result_cluster_project_tasks
 
 
 def _get_run_spark_context_id(tasks: List[dict]) -> Response[str]:
@@ -1637,7 +1722,7 @@ def _dbfs_directory_has_all_rollover_logs(contents: dict, run_end_time_millis: f
     )
 
 
-def event_log_poll_duration_seconds():
+def _event_log_poll_duration_seconds():
     """Convenience function to aid testing"""
     return 15
 
@@ -1790,7 +1875,7 @@ def _get_eventlog(
     #   https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1
     # So we will poll this location for *up to* 5 minutes until we see all the eventlog files we are expecting
     # in the S3 bucket
-    poll_duration_seconds = event_log_poll_duration_seconds()
+    poll_duration_seconds = _event_log_poll_duration_seconds()
 
     if filesystem == "s3":
         return _get_eventlog_from_s3(

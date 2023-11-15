@@ -3,7 +3,11 @@ from typing import Tuple
 import click
 import orjson
 
-from sync.api.projects import create_project_recommendation, get_project_recommendation
+from sync.api.projects import (
+    create_project_recommendation,
+    get_project_recommendation,
+    get_project_submission,
+)
 from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import DatabricksComputeType, DatabricksPlanType, Platform, Preference
@@ -190,6 +194,7 @@ def create_recommendation(project: dict):
 @click.argument("project", callback=validate_project)
 @click.argument("recommendation-id")
 def get_recommendation(project: dict, recommendation_id: str):
+    """Get a project recommendation"""
     rec_response = get_project_recommendation(project["id"], recommendation_id)
     recommendation = rec_response.result
     if recommendation:
@@ -204,6 +209,27 @@ def get_recommendation(project: dict, recommendation_id: str):
             )
     else:
         click.echo(f"Failed to get recommendation. {rec_response.error}", err=True)
+
+
+@click.command
+@click.argument("project", callback=validate_project)
+@click.argument("submission-id")
+def get_submission(project: dict, submission_id: str):
+    """Get a project submission"""
+    sub_response = get_project_submission(project["id"], submission_id)
+    submission = sub_response.result
+    if submission:
+        if submission["state"] == "FAILURE":
+            click.echo("Submission generation failed.", err=True)
+        else:
+            click.echo(
+                orjson.dumps(
+                    submission,
+                    option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_UTC_Z,
+                )
+            )
+    else:
+        click.echo(f"Failed to get submission. {sub_response.error}", err=True)
 
 
 @click.command

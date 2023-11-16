@@ -144,6 +144,20 @@ class SyncClient(RetryableHTTPClient):
             )
         )
 
+    def get_project_submissions(self, project_id: str, params: dict = None) -> dict:
+        return self._send(
+            self._client.build_request(
+                "GET", f"/v1/projects/{project_id}/submissions", params=params
+            )
+        )
+
+    def get_project_submission(self, project_id: str, submission_id: str) -> dict:
+        return self._send(
+            self._client.build_request(
+                "GET", f"/v1/projects/{project_id}/submissions/{submission_id}"
+            )
+        )
+
     def create_workspace_config(self, workspace_id: str, **config) -> dict:
         headers, content = encode_json(config)
         return self._send(

@@ -27,7 +27,6 @@ from sync._databricks import (
     create_prediction_for_run,
     create_run,
     create_submission_for_run,
-    event_log_poll_duration_seconds,
     get_cluster,
     get_cluster_report,
     get_prediction_cluster,
@@ -91,7 +90,6 @@ __all__ = [
     "wait_for_final_run_status",
     "wait_for_run_and_cluster",
     "terminate_cluster",
-    "event_log_poll_duration_seconds",
     "apply_prediction",
     "apply_project_recommendation",
 ]

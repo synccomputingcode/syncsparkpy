@@ -53,6 +53,8 @@ def create_project(
     product_code: str,
     description: str = None,
     job_id: str = None,
+    cluster_path: str = None,
+    workspace_id: str = None,
     cluster_log_url: str = None,
     prediction_preference: Preference = Preference.ECONOMY,
     auto_apply_recs: bool = False,
@@ -69,6 +71,10 @@ def create_project(
     :type description: str, optional
     :param job_id: Databricks job ID, defaults to None
     :type job_id: str, optional
+    :param cluster_path: path to cluster definition in job object, defaults to None
+    :type cluster_path: str, optional
+    :param workspace_id: Databricks workspace ID, defaults to None
+    :type workspace_id: str, optional
     :param cluster_log_url: S3 or DBFS URL under which to store project configurations and logs, defaults to None
     :type cluster_log_url: str, optional
     :param prediction_preference: preferred prediction solution, defaults to `Preference.ECONOMY`
@@ -89,6 +95,8 @@ def create_project(
                 "product_code": product_code,
                 "description": description,
                 "job_id": job_id,
+                "cluster_path": cluster_path,
+                "workspace_id": workspace_id,
                 "cluster_log_url": cluster_log_url,
                 "prediction_preference": prediction_preference,
                 "auto_apply_recs": auto_apply_recs,
@@ -113,6 +121,8 @@ def get_project(project_id: str) -> Response[dict]:
 def update_project(
     project_id: str,
     description: str = None,
+    cluster_path: str = None,
+    workspace_id: str = None,
     cluster_log_url: str = None,
     app_id: str = None,
     prediction_preference: Preference = None,
@@ -125,6 +135,10 @@ def update_project(
     :type project_id: str
     :param description: description, defaults to None
     :type description: str, optional
+    :param cluster_path: path to cluster definition in job object, defaults to None
+    :type cluster_path: str, optional
+    :param workspace_id: Databricks workspace ID, defaults to None
+    :type workspace_id: str, optional
     :param cluster_log_url: location of project event logs and configurations, defaults to None
     :type cluster_log_url: str, optional
     :param app_id: external identifier, defaults to None
@@ -151,6 +165,10 @@ def update_project(
         project_update["auto_apply_recs"] = auto_apply_recs
     if prediction_params:
         project_update["prediction_params"] = prediction_params
+    if cluster_path:
+        project_update["cluster_path"] = cluster_path
+    if workspace_id:
+        project_update["workspace_id"] = workspace_id
 
     return Response(
         **get_default_client().update_project(
@@ -372,6 +390,24 @@ def get_project_recommendation(project_id: str, recommendation_id: str) -> Respo
     :rtype: Response[dict]
     """
     response = get_default_client().get_project_recommendation(project_id, recommendation_id)
+
+    if response.get("error"):
+        return Response(**response)
+
+    return Response(result=response["result"])
+
+
+def get_project_submission(project_id: str, submission_id: str) -> Response[dict]:
+    """Get a specific submission for a project id
+
+    :param project_id: project ID
+    :type project_id: str
+    :param submission_id: submission ID
+    :type submission_id: str
+    :return: submission object
+    :rtype: Response[dict]
+    """
+    response = get_default_client().get_project_submission(project_id, submission_id)
 
     if response.get("error"):
         return Response(**response)

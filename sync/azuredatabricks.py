@@ -309,7 +309,7 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
     return Response(result=cluster_instances)
 
 
-def monitor_cluster(cluster_id: str, polling_period: int = 5) -> None:
+def monitor_cluster(cluster_id: str, polling_period: int = 20) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
     while not spark_context_id:

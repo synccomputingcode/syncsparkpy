@@ -334,7 +334,7 @@ def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
         logger.warning(f"Failed to retrieve cluster info from S3 with key, '{file_key}': {err}")
 
 
-def monitor_cluster(cluster_id: str, polling_period: int = 10) -> None:
+def monitor_cluster(cluster_id: str, polling_period: int = 20) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
 

@@ -395,3 +395,21 @@ def get_project_recommendation(project_id: str, recommendation_id: str) -> Respo
         return Response(**response)
 
     return Response(result=response["result"])
+
+
+def get_project_submission(project_id: str, submission_id: str) -> Response[dict]:
+    """Get a specific submission for a project id
+
+    :param project_id: project ID
+    :type project_id: str
+    :param submission_id: submission ID
+    :type submission_id: str
+    :return: submission object
+    :rtype: Response[dict]
+    """
+    response = get_default_client().get_project_submission(project_id, submission_id)
+
+    if response.get("error"):
+        return Response(**response)
+
+    return Response(result=response["result"])

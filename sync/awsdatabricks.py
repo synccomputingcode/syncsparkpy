@@ -318,7 +318,8 @@ def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
 def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
-
+    logger.info(f"cluster: {cluster}")
+    logger.info(f"context_id: {spark_context_id}")
     while not spark_context_id:
         # This is largely just a convenience for when this command is run by someone locally
         logger.info("Waiting for cluster startup...")

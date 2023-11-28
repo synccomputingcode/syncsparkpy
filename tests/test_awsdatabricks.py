@@ -813,7 +813,12 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
     s3_stubber = Stubber(s3)
 
     mock_cluster_info_bytes = orjson.dumps(
-        {**MOCK_INSTANCES, **MOCK_VOLUMES},
+        {
+            "volumes": MOCK_VOLUMES["Volumes"],
+            "instances": [
+                inst for res in MOCK_INSTANCES["Reservations"] for inst in res["Instances"]
+            ],
+        },
         option=orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS | orjson.OPT_NAIVE_UTC,
     )
     s3_stubber.add_response(

@@ -112,15 +112,16 @@ class DatabricksClusterReport(BaseModel):
     cluster: dict
     cluster_events: dict
     tasks: List[dict]
+    instances: Union[List[dict], None]
+    instance_timelines: Union[List[dict], None]
 
 
 class AWSDatabricksClusterReport(DatabricksClusterReport):
-    instances: Union[dict, None]
-    volumes: Union[dict, None]
+    volumes: Union[List[dict], None]
 
 
 class AzureDatabricksClusterReport(DatabricksClusterReport):
-    instances: Union[List[dict], None]
+    pass
 
 
 class DatabricksError(Error):

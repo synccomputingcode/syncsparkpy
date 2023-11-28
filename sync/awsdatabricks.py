@@ -1,6 +1,6 @@
 import logging
 from time import sleep
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -13,6 +13,7 @@ from sync._databricks import (
     _cluster_log_destination,
     _get_all_cluster_events,
     _get_cluster_instances_from_dbfs,
+    _update_monitored_timelines,
     _wait_for_cluster_termination,
     apply_prediction,
     apply_project_recommendation,
@@ -203,15 +204,15 @@ def _get_cluster_report(
 
     cluster = cluster_response.result
 
-    reservations_response, volumes_response = _get_aws_cluster_info(cluster)
+    instances_response, timeline_response, volumes_response = _get_aws_cluster_info(cluster)
 
-    if reservations_response.error:
+    if instances_response.error:
         if allow_incomplete:
-            logger.warning(reservations_response.error)
+            logger.warning(instances_response.error)
         else:
-            return reservations_response
+            return instances_response
 
-    # The volumes data is less critical than reservations, so allow
+    # The volumes data is less critical than instances, so allow
     # the cluster report to get created even if the volumes response
     # has an error.
     if volumes_response.error:
@@ -219,6 +220,12 @@ def _get_cluster_report(
         volumes = []
     else:
         volumes = volumes_response.result
+
+    if timeline_response.error:
+        logger.warning(timeline_response.error)
+        timelines = []
+    else:
+        timelines = timeline_response.result
 
     cluster_events = _get_all_cluster_events(cluster_id)
     return Response(
@@ -229,7 +236,8 @@ def _get_cluster_report(
             cluster_events=cluster_events,
             volumes=volumes,
             tasks=cluster_tasks,
-            instances=reservations_response.result,
+            instances=instances_response.result,
+            instance_timelines=timelines,
         )
     )
 
@@ -243,10 +251,10 @@ sync._databricks._get_cluster_report = _get_cluster_report
 setattr(sync._databricks, "__claim", __name__)
 
 
-def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]]:
-    cluster_info = None
-    aws_region_name = DB_CONFIG.aws_region_name
+def _load_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]]:
 
+    cluster_info = None
+    cluster_id = None
     cluster_log_dest = _cluster_log_destination(cluster)
 
     if cluster_log_dest:
@@ -271,19 +279,27 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
     if not cluster_info:
-
         try:
-            ec2 = boto.client("ec2", region_name=aws_region_name)
-            reservations = _get_ec2_instances(cluster_id, ec2)
-            volumes = _get_ebs_volumes_for_reservations(reservations, ec2)
+            ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
+            instances = _get_ec2_instances(cluster_id, ec2)
+            volumes = _get_ebs_volumes_for_instances(instances, ec2)
 
             cluster_info = {
-                "Reservations": reservations,
-                "Volumes": volumes,
+                "instances": instances,
+                "volumes": volumes,
             }
 
         except Exception as exc:
             logger.warning(exc)
+
+    return cluster_info, cluster_id
+
+
+def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict], Response[dict]]:
+
+    aws_region_name = DB_CONFIG.aws_region_name
+
+    cluster_info, cluster_id = _load_aws_cluster_info(cluster)
 
     def missing_message(input: str) -> str:
         return (
@@ -292,19 +308,22 @@ def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]
             + "https://docs.synccomputing.com/sync-gradient/integrating-with-gradient/databricks-workflows"
         )
 
-    if not cluster_info or not cluster_info.get("Reservations"):
-        reservations_response = Response(
-            error=DatabricksError(message=missing_message("instances"))
-        )
+    if not cluster_info or not cluster_info.get("instances"):
+        instances_response = Response(error=DatabricksError(message=missing_message("instances")))
     else:
-        reservations_response = Response(result={"Reservations": cluster_info["Reservations"]})
+        instances_response = Response(result=cluster_info["instances"])
 
-    if not cluster_info or not cluster_info.get("Volumes"):
+    if not cluster_info or not cluster_info.get("instance_timelines"):
+        timeline_response = Response(error=DatabricksError(message=missing_message("timelines")))
+    else:
+        timeline_response = Response(result=cluster_info["instance_timelines"])
+
+    if not cluster_info or not cluster_info.get("volumes"):
         volumes_response = Response(error=DatabricksError(message=missing_message("ebs volumes")))
     else:
-        volumes_response = Response(result={"Volumes": cluster_info.get("Volumes")})
+        volumes_response = Response(result=cluster_info.get("volumes"))
 
-    return reservations_response, volumes_response
+    return instances_response, timeline_response, volumes_response
 
 
 def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
@@ -315,7 +334,7 @@ def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
         logger.warning(f"Failed to retrieve cluster info from S3 with key, '{file_key}': {err}")
 
 
-def monitor_cluster(cluster_id: str, polling_period: int = 30) -> None:
+def monitor_cluster(cluster_id: str, polling_period: int = 20) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
 
@@ -363,67 +382,48 @@ def _monitor_cluster(
             logger.info("Saving state to DBFS")
             write_dbfs_file(path, body, dbx_client)
 
-    old_reservations = []
-    recorded_volumes = {}
+    all_inst_by_id = {}
+    active_timelines_by_id = {}
+    retired_timelines = []
+    recorded_volumes_by_id = {}
     while True:
         try:
-            new_reservations = _get_ec2_instances(cluster_id, ec2)
-            new_volumes = _get_ebs_volumes_for_reservations(new_reservations, ec2)
-
-            recorded_volumes.update({v["VolumeId"]: v for v in new_volumes})
-
-            new_instance_id_to_reservation = dict(
-                zip(
-                    (res["Instances"][0]["InstanceId"] for res in new_reservations),
-                    new_reservations,
-                )
+            current_insts = _get_ec2_instances(cluster_id, ec2)
+            recorded_volumes_by_id.update(
+                {v["VolumeId"]: v for v in _get_ebs_volumes_for_instances(current_insts, ec2)}
             )
 
-            old_instance_id_to_reservation = dict(
-                zip(
-                    (res["Instances"][0]["InstanceId"] for res in old_reservations),
-                    old_reservations,
-                )
+            # Record new (or overrwite) existing instances.
+            # Separately record the ids of those that are in the "running" state.
+            running_inst_ids = set({})
+            for inst in current_insts:
+                all_inst_by_id[inst["InstanceId"]] = inst
+                if inst["State"]["Name"] == "running":
+                    running_inst_ids.add(inst["InstanceId"])
+
+            active_timelines_by_id, new_retired_timelines = _update_monitored_timelines(
+                running_inst_ids, active_timelines_by_id
             )
 
-            old_instance_ids = set(old_instance_id_to_reservation)
-            new_instance_ids = set(new_instance_id_to_reservation)
-
-            # If we have the exact same set of instances, prefer the new set...
-            if old_instance_ids == new_instance_ids:
-                reservations = new_reservations
-            else:
-                # Otherwise, update old references and include any new instances in the list
-                newly_added_instance_ids = new_instance_ids.difference(old_instance_ids)
-                updated_instance_ids = new_instance_ids.intersection(old_instance_ids)
-                removed_instance_ids = old_instance_ids.difference(new_instance_ids)
-
-                removed_reservations = [
-                    old_instance_id_to_reservation[id] for id in removed_instance_ids
-                ]
-                updated_reservations = [
-                    new_instance_id_to_reservation[id] for id in updated_instance_ids
-                ]
-                new_reservations = [
-                    new_instance_id_to_reservation[id] for id in newly_added_instance_ids
-                ]
-
-                reservations = [*removed_reservations, *updated_reservations, *new_reservations]
+            retired_timelines.extend(new_retired_timelines)
+            all_timelines = retired_timelines + list(active_timelines_by_id.values())
 
             write_file(
                 orjson.dumps(
-                    {"Reservations": reservations, "Volumes": list(recorded_volumes.values())}
+                    {
+                        "instances": list(all_inst_by_id.values()),
+                        "instance_timelines": all_timelines,
+                        "volumes": list(recorded_volumes_by_id.values()),
+                    }
                 )
             )
-
-            old_reservations = reservations
         except Exception as e:
             logger.error(f"Exception encountered while polling cluster: {e}")
 
         sleep(polling_period)
 
 
-def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[Dict]:
+def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[dict]:
 
     filters = [
         {"Name": "tag:Vendor", "Values": ["Databricks"]},
@@ -438,25 +438,24 @@ def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> Li
         reservations += response.get("Reservations", [])
         next_token = response.get("NextToken")
 
-    num_instances = 0
-    if reservations:
-        num_instances = len(reservations[0].get("Instances", []))
-    logger.info(f"Identified {num_instances} instances in cluster")
+    instances = []
+    for res in reservations:
+        for inst in res.get("Instances", []):
+            instances.append(inst)
+    logger.info(f"Identified {len(instances)} instances in cluster")
 
-    return reservations
+    return instances
 
 
-def _get_ebs_volumes_for_reservations(
-    reservations: List[Dict], ec2_client: "botocore.client.ec2"
-) -> List[Dict]:
+def _get_ebs_volumes_for_instances(
+    instances: List[dict], ec2_client: "botocore.client.ec2"
+) -> List[dict]:
     """Get all ebs volumes associated with a list of instance reservations"""
 
     instance_ids = []
-    if reservations:
-        for res in reservations:
-            for instance in res.get("Instances", []):
-                if instance:
-                    instance_ids.append(instance.get("InstanceId"))
+    if instances:
+        for instance in instances:
+            instance_ids.append(instance.get("InstanceId"))
 
     volumes = []
     if instance_ids:

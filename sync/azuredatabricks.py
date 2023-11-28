@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 from time import sleep
-from typing import List, Type, TypeVar
+from typing import List, Dict, Type, TypeVar, Optional
 from urllib.parse import urlparse
 
 import orjson
@@ -419,8 +419,8 @@ def _get_azure_subscription_id():
 
 
 def _get_running_vms_by_id(
-    compute: AzureClient, resource_group_name: str | None, cluster_id: str
-) -> dict[str, dict]:
+    compute: AzureClient, resource_group_name: Optional[str], cluster_id: str
+) -> Dict[str, dict]:
 
     if resource_group_name:
         vms = compute.virtual_machines.list(resource_group_name=resource_group_name)

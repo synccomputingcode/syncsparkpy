@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 import boto3 as boto
 import botocore
-import orjson
+import json
 from botocore.exceptions import ClientError
 
 import sync._databricks
@@ -273,7 +273,7 @@ def _load_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict
             cluster_info_file_response = _get_cluster_instances_from_dbfs(cluster_info_file_key)
 
         cluster_info = (
-            orjson.loads(cluster_info_file_response) if cluster_info_file_response else None
+            json.loads(cluster_info_file_response) if cluster_info_file_response else None
         )
 
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
@@ -409,7 +409,7 @@ def _monitor_cluster(
             all_timelines = retired_timelines + list(active_timelines_by_id.values())
 
             write_file(
-                orjson.dumps(
+                json.dumps(
                     {
                         "instances": list(all_inst_by_id.values()),
                         "instance_timelines": all_timelines,

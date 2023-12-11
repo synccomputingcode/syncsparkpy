@@ -28,7 +28,7 @@ from sync.models import (
     ProjectError,
     Response,
 )
-from syncsparkpy.sync.utils.json import DateTimeEncoderDropMicroseconds
+from sync.utils.json import DateTimeEncoderDropMicroseconds
 
 logger = logging.getLogger(__name__)
 

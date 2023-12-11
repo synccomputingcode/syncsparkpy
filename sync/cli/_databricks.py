@@ -1,7 +1,7 @@
+import json
 from typing import Tuple
 
 import click
-import json
 
 from sync.api.projects import (
     create_project_recommendation,
@@ -204,7 +204,9 @@ def get_recommendation(project: dict, recommendation_id: str):
         else:
             click.echo(
                 json.dumps(
-                    recommendation, indent=2, cls=DateTimeEncoder,
+                    recommendation,
+                    indent=2,
+                    cls=DateTimeEncoder,
                 )
             )
     else:
@@ -224,7 +226,9 @@ def get_submission(project: dict, submission_id: str):
         else:
             click.echo(
                 json.dumps(
-                    submission, indent=2, cls=DateTimeEncoder,
+                    submission,
+                    indent=2,
+                    cls=DateTimeEncoder,
                 )
             )
     else:
@@ -277,7 +281,9 @@ def get_cluster_report(
     if config:
         click.echo(
             json.dumps(
-                config.dict(exclude_none=True), indent=2, cls=DateTimeEncoder,
+                config.dict(exclude_none=True),
+                indent=2,
+                cls=DateTimeEncoder,
             )
         )
     else:

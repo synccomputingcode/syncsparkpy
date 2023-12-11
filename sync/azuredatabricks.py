@@ -1,11 +1,11 @@
+import json
 import logging
 import os
 import sys
 from time import sleep
-from typing import List, Dict, Type, TypeVar, Optional
+from typing import Dict, List, Optional, Type, TypeVar
 from urllib.parse import urlparse
 
-import json
 from azure.common.credentials import get_cli_profile
 from azure.core.exceptions import ClientAuthenticationError
 from azure.identity import DefaultAzureCredential
@@ -266,9 +266,7 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
             )
 
         cluster_instances = (
-            json.loads(cluster_instances_file_response)
-            if cluster_instances_file_response
-            else None
+            json.loads(cluster_instances_file_response) if cluster_instances_file_response else None
         )
 
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
@@ -371,12 +369,15 @@ def _monitor_cluster(
             all_timelines = retired_timelines + list(active_timelines_by_id.values())
 
             write_file(
-                bytes(json.dumps(
-                    {
-                        "instances": list(all_vms_by_id.values()),
-                        "timelines": all_timelines,
-                    }
-                ), 'utf-8')
+                bytes(
+                    json.dumps(
+                        {
+                            "instances": list(all_vms_by_id.values()),
+                            "timelines": all_timelines,
+                        }
+                    ),
+                    "utf-8",
+                )
             )
 
         except Exception as e:

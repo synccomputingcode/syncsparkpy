@@ -1,10 +1,10 @@
 import io
+import json
 from pathlib import Path
 from urllib.parse import urlparse
 
 import boto3 as boto
 import click
-import json
 
 from sync.api.predictions import (
     create_prediction,
@@ -83,11 +83,7 @@ def generate(
         prediction_response = wait_for_prediction(prediction_id, preference.value)
         prediction = prediction_response.result
         if prediction:
-            click.echo(
-                json.dumps(
-                    prediction, indent=2, cls = DateTimeEncoderDropMicroseconds
-                )
-            )
+            click.echo(json.dumps(prediction, indent=2, cls=DateTimeEncoderDropMicroseconds))
         else:
             click.echo(str(response.error), err=True)
     else:
@@ -158,11 +154,7 @@ def status(prediction_id: str):
 def get(prediction_id: str, preference: Preference):
     """Retrieve a prediction"""
     response = get_prediction(prediction_id, preference.value)
-    click.echo(
-        json.dumps(
-            response.result, indent=2, cls=DateTimeEncoderDropMicroseconds
-        )
-    )
+    click.echo(json.dumps(response.result, indent=2, cls=DateTimeEncoderDropMicroseconds))
 
 
 @predictions.command

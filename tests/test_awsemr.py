@@ -1,7 +1,7 @@
+import json
 from unittest.mock import Mock, patch
 
 import boto3 as boto
-import json
 from botocore.stub import ANY, Stubber
 from dateutil.parser import parse
 from deepdiff import DeepDiff

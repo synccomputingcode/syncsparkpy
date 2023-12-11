@@ -1,6 +1,7 @@
 import datetime
 from json import JSONEncoder
 
+
 class DateTimeEncoder(JSONEncoder):
     def default(self, obj):
         if isinstance(obj, datetime.datetime):
@@ -10,6 +11,7 @@ class DateTimeEncoder(JSONEncoder):
             date = date.isoformat()
             date = date.replace("+00:00", "Z")
             return date
+
 
 class DateTimeEncoderDropMicroseconds(JSONEncoder):
     def default(self, obj):

@@ -4,6 +4,7 @@ Utilities for interacting with EMR
 
 import datetime
 import io
+import json
 import logging
 import re
 from copy import deepcopy
@@ -12,7 +13,6 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 import boto3 as boto
-import json
 from dateutil.parser import parse as dateparse
 
 from sync import TIME_FORMAT
@@ -753,9 +753,7 @@ def _upload_object(obj: dict, s3_url: str) -> Response[str]:
     try:
         s3 = boto.client("s3")
         s3.upload_fileobj(
-            io.BytesIO(
-                bytes(json.dumps(obj, cls=DateTimeEncoderDropMicroseconds), 'utf-8')
-            ),
+            io.BytesIO(bytes(json.dumps(obj, cls=DateTimeEncoderDropMicroseconds), "utf-8")),
             parsed_url.netloc,
             obj_key,
         )

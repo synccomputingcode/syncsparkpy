@@ -1,5 +1,6 @@
-import click
 import json
+
+import click
 
 from sync.api import workspace
 from sync.cli.util import OPTIONAL_DEFAULT, validate_project
@@ -76,11 +77,7 @@ def create_workspace_config(
     )
     config = response.result
     if config:
-        click.echo(
-            json.dumps(
-                config, indent=2, cls=DateTimeEncoderDropMicroseconds
-            )
-        )
+        click.echo(json.dumps(config, indent=2, cls=DateTimeEncoderDropMicroseconds))
     else:
         click.echo(str(response.error), err=True)
 
@@ -93,7 +90,9 @@ def get_workspace_config(workspace_id: str):
     if config:
         click.echo(
             json.dumps(
-                config, indent=2, cls= DateTimeEncoderDropMicroseconds,
+                config,
+                indent=2,
+                cls=DateTimeEncoderDropMicroseconds,
             )
         )
     else:
@@ -173,7 +172,9 @@ def update_workspace_config(
         if config:
             click.echo(
                 json.dumps(
-                    config, indent=2, cls=DateTimeEncoderDropMicroseconds,
+                    config,
+                    indent=2,
+                    cls=DateTimeEncoderDropMicroseconds,
                 )
             )
         else:
@@ -204,7 +205,9 @@ def reset_webhook_creds(workspace_id: str):
     if result:
         click.echo(
             json.dumps(
-                result, indent=2, cls=DateTimeEncoderDropMicroseconds,
+                result,
+                indent=2,
+                cls=DateTimeEncoderDropMicroseconds,
             )
         )
     else:

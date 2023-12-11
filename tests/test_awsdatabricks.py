@@ -1,11 +1,11 @@
 import copy
 import io
+import json
 from datetime import datetime
 from unittest.mock import Mock, patch
 from uuid import uuid4
 
 import boto3 as boto
-import json
 from botocore.response import StreamingBody
 from botocore.stub import Stubber
 from httpx import Response
@@ -820,7 +820,7 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
                 inst for res in MOCK_INSTANCES["Reservations"] for inst in res["Instances"]
             ],
         },
-        cls = DateTimeEncoderDropMicroseconds,
+        cls=DateTimeEncoderDropMicroseconds,
     )
     s3_stubber.add_response(
         "get_object",
@@ -828,7 +828,7 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
             "ContentType": "application/octet-stream",
             "ContentLength": len(mock_cluster_info_bytes),
             "Body": StreamingBody(
-                io.BytesIO(bytes(mock_cluster_info_bytes, 'utf_8')),
+                io.BytesIO(bytes(mock_cluster_info_bytes, "utf_8")),
                 len(mock_cluster_info_bytes),
             ),
         },

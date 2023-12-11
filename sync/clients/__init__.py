@@ -1,7 +1,8 @@
-import httpx
 import json
+from typing import Set, Tuple, Union
+
+import httpx
 from tenacity import Retrying, TryAgain, stop_after_attempt, wait_exponential_jitter
-from typing import Tuple, Union, Set
 
 from sync import __version__
 from sync.utils.json import DateTimeEncoderDropMicroseconds

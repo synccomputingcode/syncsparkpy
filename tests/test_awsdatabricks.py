@@ -813,14 +813,17 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
     s3 = boto.client("s3")
     s3_stubber = Stubber(s3)
 
-    mock_cluster_info_bytes = json.dumps(
-        {
-            "volumes": MOCK_VOLUMES["Volumes"],
-            "instances": [
-                inst for res in MOCK_INSTANCES["Reservations"] for inst in res["Instances"]
-            ],
-        },
-        cls=DateTimeEncoderDropMicroseconds,
+    mock_cluster_info_bytes = bytes(
+        json.dumps(
+            {
+                "volumes": MOCK_VOLUMES["Volumes"],
+                "instances": [
+                    inst for res in MOCK_INSTANCES["Reservations"] for inst in res["Instances"]
+                ],
+            },
+            cls=DateTimeEncoderDropMicroseconds,
+        ),
+        "utf-8",
     )
     s3_stubber.add_response(
         "get_object",
@@ -828,7 +831,7 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
             "ContentType": "application/octet-stream",
             "ContentLength": len(mock_cluster_info_bytes),
             "Body": StreamingBody(
-                io.BytesIO(bytes(mock_cluster_info_bytes, "utf_8")),
+                io.BytesIO(mock_cluster_info_bytes),
                 len(mock_cluster_info_bytes),
             ),
         },

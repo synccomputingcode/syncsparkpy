@@ -1,3 +1,4 @@
+import json
 import logging
 from time import sleep
 from typing import List, Tuple
@@ -5,7 +6,6 @@ from urllib.parse import urlparse
 
 import boto3 as boto
 import botocore
-import json
 from botocore.exceptions import ClientError
 
 import sync._databricks
@@ -409,12 +409,15 @@ def _monitor_cluster(
             all_timelines = retired_timelines + list(active_timelines_by_id.values())
 
             write_file(
-                json.dumps(
-                    {
-                        "instances": list(all_inst_by_id.values()),
-                        "instance_timelines": all_timelines,
-                        "volumes": list(recorded_volumes_by_id.values()),
-                    }
+                bytes(
+                    json.dumps(
+                        {
+                            "instances": list(all_inst_by_id.values()),
+                            "instance_timelines": all_timelines,
+                            "volumes": list(recorded_volumes_by_id.values()),
+                        }
+                    ),
+                    "utf-8",
                 )
             )
         except Exception as e:

@@ -5,7 +5,7 @@ from time import sleep
 from typing import List, Dict, Type, TypeVar, Optional
 from urllib.parse import urlparse
 
-import orjson
+import json
 from azure.common.credentials import get_cli_profile
 from azure.core.exceptions import ClientAuthenticationError
 from azure.identity import DefaultAzureCredential
@@ -266,7 +266,7 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
             )
 
         cluster_instances = (
-            orjson.loads(cluster_instances_file_response)
+            json.loads(cluster_instances_file_response)
             if cluster_instances_file_response
             else None
         )
@@ -371,12 +371,12 @@ def _monitor_cluster(
             all_timelines = retired_timelines + list(active_timelines_by_id.values())
 
             write_file(
-                orjson.dumps(
+                bytes(json.dumps(
                     {
                         "instances": list(all_vms_by_id.values()),
                         "timelines": all_timelines,
                     }
-                )
+                ), 'utf-8')
             )
 
         except Exception as e:

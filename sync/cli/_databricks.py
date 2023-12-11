@@ -1,7 +1,7 @@
 from typing import Tuple
 
 import click
-import orjson
+import json
 
 from sync.api.projects import (
     create_project_recommendation,
@@ -11,6 +11,7 @@ from sync.api.projects import (
 from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import DatabricksComputeType, DatabricksPlanType, Platform, Preference
+from sync.utils.json import DateTimeEncoder
 
 pass_platform = click.make_pass_decorator(Platform)
 
@@ -202,9 +203,8 @@ def get_recommendation(project: dict, recommendation_id: str):
             click.echo("Recommendation generation failed.", err=True)
         else:
             click.echo(
-                orjson.dumps(
-                    recommendation,
-                    option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_UTC_Z,
+                json.dumps(
+                    recommendation, indent=2, cls=DateTimeEncoder,
                 )
             )
     else:
@@ -223,9 +223,8 @@ def get_submission(project: dict, submission_id: str):
             click.echo("Submission generation failed.", err=True)
         else:
             click.echo(
-                orjson.dumps(
-                    submission,
-                    option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_UTC_Z,
+                json.dumps(
+                    submission, indent=2, cls=DateTimeEncoder,
                 )
             )
     else:
@@ -277,9 +276,8 @@ def get_cluster_report(
     config = config_response.result
     if config:
         click.echo(
-            orjson.dumps(
-                config.dict(exclude_none=True),
-                option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_UTC_Z,
+            json.dumps(
+                config.dict(exclude_none=True), indent=2, cls=DateTimeEncoder,
             )
         )
     else:

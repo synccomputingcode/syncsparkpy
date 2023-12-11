@@ -1,23 +1,23 @@
 import httpx
-import orjson
+import json
 from tenacity import Retrying, TryAgain, stop_after_attempt, wait_exponential_jitter
 from typing import Tuple, Union, Set
 
 from sync import __version__
+from sync.utils.json import DateTimeEncoderDropMicroseconds
 
 USER_AGENT = f"Sync Library/{__version__} (syncsparkpy)"
 
 
 def encode_json(obj: dict) -> Tuple[dict, str]:
     # "%Y-%m-%dT%H:%M:%SZ"
-    options = orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS | orjson.OPT_NAIVE_UTC
 
-    json = orjson.dumps(obj, option=options).decode()
+    json_obj = json.dumps(obj, cls=DateTimeEncoderDropMicroseconds)
 
     return {
-        "Content-Length": str(len(json)),
+        "Content-Length": str(len(json_obj)),
         "Content-Type": "application/json",
-    }, json
+    }, json_obj
 
 
 class RetryableHTTPClient:

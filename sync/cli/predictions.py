@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 
 import boto3 as boto
 import click
-import orjson
+import json
 
 from sync.api.predictions import (
     create_prediction,
@@ -17,6 +17,7 @@ from sync.api.predictions import (
 from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import Platform, Preference
+from sync.utils.json import DateTimeEncoderDropMicroseconds
 
 
 @click.group
@@ -48,12 +49,12 @@ def generate(
     parsed_report_arg = urlparse(report)
     if parsed_report_arg.scheme == "":
         with open(report) as report_fobj:
-            report = orjson.loads(report_fobj.read())
+            report = json.loads(report_fobj.read())
     elif parsed_report_arg.scheme == "s3":
         s3 = boto.client("s3")
         report_io = io.BytesIO()
         s3.download_fileobj(parsed_report_arg.netloc, parsed_report_arg.path.lstrip("/"), report_io)
-        report = orjson.loads(report_io.getvalue())
+        report = json.loads(report_io.getvalue())
     else:
         ctx.fail("Unsupported report argument")
 
@@ -83,12 +84,8 @@ def generate(
         prediction = prediction_response.result
         if prediction:
             click.echo(
-                orjson.dumps(
-                    prediction,
-                    option=orjson.OPT_INDENT_2
-                    | orjson.OPT_UTC_Z
-                    | orjson.OPT_NAIVE_UTC
-                    | orjson.OPT_OMIT_MICROSECONDS,
+                json.dumps(
+                    prediction, indent=2, cls = DateTimeEncoderDropMicroseconds
                 )
             )
         else:
@@ -108,12 +105,12 @@ def create(ctx: click.Context, platform: Platform, event_log: str, report: str, 
     parsed_report_arg = urlparse(report)
     if parsed_report_arg.scheme == "":
         with open(report) as report_fobj:
-            report = orjson.loads(report_fobj.read())
+            report = json.loads(report_fobj.read())
     elif parsed_report_arg.scheme == "s3":
         s3 = boto.client("s3")
         report_io = io.BytesIO()
         s3.download_fileobj(parsed_report_arg.netloc, parsed_report_arg.path.lstrip("/"), report_io)
-        report = orjson.loads(report_io.getvalue())
+        report = json.loads(report_io.getvalue())
     else:
         ctx.fail("Unsupported report argument")
 
@@ -162,12 +159,8 @@ def get(prediction_id: str, preference: Preference):
     """Retrieve a prediction"""
     response = get_prediction(prediction_id, preference.value)
     click.echo(
-        orjson.dumps(
-            response.result,
-            option=orjson.OPT_INDENT_2
-            | orjson.OPT_UTC_Z
-            | orjson.OPT_NAIVE_UTC
-            | orjson.OPT_OMIT_MICROSECONDS,
+        json.dumps(
+            response.result, indent=2, cls=DateTimeEncoderDropMicroseconds
         )
     )
 

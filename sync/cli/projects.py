@@ -1,5 +1,5 @@
 import click
-import orjson
+import json
 
 from sync.api.projects import (
     create_project,
@@ -12,7 +12,7 @@ from sync.api.projects import (
 from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import Preference
-
+from sync.utils.json import DateTimeEncoderDropMicroseconds
 
 @click.group
 def projects():
@@ -41,9 +41,8 @@ def get(project: dict):
     project = response.result
     if project:
         click.echo(
-            orjson.dumps(
-                project,
-                option=orjson.OPT_INDENT_2 | orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS,
+            json.dumps(
+                project, indent=2, cls = DateTimeEncoderDropMicroseconds
             )
         )
     else:
@@ -184,12 +183,8 @@ def get_latest_prediction(project: dict, preference: Preference):
     prediction = prediction_response.result
     if prediction:
         click.echo(
-            orjson.dumps(
-                prediction,
-                option=orjson.OPT_INDENT_2
-                | orjson.OPT_UTC_Z
-                | orjson.OPT_NAIVE_UTC
-                | orjson.OPT_OMIT_MICROSECONDS,
+            json.dumps(
+                prediction, indent=2, cls=DateTimeEncoderDropMicroseconds
             )
         )
     else:

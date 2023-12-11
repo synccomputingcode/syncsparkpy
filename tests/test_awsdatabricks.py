@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 from uuid import uuid4
 
 import boto3 as boto
-import orjson
+import json
 from botocore.response import StreamingBody
 from botocore.stub import Stubber
 from httpx import Response
@@ -14,6 +14,7 @@ from sync.awsdatabricks import create_prediction_for_run
 from sync.config import DatabricksConf
 from sync.models import DatabricksAPIError, DatabricksError
 from sync.models import Response as SyncResponse
+from sync.utils.json import DateTimeEncoderDropMicroseconds
 
 MOCK_RUN = {
     "job_id": 12345678910,
@@ -812,14 +813,14 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
     s3 = boto.client("s3")
     s3_stubber = Stubber(s3)
 
-    mock_cluster_info_bytes = orjson.dumps(
+    mock_cluster_info_bytes = json.dumps(
         {
             "volumes": MOCK_VOLUMES["Volumes"],
             "instances": [
                 inst for res in MOCK_INSTANCES["Reservations"] for inst in res["Instances"]
             ],
         },
-        option=orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS | orjson.OPT_NAIVE_UTC,
+        cls = DateTimeEncoderDropMicroseconds,
     )
     s3_stubber.add_response(
         "get_object",
@@ -827,7 +828,7 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
             "ContentType": "application/octet-stream",
             "ContentLength": len(mock_cluster_info_bytes),
             "Body": StreamingBody(
-                io.BytesIO(mock_cluster_info_bytes),
+                io.BytesIO(bytes(mock_cluster_info_bytes, 'utf_8')),
                 len(mock_cluster_info_bytes),
             ),
         },

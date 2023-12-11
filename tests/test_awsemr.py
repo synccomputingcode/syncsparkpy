@@ -1,7 +1,7 @@
 from unittest.mock import Mock, patch
 
 import boto3 as boto
-import orjson
+import json
 from botocore.stub import ANY, Stubber
 from dateutil.parser import parse
 from deepdiff import DeepDiff
@@ -20,7 +20,7 @@ from sync.models import Response
 def test_create_prediction(create_prediction, get_cluster_report):
     with open("tests/data/emr-cluster-report.json") as emr_cluster_report_fobj:
         get_cluster_report.return_value = Response(
-            result=orjson.loads(emr_cluster_report_fobj.read())
+            result=json.loads(emr_cluster_report_fobj.read())
         )
 
     prediction_id = "320554b0-3972-4b7c-9e41-c8efdbdc042c"
@@ -62,7 +62,7 @@ def test_create_prediction(create_prediction, get_cluster_report):
 
 def test_get_cluster_report():
     with open("tests/data/emr-cluster-report.json") as emr_cluster_report_fobj:
-        emr_cluster_report = orjson.loads(emr_cluster_report_fobj.read())
+        emr_cluster_report = json.loads(emr_cluster_report_fobj.read())
 
     cluster_id = emr_cluster_report["Cluster"]["Id"]
     region = emr_cluster_report["Region"]
@@ -103,7 +103,7 @@ def test_get_cluster_report():
 @patch("sync.awsemr.get_project")
 def test_get_project_report(get_project, get_cluster_report):
     with open("tests/data/emr-cluster-report.json") as emr_cluster_report_fobj:
-        cluster_report = orjson.loads(emr_cluster_report_fobj.read())
+        cluster_report = json.loads(emr_cluster_report_fobj.read())
         get_cluster_report.return_value = Response(result=cluster_report)
 
     get_project.return_value = Response(

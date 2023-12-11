@@ -1,4 +1,4 @@
-import orjson
+import json
 import pytest
 import respx
 from httpx import Response
@@ -33,7 +33,7 @@ async def test_generate_prediction():
     with open("tests/data/predictions_response.json") as predictions_fobj:
         prediction = [
             p
-            for p in orjson.loads(predictions_fobj.read())["result"]
+            for p in json.loads(predictions_fobj.read())["result"]
             if p["prediction_id"] == prediction_id
         ][0]
     mock_router.get(f"/v1/autotuner/predictions/{prediction_id}").mock(

@@ -1,10 +1,11 @@
 import click
-import orjson
+import json
 
 from sync.api import workspace
 from sync.cli.util import OPTIONAL_DEFAULT, validate_project
 from sync.config import API_KEY, DB_CONFIG
 from sync.models import DatabricksPlanType
+from sync.utils.json import DateTimeEncoderDropMicroseconds
 
 
 @click.group
@@ -76,9 +77,8 @@ def create_workspace_config(
     config = response.result
     if config:
         click.echo(
-            orjson.dumps(
-                config,
-                option=orjson.OPT_INDENT_2 | orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS,
+            json.dumps(
+                config, indent=2, cls=DateTimeEncoderDropMicroseconds
             )
         )
     else:
@@ -92,9 +92,8 @@ def get_workspace_config(workspace_id: str):
     config = config_response.result
     if config:
         click.echo(
-            orjson.dumps(
-                config,
-                option=orjson.OPT_INDENT_2 | orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS,
+            json.dumps(
+                config, indent=2, cls= DateTimeEncoderDropMicroseconds,
             )
         )
     else:
@@ -173,9 +172,8 @@ def update_workspace_config(
         config = update_config_response.result
         if config:
             click.echo(
-                orjson.dumps(
-                    config,
-                    option=orjson.OPT_INDENT_2 | orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS,
+                json.dumps(
+                    config, indent=2, cls=DateTimeEncoderDropMicroseconds,
                 )
             )
         else:
@@ -205,9 +203,8 @@ def reset_webhook_creds(workspace_id: str):
     result = response.result
     if result:
         click.echo(
-            orjson.dumps(
-                result,
-                option=orjson.OPT_INDENT_2 | orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS,
+            json.dumps(
+                result, indent=2, cls=DateTimeEncoderDropMicroseconds,
             )
         )
     else:

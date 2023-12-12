@@ -94,6 +94,9 @@ class SyncClient(RetryableHTTPClient):
             self._client.build_request("POST", "/v1/projects", headers=headers, content=content)
         )
 
+    def reset_project(self, project_id: str) -> dict:
+        return self._send(self._client.build_request("POST", f"/v1/projects/{project_id}/reset"))
+
     def update_project(self, project_id: str, project: dict) -> dict:
         headers, content = encode_json(project)
         return self._send(

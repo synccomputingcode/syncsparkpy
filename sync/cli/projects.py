@@ -7,6 +7,7 @@ from sync.api.projects import (
     get_prediction,
     get_project,
     get_projects,
+    reset_project,
     update_project,
 )
 from sync.cli.util import validate_project
@@ -154,6 +155,19 @@ def update(
     )
     if response.result:
         click.echo("Project updated")
+    else:
+        click.echo(str(response.error), err=True)
+
+
+@projects.command
+@click.argument("project", callback=validate_project)
+def reset(project: dict):
+    """Reset a project
+
+    PROJECT is either a project ID or application name"""
+    response = reset_project(project["id"])
+    if response.result:
+        click.echo("Project reset")
     else:
         click.echo(str(response.error), err=True)
 

@@ -1,14 +1,15 @@
+import json
 from io import TextIOWrapper
 from typing import Dict
 
 import click
-import orjson
 
 from sync import awsemr
 from sync.api.predictions import get_prediction
 from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import Platform, Preference
+from sync.utils.json import DateTimeEncoder
 
 
 @click.group
@@ -34,7 +35,7 @@ def run_job_flow(job_flow: TextIOWrapper, project: dict = None, region: str = No
     """Run a job flow
 
     JOB_FLOW is a file containing the RunJobFlow request object"""
-    job_flow_obj = orjson.loads(job_flow.read())
+    job_flow_obj = json.loads(job_flow.read())
 
     run_response = awsemr.run_and_record_job_flow(
         job_flow_obj, project["id"] if project else None, region
@@ -125,11 +126,7 @@ def get_cluster_report(cluster_id: str, region: str = None):
     config_response = awsemr.get_cluster_report(cluster_id, region)
     config = config_response.result
     if config:
-        click.echo(
-            orjson.dumps(
-                config, option=orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_UTC_Z
-            )
-        )
+        click.echo(json.dumps(config, indent=2, cls=DateTimeEncoder))
     else:
         click.echo(f"Failed to create prediction. {config_response.error}", err=True)
 

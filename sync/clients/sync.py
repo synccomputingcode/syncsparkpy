@@ -3,7 +3,7 @@ from typing import Generator, List
 
 import httpx
 
-from ..config import get_api_key, CONFIG, APIKey
+from ..config import get_api_key, CONFIG, APIKeyModel
 from . import USER_AGENT, RetryableHTTPClient, encode_json
 
 logger = logging.getLogger(__name__)
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class SyncAuth(httpx.Auth):
     requires_response_body = True
 
-    def __init__(self, api_url: str, api_key: APIKey):
+    def __init__(self, api_url: str, api_key: APIKeyModel):
         self.auth_url = f"{api_url}/v1/auth/token"
         self.api_key = api_key
         self._access_token = None
@@ -50,7 +50,7 @@ class SyncAuth(httpx.Auth):
 
 
 class SyncClient(RetryableHTTPClient):
-    def __init__(self, api_url: str, api_key: APIKey):
+    def __init__(self, api_url: str, api_key: APIKeyModel):
         super().__init__(
             client=httpx.Client(
                 base_url=api_url,
@@ -240,7 +240,7 @@ class SyncClient(RetryableHTTPClient):
 
 
 class ASyncClient(RetryableHTTPClient):
-    def __init__(self, api_url: str, api_key: APIKey):
+    def __init__(self, api_url: str, api_key: APIKeyModel):
         super().__init__(
             client=httpx.AsyncClient(
                 base_url=api_url,
@@ -313,7 +313,7 @@ class ASyncClient(RetryableHTTPClient):
 
 
 _sync_client: SyncClient = None
-_current_api_key: APIKey = None
+_current_api_key: APIKeyModel = None
 
 
 def get_default_client() -> SyncClient:

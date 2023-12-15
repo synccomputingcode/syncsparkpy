@@ -5,7 +5,7 @@ import httpx
 
 from sync.models import Platform
 
-from ..config import get_databricks_config
+from ..config import get_databricks_config, DatabricksConfModel
 from . import USER_AGENT, RetryableHTTPClient, encode_json
 
 logger = logging.getLogger(__name__)
@@ -202,5 +202,5 @@ def get_default_client() -> DatabricksClient:
     return _sync_client
 
 
-def databricks_config_changed():
+def databricks_config_changed() -> bool:
     return _current_db_config != get_databricks_config()

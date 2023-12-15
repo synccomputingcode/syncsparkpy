@@ -81,11 +81,11 @@ class DatabricksConfModel(BaseModel):
         pass
 
 
-def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = None):
+def init(api_key: APIKeyModel, config: Configuration, db_config: DatabricksConfModel = None):
     """Initializes configuration files. Currently only Linux-based systems are supported.
 
     :param api_key: API key
-    :type api_key: APIKey
+    :type api_key: APIKeyModel
     :param config: configuration
     :type config: Configuration
     :param db_config: Databricks configuration, defaults to None
@@ -114,16 +114,16 @@ def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = Non
         _db_config = db_config
 
 
-def get_api_key() -> APIKey:
+def get_api_key() -> APIKeyModel:
     """Returns API key from configuration
 
     :return: API key
-    :rtype: APIKey
+    :rtype: APIKeyModel
     """
     global _api_key
     if _api_key is None:
         try:
-            _api_key = APIKey()
+            _api_key = APIKeyModel()
         except ValueError:
             pass
     return _api_key

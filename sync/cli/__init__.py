@@ -9,7 +9,7 @@ from sync.api.predictions import get_products
 from sync.cli import awsdatabricks, awsemr, azuredatabricks, predictions, projects, workspaces
 from sync.cli.util import OPTIONAL_DEFAULT
 from sync.clients.sync import get_default_client
-from sync.config import CONFIG, get_api_key, get_databricks_config, APIKey, Configuration, DatabricksConf, init
+from sync.config import CONFIG, get_api_key, get_databricks_config, APIKeyModel, Configuration, DatabricksConfModel, init
 from sync.models import Preference
 
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
@@ -87,11 +87,11 @@ def configure(
             )
 
     init(
-        APIKey(api_key_id=api_key_id, api_key_secret=api_key_secret),
+        APIKeyModel(api_key_id=api_key_id, api_key_secret=api_key_secret),
         Configuration(
             default_prediction_preference=prediction_preference,
         ),
-        DatabricksConf(host=dbx_host, token=dbx_token, aws_region_name=dbx_region)
+        DatabricksConfModel(host=dbx_host, token=dbx_token, aws_region_name=dbx_region)
         if dbx_host != OPTIONAL_DEFAULT
         and dbx_token != OPTIONAL_DEFAULT
         and dbx_region != OPTIONAL_DEFAULT

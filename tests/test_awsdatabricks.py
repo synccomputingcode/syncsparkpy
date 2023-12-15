@@ -11,7 +11,7 @@ from botocore.stub import Stubber
 from httpx import Response
 
 from sync.awsdatabricks import create_prediction_for_run
-from sync.config import DatabricksConf
+from sync.config import DatabricksConfModel
 from sync.models import DatabricksAPIError, DatabricksError
 from sync.models import Response as SyncResponse
 from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
@@ -517,7 +517,7 @@ MOCK_VOLUMES = {
     ]
 }
 
-MOCK_DBX_CONF = DatabricksConf(
+MOCK_DBX_CONF = DatabricksConfModel(
     host="https://dbc-123.cloud.databricks.com",
     token="my_secret_token",
     aws_region_name="us-east-1",

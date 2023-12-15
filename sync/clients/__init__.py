@@ -5,7 +5,7 @@ import httpx
 from tenacity import Retrying, TryAgain, stop_after_attempt, wait_exponential_jitter
 
 from sync import __version__
-from sync.utils.json import DateTimeEncoderDropMicroseconds
+from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
 USER_AGENT = f"Sync Library/{__version__} (syncsparkpy)"
 
@@ -13,7 +13,7 @@ USER_AGENT = f"Sync Library/{__version__} (syncsparkpy)"
 def encode_json(obj: dict) -> Tuple[dict, str]:
     # "%Y-%m-%dT%H:%M:%SZ"
 
-    json_obj = json.dumps(obj, cls=DateTimeEncoderDropMicroseconds)
+    json_obj = json.dumps(obj, cls=DateTimeEncoderNaiveUTCDropMicroseconds)
 
     return {
         "Content-Length": str(len(json_obj)),

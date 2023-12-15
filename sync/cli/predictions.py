@@ -17,7 +17,7 @@ from sync.api.predictions import (
 from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import Platform, Preference
-from sync.utils.json import DateTimeEncoderDropMicroseconds
+from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
 
 @click.group
@@ -83,7 +83,9 @@ def generate(
         prediction_response = wait_for_prediction(prediction_id, preference.value)
         prediction = prediction_response.result
         if prediction:
-            click.echo(json.dumps(prediction, indent=2, cls=DateTimeEncoderDropMicroseconds))
+            click.echo(
+                json.dumps(prediction, indent=2, cls=DateTimeEncoderNaiveUTCDropMicroseconds)
+            )
         else:
             click.echo(str(response.error), err=True)
     else:
@@ -154,7 +156,7 @@ def status(prediction_id: str):
 def get(prediction_id: str, preference: Preference):
     """Retrieve a prediction"""
     response = get_prediction(prediction_id, preference.value)
-    click.echo(json.dumps(response.result, indent=2, cls=DateTimeEncoderDropMicroseconds))
+    click.echo(json.dumps(response.result, indent=2, cls=DateTimeEncoderNaiveUTCDropMicroseconds))
 
 
 @predictions.command

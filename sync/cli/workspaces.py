@@ -6,7 +6,7 @@ from sync.api import workspace
 from sync.cli.util import OPTIONAL_DEFAULT, validate_project
 from sync.config import API_KEY, DB_CONFIG
 from sync.models import DatabricksPlanType
-from sync.utils.json import DateTimeEncoderDropMicroseconds
+from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
 
 @click.group
@@ -77,7 +77,7 @@ def create_workspace_config(
     )
     config = response.result
     if config:
-        click.echo(json.dumps(config, indent=2, cls=DateTimeEncoderDropMicroseconds))
+        click.echo(json.dumps(config, indent=2, cls=DateTimeEncoderNaiveUTCDropMicroseconds))
     else:
         click.echo(str(response.error), err=True)
 
@@ -92,7 +92,7 @@ def get_workspace_config(workspace_id: str):
             json.dumps(
                 config,
                 indent=2,
-                cls=DateTimeEncoderDropMicroseconds,
+                cls=DateTimeEncoderNaiveUTCDropMicroseconds,
             )
         )
     else:
@@ -174,7 +174,7 @@ def update_workspace_config(
                 json.dumps(
                     config,
                     indent=2,
-                    cls=DateTimeEncoderDropMicroseconds,
+                    cls=DateTimeEncoderNaiveUTCDropMicroseconds,
                 )
             )
         else:
@@ -207,7 +207,7 @@ def reset_webhook_creds(workspace_id: str):
             json.dumps(
                 result,
                 indent=2,
-                cls=DateTimeEncoderDropMicroseconds,
+                cls=DateTimeEncoderNaiveUTCDropMicroseconds,
             )
         )
     else:

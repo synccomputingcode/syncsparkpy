@@ -9,7 +9,7 @@ from sync.api.predictions import get_prediction
 from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import Platform, Preference
-from sync.utils.json import DateTimeEncoder
+from sync.utils.json import DateTimeEncoderNaiveUTC
 
 
 @click.group
@@ -126,7 +126,7 @@ def get_cluster_report(cluster_id: str, region: str = None):
     config_response = awsemr.get_cluster_report(cluster_id, region)
     config = config_response.result
     if config:
-        click.echo(json.dumps(config, indent=2, cls=DateTimeEncoder))
+        click.echo(json.dumps(config, indent=2, cls=DateTimeEncoderNaiveUTC))
     else:
         click.echo(f"Failed to create prediction. {config_response.error}", err=True)
 

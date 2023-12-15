@@ -28,7 +28,7 @@ from sync.models import (
     ProjectError,
     Response,
 )
-from sync.utils.json import DateTimeEncoderDropMicroseconds
+from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
 logger = logging.getLogger(__name__)
 
@@ -753,7 +753,9 @@ def _upload_object(obj: dict, s3_url: str) -> Response[str]:
     try:
         s3 = boto.client("s3")
         s3.upload_fileobj(
-            io.BytesIO(bytes(json.dumps(obj, cls=DateTimeEncoderDropMicroseconds), "utf-8")),
+            io.BytesIO(
+                bytes(json.dumps(obj, cls=DateTimeEncoderNaiveUTCDropMicroseconds), "utf-8")
+            ),
             parsed_url.netloc,
             obj_key,
         )

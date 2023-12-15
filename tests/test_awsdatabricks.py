@@ -14,7 +14,7 @@ from sync.awsdatabricks import create_prediction_for_run
 from sync.config import DatabricksConf
 from sync.models import DatabricksAPIError, DatabricksError
 from sync.models import Response as SyncResponse
-from sync.utils.json import DateTimeEncoderDropMicroseconds
+from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
 MOCK_RUN = {
     "job_id": 12345678910,
@@ -821,7 +821,7 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
                     inst for res in MOCK_INSTANCES["Reservations"] for inst in res["Instances"]
                 ],
             },
-            cls=DateTimeEncoderDropMicroseconds,
+            cls=DateTimeEncoderNaiveUTCDropMicroseconds,
         ),
         "utf-8",
     )

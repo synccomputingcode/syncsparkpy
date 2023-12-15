@@ -56,6 +56,7 @@ from sync.models import (
     Response,
 )
 from sync.utils.dbfs import format_dbfs_filepath, write_dbfs_file
+from sync.utils.json import DefaultDateTimeEncoder
 
 __all__ = [
     "get_access_report",
@@ -415,7 +416,8 @@ def _monitor_cluster(
                             "instances": list(all_inst_by_id.values()),
                             "instance_timelines": all_timelines,
                             "volumes": list(recorded_volumes_by_id.values()),
-                        }
+                        },
+                        cls=DefaultDateTimeEncoder,
                     ),
                     "utf-8",
                 )

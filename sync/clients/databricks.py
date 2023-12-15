@@ -189,7 +189,7 @@ class DatabricksClient(RetryableHTTPClient):
 
 
 _sync_client: Union[DatabricksClient, None] = None
-_current_db_config: Union[DatabricksConfigModel, None] = None
+_current_db_config: Union[DatabricksConfModel, None] = None
 
 
 def get_default_client() -> DatabricksClient:
@@ -197,7 +197,7 @@ def get_default_client() -> DatabricksClient:
 
     if not _sync_client or databricks_config_changed():
         _current_db_config = get_databricks_config()
-        _sync_client = DatabricksClient(conf.host, conf.token)
+        _sync_client = DatabricksClient(_current_db_config.host, _current_db_config.token)
 
     return _sync_client
 

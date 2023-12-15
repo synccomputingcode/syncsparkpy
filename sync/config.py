@@ -170,6 +170,10 @@ _db_config = None
 def __getattr__(name):
     if name == "CONFIG":
         return get_config()
+    elif name == "API_KEY":
+        return get_api_key()
+    elif name == "DB_CONFIG":
+        return get_databricks_config()
     else:
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 

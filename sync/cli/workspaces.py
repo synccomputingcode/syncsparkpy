@@ -4,7 +4,7 @@ import click
 
 from sync.api import workspace
 from sync.cli.util import OPTIONAL_DEFAULT, validate_project
-from sync.config import API_KEY, DB_CONFIG
+from sync.config import get_api_key, get_databricks_config
 from sync.models import DatabricksPlanType
 from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
@@ -47,18 +47,18 @@ def create_workspace_config(
     cluster_policy_id: str = None,
 ):
     databricks_host = click.prompt(
-        "Databricks host (prefix with https://)", default=DB_CONFIG.host if DB_CONFIG else None
+        "Databricks host (prefix with https://)", default=get_databricks_config().host if get_databricks_config() else None
     )
     databricks_token = click.prompt(
         "Databricks token",
-        default=DB_CONFIG.token if DB_CONFIG else None,
+        default=get_databricks_config().token if get_databricks_config() else None,
         hide_input=True,
         show_default=False,
     )
-    sync_api_key_id = click.prompt("Sync API key ID", default=API_KEY.id if API_KEY else None)
+    sync_api_key_id = click.prompt("Sync API key ID", default=get_api_key().id if get_api_key() else None)
     sync_api_key_secret = click.prompt(
         "Sync API key secret",
-        default=API_KEY.secret if API_KEY else None,
+        default=get_api_key().secret if get_api_key() else None,
         hide_input=True,
         show_default=False,
     )

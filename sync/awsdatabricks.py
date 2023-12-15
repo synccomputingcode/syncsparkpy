@@ -46,7 +46,7 @@ from sync._databricks import (
 )
 from sync.api import get_access_report as get_api_access_report
 from sync.clients.databricks import get_default_client
-from sync.config import DB_CONFIG
+from sync.config import get_databricks_config
 from sync.models import (
     AccessReport,
     AccessReportLine,
@@ -137,7 +137,7 @@ def get_access_report(log_url: str = None) -> AccessReport:
             )
         )
 
-        ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
+        ec2 = boto.client("ec2", region_name=get_databricks_config().aws_region_name)
         report.add_boto_method_call(ec2.describe_instances, AccessStatusCode.YELLOW, DryRun=True)
         report.add_boto_method_call(ec2.describe_volumes, AccessStatusCode.YELLOW, DryRun=True)
     else:
@@ -281,7 +281,7 @@ def _load_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict
     #  are associated with this cluster
     if not cluster_info:
         try:
-            ec2 = boto.client("ec2", region_name=DB_CONFIG.aws_region_name)
+            ec2 = boto.client("ec2", region_name=get_databricks_config().aws_region_name)
             instances = _get_ec2_instances(cluster_id, ec2)
             volumes = _get_ebs_volumes_for_instances(instances, ec2)
 
@@ -298,7 +298,7 @@ def _load_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict
 
 def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict], Response[dict]]:
 
-    aws_region_name = DB_CONFIG.aws_region_name
+    aws_region_name = get_databricks_config().aws_region_name
 
     cluster_info, cluster_id = _load_aws_cluster_info(cluster)
 
@@ -365,7 +365,7 @@ def _monitor_cluster(
     #  we make sure to re-strip our final Prefix
     file_key = f"{base_prefix}/sync_data/{spark_context_id}/aws_cluster_info.json".strip("/")
 
-    aws_region_name = DB_CONFIG.aws_region_name
+    aws_region_name = get_databricks_config().aws_region_name
     ec2 = boto.client("ec2", region_name=aws_region_name)
 
     if filesystem == "s3":

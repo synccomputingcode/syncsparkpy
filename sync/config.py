@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Union
 from urllib.parse import urlparse
 
 import boto3 as boto
-from pydantic import BaseSettings, Field, validator, Extra
+from pydantic import BaseModel, BaseSettings, Field, validator, Extra
 
 from .models import Preference
 
@@ -36,6 +36,11 @@ class APIKey(BaseSettings):
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
             return (init_settings, env_settings, json_config_settings_source(CREDENTIALS_FILE))
+
+
+class APIKeyModel(BaseModel):
+    class Config(APIKey):
+        pass
 
 
 class Configuration(BaseSettings):
@@ -69,6 +74,11 @@ class DatabricksConf(BaseSettings):
                 env_settings,
                 json_config_settings_source(DATABRICKS_CONFIG_FILE),
             )
+
+
+class DatabricksConfModel(BaseModel):
+    class Config(DatabricksConf):
+        pass
 
 
 def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = None):
@@ -119,6 +129,11 @@ def get_api_key() -> APIKey:
     return _api_key
 
 
+def set_api_key(api_key: APIKeyModel):
+    global _api_key
+    _api_key = api_key
+
+
 def get_config() -> Configuration:
     """Gets configuration
 
@@ -131,31 +146,30 @@ def get_config() -> Configuration:
     return _config
 
 
-def get_databricks_config() -> DatabricksConf:
+def get_databricks_config() -> DatabricksConfModel:
     global _db_config
     if _db_config is None:
         try:
-            _db_config = DatabricksConf()
+            _db_config = DatabricksConfModel()
         except ValueError:
             pass
     return _db_config
 
 
+def set_databricks_config(db_config: DatabricksConfModel):
+    global _db_config
+    _db_config = db_config
+
+
 CONFIG: Configuration
 _config = None
-API_KEY: APIKey
 _api_key = None
-DB_CONFIG: DatabricksConf
 _db_config = None
 
 
 def __getattr__(name):
     if name == "CONFIG":
         return get_config()
-    elif name == "API_KEY":
-        return get_api_key()
-    elif name == "DB_CONFIG":
-        return get_databricks_config()
     else:
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 

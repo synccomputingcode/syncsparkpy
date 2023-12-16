@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Union
 from urllib.parse import urlparse
 
 import boto3 as boto
-from pydantic import BaseModel, BaseSettings, Field, validator, Extra
+from pydantic importg BaseSettings, Field, validator, Extra
 
 from .models import Preference
 

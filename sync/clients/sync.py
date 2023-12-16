@@ -50,7 +50,7 @@ class SyncAuth(httpx.Auth):
 
 
 class SyncClient(RetryableHTTPClient):
-    def __init__(self, api_url: str, api_key: APIKeyModel):
+    def __init__(self, api_url: str, api_key: APIKey):
         super().__init__(
             client=httpx.Client(
                 base_url=api_url,

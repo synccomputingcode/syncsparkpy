@@ -38,11 +38,6 @@ class APIKey(BaseSettings):
             return (init_settings, env_settings, json_config_settings_source(CREDENTIALS_FILE))
 
 
-class APIKeyModel(BaseModel):
-    class Config(APIKey):
-        pass
-
-
 class Configuration(BaseSettings):
     default_prediction_preference: Union[Preference, None] = Preference.ECONOMY
     api_url: str = Field("https://api.synccomputing.com", env="SYNC_API_URL")
@@ -76,16 +71,11 @@ class DatabricksConf(BaseSettings):
             )
 
 
-class DatabricksConfModel(BaseModel):
-    class Config(DatabricksConf):
-        pass
-
-
-def init(api_key: APIKeyModel, config: Configuration, db_config: DatabricksConfModel = None):
+def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = None):
     """Initializes configuration files. Currently only Linux-based systems are supported.
 
     :param api_key: API key
-    :type api_key: APIKeyModel
+    :type api_key: APIKey
     :param config: configuration
     :type config: Configuration
     :param db_config: Databricks configuration, defaults to None
@@ -114,22 +104,22 @@ def init(api_key: APIKeyModel, config: Configuration, db_config: DatabricksConfM
         _db_config = db_config
 
 
-def get_api_key() -> APIKeyModel:
+def get_api_key() -> APIKey:
     """Returns API key from configuration
 
     :return: API key
-    :rtype: APIKeyModel
+    :rtype: APIKey
     """
     global _api_key
     if _api_key is None:
         try:
-            _api_key = APIKeyModel()
+            _api_key = APIKey()
         except ValueError:
             pass
     return _api_key
 
 
-def set_api_key(api_key: APIKeyModel):
+def set_api_key(api_key: APIKey):
     global _api_key
     _api_key = api_key
 
@@ -146,17 +136,17 @@ def get_config() -> Configuration:
     return _config
 
 
-def get_databricks_config() -> DatabricksConfModel:
+def get_databricks_config() -> DatabricksConf:
     global _db_config
     if _db_config is None:
         try:
-            _db_config = DatabricksConfModel()
+            _db_config = DatabricksConf()
         except ValueError:
             pass
     return _db_config
 
 
-def set_databricks_config(db_config: DatabricksConfModel):
+def set_databricks_config(db_config: DatabricksConf):
     global _db_config
     _db_config = db_config
 

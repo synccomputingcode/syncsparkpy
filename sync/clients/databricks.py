@@ -5,7 +5,7 @@ import httpx
 
 from sync.models import Platform
 
-from ..config import get_databricks_config, DatabricksConfModel
+from ..config import get_databricks_config, DatabricksConf
 from . import USER_AGENT, RetryableHTTPClient, encode_json
 
 logger = logging.getLogger(__name__)
@@ -189,7 +189,7 @@ class DatabricksClient(RetryableHTTPClient):
 
 
 _sync_client: Union[DatabricksClient, None] = None
-_current_db_config: Union[DatabricksConfModel, None] = None
+_current_db_config: Union[DatabricksConf, None] = None
 
 
 def get_default_client() -> DatabricksClient:

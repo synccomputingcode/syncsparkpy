@@ -1725,6 +1725,13 @@ def _dbfs_directory_has_all_rollover_logs(contents: dict, run_end_time_millis: f
     )
 
 
+def _dbfs_any_file_has_zero_size(contents: dict):
+    any_zeros = any(file["file_size"] == 0 for file in contents["files"])
+    if any_zeros:
+        logger.info("One or more dbfs event log files has a file size of zero")
+    return any_zeros
+
+
 def _event_log_poll_duration_seconds():
     """Convenience function to aid testing"""
     return 15
@@ -1821,7 +1828,8 @@ def _get_eventlog_from_dbfs(
         poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
 
         while (
-            not _dbfs_directory_has_all_rollover_logs(eventlog_dir, run_end_time_millis)
+            _dbfs_any_file_has_zero_size(eventlog_dir)
+            or not _dbfs_directory_has_all_rollover_logs(eventlog_dir, run_end_time_millis)
             and poll_num_attempts < poll_max_attempts
         ):
             if poll_num_attempts > 0:

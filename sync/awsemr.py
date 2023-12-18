@@ -4,6 +4,7 @@ Utilities for interacting with EMR
 
 import datetime
 import io
+import json
 import logging
 import re
 from copy import deepcopy
@@ -12,7 +13,6 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 import boto3 as boto
-import orjson
 from dateutil.parser import parse as dateparse
 
 from sync import TIME_FORMAT
@@ -28,6 +28,7 @@ from sync.models import (
     ProjectError,
     Response,
 )
+from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
 logger = logging.getLogger(__name__)
 
@@ -364,7 +365,7 @@ def get_project_cluster_report(  # noqa: C901
                         s3.download_fileobj(parsed_project_url.netloc, config_key, config)
                         return Response(
                             result=(
-                                orjson.loads(config.getvalue().decode()),
+                                json.loads(config.getvalue().decode()),
                                 f"s3://{parsed_project_url.netloc}/{log_key}",
                             )
                         )
@@ -753,10 +754,7 @@ def _upload_object(obj: dict, s3_url: str) -> Response[str]:
         s3 = boto.client("s3")
         s3.upload_fileobj(
             io.BytesIO(
-                orjson.dumps(
-                    obj,
-                    option=orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS | orjson.OPT_NAIVE_UTC,
-                )
+                bytes(json.dumps(obj, cls=DateTimeEncoderNaiveUTCDropMicroseconds), "utf-8")
             ),
             parsed_url.netloc,
             obj_key,

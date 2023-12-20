@@ -1725,11 +1725,22 @@ def _dbfs_directory_has_all_rollover_logs(contents: dict, run_end_time_millis: f
     )
 
 
-def _dbfs_any_file_has_zero_size(contents: dict):
-    any_zeros = any(file["file_size"] == 0 for file in contents["files"])
+def _dbfs_any_file_has_zero_size(dbfs_contents: Dict):
+    any_zeros = any(file["file_size"] == 0 for file in dbfs_contents["files"])
     if any_zeros:
         logger.info("One or more dbfs event log files has a file size of zero")
     return any_zeros
+
+
+def _check_total_file_size_changed(
+    last_total_file_size: int, dbfs_contents: Dict
+) -> Tuple[bool, int]:
+
+    new_total_file_size = sum([file.get("file_size", 0) for file in dbfs_contents.get("files", {})])
+    if new_total_file_size == last_total_file_size:
+        return False, new_total_file_size
+    else:
+        return True, new_total_file_size
 
 
 def _event_log_poll_duration_seconds():
@@ -1827,11 +1838,15 @@ def _get_eventlog_from_dbfs(
         poll_num_attempts = 0
         poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
 
+        total_file_size = 0
+        file_size_changed, total_file_size = _check_total_file_size_changed(0, eventlog_dir)
         while (
             _dbfs_any_file_has_zero_size(eventlog_dir)
             or not _dbfs_directory_has_all_rollover_logs(eventlog_dir, run_end_time_millis)
             and poll_num_attempts < poll_max_attempts
+            or file_size_changed
         ):
+
             if poll_num_attempts > 0:
                 logger.info(
                     f"No or incomplete event log data detected - attempting again in {poll_duration_seconds} seconds"
@@ -1839,6 +1854,10 @@ def _get_eventlog_from_dbfs(
                 sleep(poll_duration_seconds)
 
             eventlog_dir = dbx_client.list_dbfs_directory(matching_subdirectory["path"])
+            file_size_changed, total_file_size = _check_total_file_size_changed(
+                total_file_size, eventlog_dir
+            )
+
             poll_num_attempts += 1
 
         eventlog_zip = io.BytesIO()

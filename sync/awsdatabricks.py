@@ -1,3 +1,4 @@
+import json
 import logging
 from time import sleep
 from typing import List, Tuple
@@ -5,7 +6,6 @@ from urllib.parse import urlparse
 
 import boto3 as boto
 import botocore
-import orjson
 from botocore.exceptions import ClientError
 
 import sync._databricks
@@ -56,6 +56,7 @@ from sync.models import (
     Response,
 )
 from sync.utils.dbfs import format_dbfs_filepath, write_dbfs_file
+from sync.utils.json import DefaultDateTimeEncoder
 
 __all__ = [
     "get_access_report",
@@ -273,7 +274,7 @@ def _load_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict
             cluster_info_file_response = _get_cluster_instances_from_dbfs(cluster_info_file_key)
 
         cluster_info = (
-            orjson.loads(cluster_info_file_response) if cluster_info_file_response else None
+            json.loads(cluster_info_file_response) if cluster_info_file_response else None
         )
 
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
@@ -409,12 +410,16 @@ def _monitor_cluster(
             all_timelines = retired_timelines + list(active_timelines_by_id.values())
 
             write_file(
-                orjson.dumps(
-                    {
-                        "instances": list(all_inst_by_id.values()),
-                        "instance_timelines": all_timelines,
-                        "volumes": list(recorded_volumes_by_id.values()),
-                    }
+                bytes(
+                    json.dumps(
+                        {
+                            "instances": list(all_inst_by_id.values()),
+                            "instance_timelines": all_timelines,
+                            "volumes": list(recorded_volumes_by_id.values()),
+                        },
+                        cls=DefaultDateTimeEncoder,
+                    ),
+                    "utf-8",
                 )
             )
         except Exception as e:

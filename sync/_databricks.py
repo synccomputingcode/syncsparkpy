@@ -1740,6 +1740,7 @@ def _check_total_file_size_changed(
     if new_total_file_size == last_total_file_size:
         return False, new_total_file_size
     else:
+        logger.info("Total file size of eventlog directory changed")
         return True, new_total_file_size
 
 
@@ -1840,13 +1841,11 @@ def _get_eventlog_from_dbfs(
 
         total_file_size = 0
         file_size_changed, total_file_size = _check_total_file_size_changed(0, eventlog_dir)
-        while (
-            _dbfs_any_file_has_zero_size(eventlog_dir)
-            or not _dbfs_directory_has_all_rollover_logs(eventlog_dir, run_end_time_millis)
-            and poll_num_attempts < poll_max_attempts
+        while (poll_num_attempts < poll_max_attempts) and (
+            not _dbfs_directory_has_all_rollover_logs(eventlog_dir, run_end_time_millis)
+            or _dbfs_any_file_has_zero_size(eventlog_dir)
             or file_size_changed
         ):
-
             if poll_num_attempts > 0:
                 logger.info(
                     f"No or incomplete event log data detected - attempting again in {poll_duration_seconds} seconds"

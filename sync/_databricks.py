@@ -1725,7 +1725,7 @@ def _dbfs_directory_has_all_rollover_logs(contents: dict, run_end_time_millis: f
     )
 
 
-def _dbfs_any_file_has_zero_size(dbfs_contents: Dict):
+def _dbfs_any_file_has_zero_size(dbfs_contents: Dict) -> bool:
     any_zeros = any(file["file_size"] == 0 for file in dbfs_contents["files"])
     if any_zeros:
         logger.info("One or more dbfs event log files has a file size of zero")

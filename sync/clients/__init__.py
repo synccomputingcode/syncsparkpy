@@ -8,6 +8,7 @@ from sync import __version__
 from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
 USER_AGENT = f"Sync Library/{__version__} (syncsparkpy)"
+DATABRICKS_USER_AGENT = "sync-gradient"
 
 
 def encode_json(obj: dict) -> Tuple[dict, str]:

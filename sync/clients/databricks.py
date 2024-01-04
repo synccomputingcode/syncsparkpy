@@ -6,7 +6,7 @@ import httpx
 from sync.models import Platform
 
 from ..config import DB_CONFIG
-from . import USER_AGENT, RetryableHTTPClient, encode_json
+from . import DATABRICKS_USER_AGENT, RetryableHTTPClient, encode_json
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class DatabricksClient(RetryableHTTPClient):
         super().__init__(
             client=httpx.Client(
                 base_url=base_url,
-                headers={"User-Agent": USER_AGENT},
+                headers={"User-Agent": DATABRICKS_USER_AGENT},
                 auth=DatabricksAuth(access_token),
             )
         )

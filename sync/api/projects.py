@@ -60,6 +60,7 @@ def create_project(
     auto_apply_recs: bool = False,
     prediction_params: dict = None,
     app_id: str = None,
+    optimize_instance_size: bool = False,
 ) -> Response[dict]:
     """Creates a Sync project for tracking and optimizing Apache Spark applications
 
@@ -102,6 +103,7 @@ def create_project(
                 "auto_apply_recs": auto_apply_recs,
                 "prediction_params": prediction_params,
                 "app_id": app_id,
+                "optimize_instance_size": optimize_instance_size,
             }
         )
     )
@@ -128,6 +130,7 @@ def update_project(
     prediction_preference: Preference = None,
     auto_apply_recs: bool = None,
     prediction_params: dict = None,
+    optimize_instance_size=None,
 ) -> Response[dict]:
     """Updates a project's mutable properties
 
@@ -169,6 +172,8 @@ def update_project(
         project_update["cluster_path"] = cluster_path
     if workspace_id:
         project_update["workspace_id"] = workspace_id
+    if optimize_instance_size:
+        project_update["optimize_instance_size"] = optimize_instance_size
 
     return Response(
         **get_default_client().update_project(

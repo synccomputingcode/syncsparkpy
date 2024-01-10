@@ -213,6 +213,17 @@ def get_projects(app_id: str = None) -> Response[List[dict]]:
     return Response(**get_default_client().get_projects(params={"app_id": app_id}))
 
 
+def reset_project(project_id: str) -> Response[str]:
+    """Resets a project
+
+    :param project_id: project ID
+    :type project_id: str
+    :return: confirmation message
+    :rtype: Response[str]
+    """
+    return Response(**get_default_client().reset_project(project_id))
+
+
 def delete_project(project_id: str) -> Response[str]:
     """Deletes a project
 

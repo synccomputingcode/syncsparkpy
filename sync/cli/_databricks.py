@@ -164,7 +164,7 @@ def create_submission(
     allow_incomplete: bool = False,
     exclude_task: Tuple[str, ...] = None,
 ):
-    """Create a submission for a pipelines most recent run"""
+    """Create a submission for a job run"""
     if platform is Platform.AWS_DATABRICKS:
         import sync.awsdatabricks as databricks
     elif platform is Platform.AZURE_DATABRICKS:
@@ -185,8 +185,7 @@ def create_submission(
 @click.argument("project", callback=validate_project)
 @pass_platform
 def create_pipeline_submission(platform: Platform, pipeline_id: str, project):
-
-    """Create a submission for a job run"""
+    """Create a submission for a pipelines most recent run"""
     if platform is Platform.AWS_DATABRICKS:
         import sync.awsdatabricks as databricks
     elif platform is Platform.AZURE_DATABRICKS:

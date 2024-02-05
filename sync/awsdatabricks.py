@@ -194,7 +194,6 @@ def get_access_report(log_url: str = None) -> AccessReport:
 
 def _get_pipeline_cluster_report(cluster_id: str):
     cluster_response = _wait_for_cluster_termination(cluster_id, poll_seconds=5)
-    print(cluster_response)
     if cluster_response.error:
         return cluster_response
 

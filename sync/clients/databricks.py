@@ -117,6 +117,16 @@ class DatabricksClient(RetryableHTTPClient):
             self._client.build_request("GET", "/api/2.0/dbfs/list", params={"path": path})
         )
 
+    def get_pipeline(self, pipeline_id: str) -> dict:
+        return self._send(self._client.build_request("GET", f"/api/2.0/pipelines/{pipeline_id}"))
+
+    def get_pipeline_update(self, pipeline_id: str, update_id: str) -> dict:
+        return self._send(
+            self._client.build_request(
+                "GET", f"/api/2.0/pipelines/{pipeline_id}/updates/{update_id}"
+            )
+        )
+
     def read_dbfs_file_chunk(self, path: str, offset: int = 0, length: int = 1024 * 1024) -> dict:
         return self._send(
             self._client.build_request(

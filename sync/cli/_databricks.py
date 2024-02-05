@@ -164,7 +164,7 @@ def create_submission(
     allow_incomplete: bool = False,
     exclude_task: Tuple[str, ...] = None,
 ):
-    """Create a submission for a job run"""
+    """Create a submission for a pipelines most recent run"""
     if platform is Platform.AWS_DATABRICKS:
         import sync.awsdatabricks as databricks
     elif platform is Platform.AZURE_DATABRICKS:
@@ -178,6 +178,23 @@ def create_submission(
         click.echo(f"Submission ID: {submission}")
     else:
         click.echo(f"Failed to submit data. {submission_response.error}", err=True)
+
+
+@click.command
+@click.argument("pipeline_id")
+@click.argument("project_id", callback=validate_project)
+@pass_platform
+def create_pipeline_submission(platform: Platform, pipeline_id: str, project_id: str):
+
+    """Create a submission for a job run"""
+    if platform is Platform.AWS_DATABRICKS:
+        import sync.awsdatabricks as databricks
+    elif platform is Platform.AZURE_DATABRICKS:
+        import sync.azuredatabricks as databricks
+
+    print("in the cli")
+    databricks.create_submission_for_pipeline(pipeline_id, project_id)
+    print("done with the cli")
 
 
 @click.command

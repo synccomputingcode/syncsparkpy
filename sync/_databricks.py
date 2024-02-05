@@ -275,6 +275,46 @@ def create_submission_for_run(
     )
 
 
+def _get_pipeline_cluster_report(cluster_id: str):
+    pass
+
+
+def create_submission_for_pipeline(pipeline_id: str, project_id: str) -> Response[str]:
+    """Create a Submission for the latest pipeline run"""
+    pipeline = get_default_client().get_pipeline(pipeline_id)
+
+    if "error_code" in pipeline:
+        return Response(error=DatabricksAPIError(**pipeline))
+
+    while pipeline["latest_updates"][0]["state"] != "COMPLETED":
+        print(
+            f"Polling pipeline until completion: current state is {pipeline['latest_updates'][0]['state']} "
+        )
+        pipeline = get_default_client().get_pipeline(pipeline_id)
+        time.sleep(30)
+
+    update = get_default_client().get_pipeline_update(
+        pipeline_id, pipeline["latest_updates"][0]["update_id"]
+    )
+    cluster_id = update["update"]["cluster_id"]
+    log_dir = (
+        update["update"]["config"]["clusters"][0]["cluster_log_conf"]["dbfs"]["destination"]
+        + "/"
+        + cluster_id
+    )
+
+    cluster_report = _get_pipeline_cluster_report(cluster_id)
+    eventlog = _get_eventlog_from_dbfs_v2(cluster_id, log_dir, update["update"]["creation_time"], 5)
+
+    return create_project_submission_with_eventlog_bytes(
+        get_default_client().get_platform(),
+        cluster_report.result.dict(exclude_none=True),
+        "eventlog.zip",
+        eventlog.result,
+        project_id,
+    )
+
+
 def _create_submission(
     cluster_id: str,
     tasks: List[dict],
@@ -1452,6 +1492,7 @@ def terminate_cluster(cluster_id: str) -> Response[dict]:
 def _wait_for_cluster_termination(
     cluster_id: str, timeout_seconds=600, poll_seconds=10
 ) -> Response[dict]:
+    print("here")
     logging.info(f"Waiting for cluster {cluster_id} to terminate")
     start_seconds = time.time()
     cluster = get_default_client().get_cluster(cluster_id)
@@ -1459,7 +1500,7 @@ def _wait_for_cluster_termination(
         state = cluster.get("state")
         if state == "TERMINATED":
             return Response(result=cluster)
-        elif state == "TERMINATING":
+        elif state in ["RUNNING", "TERMINATING"]:
             sleep(poll_seconds)
         else:
             return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
@@ -1800,6 +1841,82 @@ def _get_eventlog_from_s3(
             message=f"No eventlog found at location - {bucket}/{base_filepath} - after {poll_num_attempts * poll_duration_seconds} seconds"
         )
     )
+
+
+def _get_eventlog_from_dbfs_v2(
+    cluster_id: str,
+    base_filepath: str,
+    run_end_time_millis: int,
+    poll_duration_seconds: int,
+):
+    dbx_client = get_default_client()
+
+    prefix = format_dbfs_filepath(f"{base_filepath}/eventlog/")
+    root_dir = dbx_client.list_dbfs_directory(prefix)
+    eventlog_files = [f for f in root_dir["files"] if f["is_dir"]]
+    matching_subdirectory = None
+
+    # For shared clusters, we may find multiple subdirectories under the same root path, in the format -
+    #     {cluster_id}_{driver_ip_address}
+    # Since DBFS gives us no good filtering mechanism for this, and there isn't always an easy way to get
+    #  the driver's IP address for a Run, we can list the subdirectories and look for one containing a path
+    #  that ends with this cluster's `spark_context_id`
+    while eventlog_files and not matching_subdirectory:
+        eventlog_file_metadata = eventlog_files.pop()
+        path = eventlog_file_metadata["path"]
+        subdir = dbx_client.list_dbfs_directory(path)
+        matching_subdirectory = subdir["files"][0]
+
+    if matching_subdirectory:
+        eventlog_dir = dbx_client.list_dbfs_directory(matching_subdirectory["path"])
+
+        poll_num_attempts = 0
+        poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
+
+        total_file_size = 0
+        file_size_changed, total_file_size = _check_total_file_size_changed(0, eventlog_dir)
+        while (poll_num_attempts < poll_max_attempts) and (
+            not _dbfs_directory_has_all_rollover_logs(eventlog_dir, run_end_time_millis)
+            or _dbfs_any_file_has_zero_size(eventlog_dir)
+            or file_size_changed
+        ):
+            if poll_num_attempts > 0:
+                logger.info(
+                    f"No or incomplete event log data detected - attempting again in {poll_duration_seconds} seconds"
+                )
+                sleep(poll_duration_seconds)
+
+            eventlog_dir = dbx_client.list_dbfs_directory(matching_subdirectory["path"])
+            file_size_changed, total_file_size = _check_total_file_size_changed(
+                total_file_size, eventlog_dir
+            )
+
+            poll_num_attempts += 1
+
+        eventlog_zip = io.BytesIO()
+        eventlog_zip_file = zipfile.ZipFile(eventlog_zip, "a", zipfile.ZIP_DEFLATED)
+
+        eventlog_files = eventlog_dir["files"]
+        for eventlog_file_metadata in eventlog_files:
+            filename: str = eventlog_file_metadata["path"].split("/")[-1]
+            filesize: int = eventlog_file_metadata["file_size"]
+
+            content = read_dbfs_file(eventlog_file_metadata["path"], dbx_client, filesize)
+
+            # Databricks typically leaves the most recent rollover log uncompressed, so we may as well
+            #  gzip it before upload
+            if not filename.endswith(".gz"):
+                content = gzip.compress(content)
+                filename += ".gz"
+
+            eventlog_zip_file.writestr(filename, content)
+
+        eventlog_zip_file.close()
+        return Response(result=eventlog_zip.getvalue())
+    else:
+        return Response(
+            error=DatabricksError(message=f"No eventlog found for cluster-id: {cluster_id}")
+        )
 
 
 def _get_eventlog_from_dbfs(

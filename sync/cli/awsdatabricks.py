@@ -4,6 +4,7 @@ from sync.cli._databricks import (
     access_report,
     apply_prediction,
     apply_recommendation,
+    create_pipeline_submission,
     create_prediction,
     create_recommendation,
     create_submission,
@@ -24,6 +25,7 @@ def aws_databricks(ctx: click.Context):
     ctx.obj = Platform.AWS_DATABRICKS
 
 
+aws_databricks.add_command(create_pipeline_submission)
 aws_databricks.add_command(access_report)
 aws_databricks.add_command(run_prediction)
 aws_databricks.add_command(run_job)

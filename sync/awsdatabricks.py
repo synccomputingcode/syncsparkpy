@@ -22,6 +22,7 @@ from sync._databricks import (
     create_cluster,
     create_prediction_for_run,
     create_run,
+    create_submission_for_pipeline,
     create_submission_for_run,
     get_cluster,
     get_cluster_report,
@@ -64,6 +65,7 @@ __all__ = [
     "run_and_record_job",
     "create_prediction_for_run",
     "create_submission_for_run",
+    "create_submission_for_pipeline",
     "get_cluster_report",
     "monitor_cluster",
     "create_cluster",
@@ -190,6 +192,29 @@ def get_access_report(log_url: str = None) -> AccessReport:
     return report
 
 
+def _get_pipeline_cluster_report(cluster_id: str):
+    cluster_response = _wait_for_cluster_termination(cluster_id, poll_seconds=5)
+    print(cluster_response)
+    if cluster_response.error:
+        return cluster_response
+
+    cluster = cluster_response.result
+    instances_response, timeline_response, volumes_response = _get_aws_cluster_info(cluster)
+
+    return Response(
+        result=AWSDatabricksClusterReport(
+            plan_type="Premium",
+            compute_type="Jobs Compute",
+            cluster=cluster,
+            cluster_events=_get_all_cluster_events(cluster_id),
+            volumes=volumes_response.result,
+            tasks=None,
+            instances=instances_response.result,
+            instance_timelines=timeline_response.result,
+        )
+    )
+
+
 def _get_cluster_report(
     cluster_id: str,
     cluster_tasks: List[dict],
@@ -249,6 +274,7 @@ if getattr(sync._databricks, "__claim", __name__) != __name__:
     )
 
 sync._databricks._get_cluster_report = _get_cluster_report
+sync._databricks._get_pipeline_cluster_report = _get_pipeline_cluster_report
 setattr(sync._databricks, "__claim", __name__)
 
 

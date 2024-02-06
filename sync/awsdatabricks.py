@@ -1,5 +1,6 @@
 import json
 import logging
+from pathlib import Path
 from time import sleep
 from typing import List, Tuple
 from urllib.parse import urlparse
@@ -335,7 +336,9 @@ def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
         logger.warning(f"Failed to retrieve cluster info from S3 with key, '{file_key}': {err}")
 
 
-def monitor_cluster(cluster_id: str, polling_period: int = 20) -> None:
+def monitor_cluster(
+    cluster_id: str, polling_period: int = 20, cluster_report_destination_override: str = None
+) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
 
@@ -347,16 +350,24 @@ def monitor_cluster(cluster_id: str, polling_period: int = 20) -> None:
         spark_context_id = cluster.get("spark_context_id")
 
     (log_url, filesystem, bucket, base_prefix) = _cluster_log_destination(cluster)
-    if log_url:
+    if log_url or cluster_report_destination_override:
         _monitor_cluster(
-            (log_url, filesystem, bucket, base_prefix), cluster_id, spark_context_id, polling_period
+            (log_url, filesystem, bucket, base_prefix),
+            cluster_id,
+            spark_context_id,
+            polling_period,
+            cluster_report_destination_override,
         )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
 
 
 def _monitor_cluster(
-    cluster_log_destination, cluster_id: str, spark_context_id: int, polling_period: int
+    cluster_log_destination,
+    cluster_id: str,
+    spark_context_id: int,
+    polling_period: int,
+    cluster_report_destination_override: str = None,
 ) -> None:
 
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
@@ -368,7 +379,20 @@ def _monitor_cluster(
     aws_region_name = DB_CONFIG.aws_region_name
     ec2 = boto.client("ec2", region_name=aws_region_name)
 
-    if filesystem == "s3":
+    if cluster_report_destination_override:
+
+        def ensure_path_exists(file_path: str):
+            logger.info(f"Ensuring path exists for {file_path}")
+            report_path = Path(file_path)
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def write_file(body: bytes):
+            logger.info("Saving state to local file")
+            ensure_path_exists(cluster_report_destination_override)
+            with open(cluster_report_destination_override, "wb") as f:
+                f.write(body)
+
+    elif filesystem == "s3":
         s3 = boto.client("s3")
 
         def write_file(body: bytes):

@@ -337,7 +337,9 @@ def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
 
 
 def monitor_cluster(
-    cluster_id: str, polling_period: int = 20, cluster_report_destination_override: str = None
+    cluster_id: str,
+    polling_period: int = 20,
+    cluster_report_destination_override: dict = None,
 ) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
@@ -350,13 +352,16 @@ def monitor_cluster(
         spark_context_id = cluster.get("spark_context_id")
 
     (log_url, filesystem, bucket, base_prefix) = _cluster_log_destination(cluster)
+    if cluster_report_destination_override:
+        filesystem = cluster_report_destination_override.get("filesystem", filesystem)
+        base_prefix = cluster_report_destination_override.get("base_prefix", base_prefix)
+
     if log_url or cluster_report_destination_override:
         _monitor_cluster(
             (log_url, filesystem, bucket, base_prefix),
             cluster_id,
             spark_context_id,
             polling_period,
-            cluster_report_destination_override,
         )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
@@ -367,7 +372,6 @@ def _monitor_cluster(
     cluster_id: str,
     spark_context_id: int,
     polling_period: int,
-    cluster_report_destination_override: str = None,
 ) -> None:
 
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
@@ -379,33 +383,7 @@ def _monitor_cluster(
     aws_region_name = DB_CONFIG.aws_region_name
     ec2 = boto.client("ec2", region_name=aws_region_name)
 
-    if cluster_report_destination_override:
-
-        def ensure_path_exists(file_path: str):
-            logger.info(f"Ensuring path exists for {file_path}")
-            report_path = Path(file_path)
-            report_path.parent.mkdir(parents=True, exist_ok=True)
-
-        def write_file(body: bytes):
-            logger.info("Saving state to local file")
-            ensure_path_exists(cluster_report_destination_override)
-            with open(cluster_report_destination_override, "wb") as f:
-                f.write(body)
-
-    elif filesystem == "s3":
-        s3 = boto.client("s3")
-
-        def write_file(body: bytes):
-            logger.info("Saving state to S3")
-            s3.put_object(Bucket=bucket, Key=file_key, Body=body)
-
-    elif filesystem == "dbfs":
-        path = format_dbfs_filepath(file_key)
-        dbx_client = get_default_client()
-
-        def write_file(body: bytes):
-            logger.info("Saving state to DBFS")
-            write_dbfs_file(path, body, dbx_client)
+    write_file = _define_write_file(file_key, filesystem, bucket)
 
     all_inst_by_id = {}
     active_timelines_by_id = {}
@@ -450,6 +428,40 @@ def _monitor_cluster(
             logger.error(f"Exception encountered while polling cluster: {e}")
 
         sleep(polling_period)
+
+
+def _define_write_file(file_key, filesystem, bucket):
+    if filesystem == "file":
+        file_path = Path(f"{Path.home()}{file_key}")
+
+        def ensure_path_exists(report_path: Path):
+            logger.info(f"Ensuring path exists for {report_path}")
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def write_file(body: bytes):
+            logger.info("Saving state to local file")
+            ensure_path_exists(file_path)
+            with open(file_path, "wb") as f:
+                f.write(body)
+
+    elif filesystem == "s3":
+        s3 = boto.client("s3")
+
+        def write_file(body: bytes):
+            logger.info("Saving state to S3")
+            s3.put_object(Bucket=bucket, Key=file_key, Body=body)
+
+    elif filesystem == "dbfs":
+        path = format_dbfs_filepath(file_key)
+        dbx_client = get_default_client()
+
+        def write_file(body: bytes):
+            logger.info("Saving state to DBFS")
+            write_dbfs_file(path, body, dbx_client)
+
+    else:
+        raise ValueError(f"Unsupported filesystem: {filesystem}")
+    return write_file
 
 
 def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[dict]:

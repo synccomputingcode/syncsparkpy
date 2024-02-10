@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from sync.api.predictions import generate_presigned_url, get_predictions
+from . import generate_presigned_url
 from sync.clients.sync import get_default_client
 from sync.models import (
     Platform,
@@ -20,32 +20,6 @@ from sync.models import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def get_prediction(project_id: str, preference: Preference = None) -> Response[dict]:
-    """Get the latest prediction of a project
-
-    :param project_id: project ID
-    :type project_id: str
-    :param preference: preferred prediction solution, defaults to project setting
-    :type preference: Preference, optional
-    :return: prediction object
-    :rtype: Response[dict]
-    """
-    project_response = get_project(project_id)
-    project = project_response.result
-    if project:
-        predictions_response = get_predictions(
-            project_id=project_id, preference=preference or project.get("preference")
-        )
-        if predictions_response.error:
-            return predictions_response
-
-        predictions = predictions_response.result
-        if predictions:
-            return Response(result=predictions[0])
-        return Response(error=ProjectError(message="No predictions in the project"))
-    return project_response
 
 
 def create_project(

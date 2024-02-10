@@ -28,10 +28,7 @@ The CLI provided with this package makes it easy to configure access to the Sync
 
 You'll be prompted for an API key which can be had from the account page of the Sync web app.
 This creates the Sync directory if it doesn't already exist and stores the API key in it at `~/.sync/credentials`.
-You'll also be prompted for default values for,
-
-1. S3 location under which to store project data
-2. Your prediction preference, e.g. "balanced"
+You'll also be prompted for default values for and S3 location under which to store project data.
 
 These are optional to help with setting up multiple Sync projects. However, in the context of an existing project they are superseded by the corresponding properties of that project.
 They are stored in `~/.sync/config`.

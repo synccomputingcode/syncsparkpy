@@ -277,7 +277,7 @@ def create_project_submission_with_eventlog_bytes(
 ) -> Response[str]:
     """Creates a submission given event log bytes instead of a URL
 
-    :param platform: platform, e.g. "aws-emr"
+    :param platform: platform, e.g. "aws-databricks"
     :type platform: Platform
     :param cluster_report: cluster report
     :type cluster_report: dict

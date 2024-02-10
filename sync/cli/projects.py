@@ -1,5 +1,6 @@
+import json
+
 import click
-import orjson
 
 from sync.api.projects import (
     create_project,
@@ -7,11 +8,13 @@ from sync.api.projects import (
     get_prediction,
     get_project,
     get_projects,
+    reset_project,
     update_project,
 )
 from sync.cli.util import validate_project
 from sync.config import CONFIG
 from sync.models import Preference
+from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
 
 @click.group
@@ -40,12 +43,7 @@ def get(project: dict):
     response = get_project(project["id"])
     project = response.result
     if project:
-        click.echo(
-            orjson.dumps(
-                project,
-                option=orjson.OPT_INDENT_2 | orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS,
-            )
-        )
+        click.echo(json.dumps(project, indent=2, cls=DateTimeEncoderNaiveUTCDropMicroseconds))
     else:
         click.echo(str(response.error), err=True)
 
@@ -55,6 +53,12 @@ def get(project: dict):
 @click.argument("product_code")
 @click.option("-d", "--description")
 @click.option("-j", "--job-id", help="Databricks job ID")
+@click.option(
+    "-c",
+    "--cluster-path",
+    help="Path to cluster definition in job object, e.g. 'job_clusters/Job_cluster'",
+)
+@click.option("-w", "--workspace-id", help="Databricks workspace ID")
 @click.option("-l", "--location", help="S3 URL under which to store event logs and configuration")
 @click.option(
     "-p",
@@ -77,6 +81,8 @@ def create(
     auto_apply_recs: bool,
     description: str = None,
     job_id: str = None,
+    cluster_path: str = None,
+    workspace_id: str = None,
     location: str = None,
     preference: Preference = None,
     app_id: str = None,
@@ -89,6 +95,8 @@ def create(
         product_code,
         description=description,
         job_id=job_id,
+        cluster_path=cluster_path,
+        workspace_id=workspace_id,
         cluster_log_url=location,
         prediction_preference=preference,
         auto_apply_recs=auto_apply_recs,
@@ -109,6 +117,12 @@ def create(
     "-i", "--app-id", help="External identifier often based on the project's target application"
 )
 @click.option(
+    "-c",
+    "--cluster-path",
+    help="Path to cluster definition in job object, e.g. 'job_clusters/Job_cluster'",
+)
+@click.option("-w", "--workspace-id", help="Databricks workspace ID")
+@click.option(
     "-p",
     "--preference",
     type=click.Choice(Preference),
@@ -120,6 +134,8 @@ def update(
     description: str = None,
     location: str = None,
     app_id: str = None,
+    cluster_path: str = None,
+    workspace_id: str = None,
     preference: Preference = None,
     auto_apply_recs: bool = None,
 ):
@@ -129,11 +145,26 @@ def update(
         description=description,
         cluster_log_url=location,
         app_id=app_id,
+        cluster_path=cluster_path,
+        workspace_id=workspace_id,
         prediction_preference=preference,
         auto_apply_recs=auto_apply_recs,
     )
     if response.result:
         click.echo("Project updated")
+    else:
+        click.echo(str(response.error), err=True)
+
+
+@projects.command
+@click.argument("project", callback=validate_project)
+def reset(project: dict):
+    """Reset a project
+
+    PROJECT is either a project ID or application name"""
+    response = reset_project(project["id"])
+    if response.result:
+        click.echo("Project reset")
     else:
         click.echo(str(response.error), err=True)
 
@@ -163,14 +194,6 @@ def get_latest_prediction(project: dict, preference: Preference):
     prediction_response = get_prediction(project["id"], preference)
     prediction = prediction_response.result
     if prediction:
-        click.echo(
-            orjson.dumps(
-                prediction,
-                option=orjson.OPT_INDENT_2
-                | orjson.OPT_UTC_Z
-                | orjson.OPT_NAIVE_UTC
-                | orjson.OPT_OMIT_MICROSECONDS,
-            )
-        )
+        click.echo(json.dumps(prediction, indent=2, cls=DateTimeEncoderNaiveUTCDropMicroseconds))
     else:
         click.echo(str(prediction_response.error), err=True)

@@ -94,6 +94,9 @@ class SyncClient(RetryableHTTPClient):
             self._client.build_request("POST", "/v1/projects", headers=headers, content=content)
         )
 
+    def reset_project(self, project_id: str) -> dict:
+        return self._send(self._client.build_request("POST", f"/v1/projects/{project_id}/reset"))
+
     def update_project(self, project_id: str, project: dict) -> dict:
         headers, content = encode_json(project)
         return self._send(
@@ -141,6 +144,20 @@ class SyncClient(RetryableHTTPClient):
         return self._send(
             self._client.build_request(
                 "GET", f"/v1/projects/{project_id}/recommendations/{recommendation_id}"
+            )
+        )
+
+    def get_project_submissions(self, project_id: str, params: dict = None) -> dict:
+        return self._send(
+            self._client.build_request(
+                "GET", f"/v1/projects/{project_id}/submissions", params=params
+            )
+        )
+
+    def get_project_submission(self, project_id: str, submission_id: str) -> dict:
+        return self._send(
+            self._client.build_request(
+                "GET", f"/v1/projects/{project_id}/submissions/{submission_id}"
             )
         )
 

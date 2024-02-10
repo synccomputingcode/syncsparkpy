@@ -1,11 +1,11 @@
 import copy
 import io
+import json
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 import boto3 as boto
-import orjson
 from botocore.response import StreamingBody
 from botocore.stub import Stubber
 from httpx import Response
@@ -13,6 +13,8 @@ from httpx import Response
 from sync.awsdatabricks import create_prediction_for_run
 from sync.config import DatabricksConf
 from sync.models import DatabricksAPIError, DatabricksError
+from sync.models import Response as SyncResponse
+from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
 MOCK_RUN = {
     "job_id": 12345678910,
@@ -524,6 +526,7 @@ MOCK_DBX_CONF = DatabricksConf(
 
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
 @patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync._databricks.get_project", Mock(return_value=SyncResponse(result={})))
 def test_create_prediction_for_failed_run(respx_mock):
     failure_response = {"error_code": "FAILED", "message": "This run failed"}
 
@@ -558,6 +561,7 @@ def test_create_prediction_for_failed_run(respx_mock):
 
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
 @patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync._databricks.get_project", Mock(return_value=SyncResponse(result={})))
 def test_create_prediction_for_run_bad_cluster_data(respx_mock):
     # Test too many clusters found
     run_with_multiple_clusters = copy.deepcopy(MOCK_RUN)
@@ -592,6 +596,7 @@ def test_create_prediction_for_run_bad_cluster_data(respx_mock):
 
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
 @patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync._databricks.get_project", Mock(return_value=SyncResponse(result={})))
 def test_create_prediction_for_run_no_instances_found(respx_mock):
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=MOCK_RUN)
@@ -631,6 +636,7 @@ def test_create_prediction_for_run_no_instances_found(respx_mock):
 
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
 @patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync._databricks.get_project", Mock(return_value=SyncResponse(result={})))
 def test_create_prediction_for_run_unauthorized_ec2(respx_mock):
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=MOCK_RUN)
@@ -679,6 +685,7 @@ MOCK_PREDICTION_CREATION_RESPONSE = {
 
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
 @patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync._databricks.get_project", Mock(return_value=SyncResponse(result={})))
 def test_create_prediction_for_run_success(respx_mock):
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=MOCK_RUN)
@@ -760,6 +767,7 @@ def test_create_prediction_for_run_success(respx_mock):
 
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
 @patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync._databricks.get_project", Mock(return_value=SyncResponse(result={})))
 def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock):
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=MOCK_RUN)
@@ -805,9 +813,17 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
     s3 = boto.client("s3")
     s3_stubber = Stubber(s3)
 
-    mock_cluster_info_bytes = orjson.dumps(
-        {**MOCK_INSTANCES, **MOCK_VOLUMES},
-        option=orjson.OPT_UTC_Z | orjson.OPT_OMIT_MICROSECONDS | orjson.OPT_NAIVE_UTC,
+    mock_cluster_info_bytes = bytes(
+        json.dumps(
+            {
+                "volumes": MOCK_VOLUMES["Volumes"],
+                "instances": [
+                    inst for res in MOCK_INSTANCES["Reservations"] for inst in res["Instances"]
+                ],
+            },
+            cls=DateTimeEncoderNaiveUTCDropMicroseconds,
+        ),
+        "utf-8",
     )
     s3_stubber.add_response(
         "get_object",
@@ -858,6 +874,7 @@ def test_create_prediction_for_run_success_with_cluster_instance_file(respx_mock
 
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
 @patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync._databricks.get_project", Mock(return_value=SyncResponse(result={})))
 def test_create_prediction_for_run_with_pending_task(respx_mock):
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=MOCK_RUN_WITH_SYNC_TASK)
@@ -940,12 +957,9 @@ def test_create_prediction_for_run_with_pending_task(respx_mock):
 
 @patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
 @patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
-@patch("sync.awsdatabricks.event_log_poll_duration_seconds")
-def test_create_prediction_for_run_event_log_upload_delay(
-    event_log_poll_duration_seconds, respx_mock
-):
-    event_log_poll_duration_seconds.return_value = 0
-
+@patch("sync._databricks._event_log_poll_duration_seconds", Mock(return_value=0))
+@patch("sync._databricks.get_project", Mock(return_value=SyncResponse(result={})))
+def test_create_prediction_for_run_event_log_upload_delay(respx_mock):
     respx_mock.get("https://*.cloud.databricks.com/api/2.1/jobs/runs/get?run_id=75778").mock(
         return_value=Response(200, json=MOCK_RUN)
     )

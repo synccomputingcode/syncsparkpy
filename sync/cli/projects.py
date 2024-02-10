@@ -5,7 +5,6 @@ import click
 from sync.api.projects import (
     create_project,
     delete_project,
-    get_prediction,
     get_project,
     get_projects,
     reset_project,
@@ -180,20 +179,3 @@ def delete(project: dict):
         click.echo(response.result)
     else:
         click.echo(str(response.error), err=True)
-
-
-@projects.command("get-prediction")
-@click.argument("project", callback=validate_project)
-@click.option(
-    "-p",
-    "--preference",
-    type=click.Choice(Preference),
-)
-def get_latest_prediction(project: dict, preference: Preference):
-    """Get the latest prediction in a project"""
-    prediction_response = get_prediction(project["id"], preference)
-    prediction = prediction_response.result
-    if prediction:
-        click.echo(json.dumps(prediction, indent=2, cls=DateTimeEncoderNaiveUTCDropMicroseconds))
-    else:
-        click.echo(str(prediction_response.error), err=True)

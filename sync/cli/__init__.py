@@ -5,10 +5,8 @@ import logging
 
 import click
 
-from sync.api.predictions import get_products
-from sync.cli import awsdatabricks, awsemr, azuredatabricks, predictions, projects, workspaces
+from sync.cli import awsdatabricks, azuredatabricks, projects, workspaces
 from sync.cli.util import OPTIONAL_DEFAULT
-from sync.clients.sync import get_default_client
 from sync.config import API_KEY, CONFIG, DB_CONFIG, APIKey, Configuration, DatabricksConf, init
 from sync.models import Preference
 
@@ -25,9 +23,7 @@ def main(debug: bool):
         logging.disable()
 
 
-main.add_command(predictions.predictions)
 main.add_command(projects.projects)
-main.add_command(awsemr.aws_emr)
 main.add_command(awsdatabricks.aws_databricks)
 main.add_command(azuredatabricks.azure_databricks)
 main.add_command(workspaces.workspaces)
@@ -97,25 +93,3 @@ def configure(
         and dbx_region != OPTIONAL_DEFAULT
         else None,
     )
-
-
-@main.command
-def products():
-    """List supported products"""
-    products_response = get_products()
-    products = products_response.result
-    if products:
-        click.echo(", ".join(products))
-    else:
-        click.echo(str(products_response.error), err=True)
-
-
-@main.command
-def token():
-    """Get an API access token"""
-    sync_client = get_default_client()
-    response = sync_client.get_products()
-    if "result" in response:
-        click.echo(sync_client._client.auth._access_token)
-    else:
-        click.echo(f"{response['error']['code']}: {response['error']['message']}", err=True)

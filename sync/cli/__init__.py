@@ -7,8 +7,7 @@ import click
 
 from sync.cli import awsdatabricks, azuredatabricks, projects, workspaces
 from sync.cli.util import OPTIONAL_DEFAULT
-from sync.config import API_KEY, CONFIG, DB_CONFIG, APIKey, Configuration, DatabricksConf, init
-from sync.models import Preference
+from sync.config import API_KEY, DB_CONFIG, APIKey, DatabricksConf, init
 
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 
@@ -32,14 +31,12 @@ main.add_command(workspaces.workspaces)
 @main.command
 @click.option("--api-key-id")
 @click.option("--api-key-secret")
-@click.option("--prediction-preference")
 @click.option("--databricks-host")
 @click.option("--databricks-token")
 @click.option("--databricks-region")
 def configure(
     api_key_id: str = None,
     api_key_secret: str = None,
-    prediction_preference: str = None,
     databricks_host: str = None,
     databricks_token: str = None,
     databricks_region: str = None,
@@ -53,12 +50,6 @@ def configure(
         default=API_KEY.secret if API_KEY else None,
         hide_input=True,
         show_default=False,
-    )
-
-    prediction_preference = prediction_preference or click.prompt(
-        "Default prediction preference",
-        type=click.Choice([p.value for p in Preference]),
-        default=(CONFIG.default_prediction_preference or Preference.ECONOMY).value,
     )
 
     dbx_host = databricks_host or OPTIONAL_DEFAULT
@@ -84,9 +75,6 @@ def configure(
 
     init(
         APIKey(api_key_id=api_key_id, api_key_secret=api_key_secret),
-        Configuration(
-            default_prediction_preference=prediction_preference,
-        ),
         DatabricksConf(host=dbx_host, token=dbx_token, aws_region_name=dbx_region)
         if dbx_host != OPTIONAL_DEFAULT
         and dbx_token != OPTIONAL_DEFAULT

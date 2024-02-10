@@ -11,14 +11,7 @@ from pydantic import BaseModel, Field, root_validator, validator
 from pydantic.generics import GenericModel
 
 
-class Preference(str, Enum):
-    PERFORMANCE = "performance"
-    BALANCED = "balanced"
-    ECONOMY = "economy"
-
-
 class Platform(str, Enum):
-    AWS_EMR = "aws-emr"
     AWS_DATABRICKS = "aws-databricks"
     AZURE_DATABRICKS = "azure-databricks"
 

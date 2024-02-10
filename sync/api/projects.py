@@ -8,7 +8,6 @@ from urllib.parse import urlparse
 
 import httpx
 
-from . import generate_presigned_url
 from sync.clients.sync import get_default_client
 from sync.models import (
     Platform,
@@ -18,6 +17,8 @@ from sync.models import (
     Response,
     SubmissionError,
 )
+
+from . import generate_presigned_url
 
 logger = logging.getLogger(__name__)
 

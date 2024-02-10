@@ -1,7 +1,9 @@
+from urllib.parse import urlparse
+
+import boto3 as boto
+
 from sync.clients.sync import get_default_client
 from sync.models import AccessReport, AccessReportLine, AccessStatusCode, Response
-import boto3 as boto
-from urllib.parse import urlparse
 
 
 def get_access_report() -> AccessReport:
@@ -33,6 +35,7 @@ def get_access_report() -> AccessReport:
             )
         ]
     )
+
 
 def generate_presigned_url(s3_url: str, expires_in_secs: int = 3600) -> Response[str]:
     """Generates presigned HTTP URL for S3 URL

@@ -41,6 +41,21 @@ def create_cluster(config: dict) -> Response[str]:
     return Response(result=response["cluster_id"])
 
 
+def get_cluster(cluster_id: str) -> Response[dict]:
+    """Get Databricks cluster.
+
+    :param cluster_id: cluster ID
+    :type cluster_id: str
+    :return: cluster object
+    :rtype: Response[dict]
+    """
+    cluster = get_default_client().get_cluster(cluster_id)
+    if "error_code" in cluster:
+        return Response(error=DatabricksAPIError(**cluster))
+
+    return Response(result=cluster)
+
+
 def create_submission_for_run(
     run_id: str,
     plan_type: str,
@@ -486,6 +501,57 @@ def apply_project_recommendation(
     return Response(result=recommendation_id)
 
 
+def get_recommendation_job(job_id: str, project_id: str, recommendation_id: str) -> Response[dict]:
+    """Apply the recommendation to the specified job.
+
+    The basis job can only have tasks that run on the same cluster. That cluster is updated with the
+    configuration from the prediction and returned in the result job configuration. Use this function
+    to apply a prediction to an existing job or test a prediction with a one-off run.
+
+    :param job_id: basis job ID
+    :type job_id: str
+    :param project_id: Sync project ID
+    :type project_id: str
+    :param recommendation_id: recommendation ID
+    :type recommendation_id: str
+    :return: job object with recommendation applied to it
+    :rtype: Response[dict]
+    """
+    job = get_default_client().get_job(job_id)
+
+    if "error_code" in job:
+        return Response(error=DatabricksAPIError(**job))
+
+    job_settings = job["settings"]
+    tasks = job_settings.get("tasks", [])
+    if tasks:
+        cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
+        cluster = cluster_response.result
+        if cluster:
+            recommendation_cluster_response = get_recommendation_cluster(
+                cluster, project_id, recommendation_id
+            )
+            recommendation_cluster = recommendation_cluster_response.result
+            if recommendation_cluster:
+                cluster_key = tasks[0].get("job_cluster_key")
+                if cluster_key:
+                    job_settings["job_clusters"] = [
+                        j
+                        for j in job_settings["job_clusters"]
+                        if j.get("job_cluster_key") != cluster_key
+                    ] + [{"job_cluster_key": cluster_key, "new_cluster": recommendation_cluster}]
+                else:
+                    # For `new_cluster` definitions, Databricks will automatically assign the newly created cluster a name,
+                    # and will reject any run submissions where the `cluster_name` is pre-populated
+                    if "cluster_name" in recommendation_cluster:
+                        del recommendation_cluster["cluster_name"]
+                    tasks[0]["new_cluster"] = recommendation_cluster
+                return Response(result=job)
+            return recommendation_cluster_response
+        return cluster_response
+    return Response(error=DatabricksError(message="No task found in job"))
+
+
 def get_recommendation_cluster(
     cluster: dict, project_id: str, recommendation_id: str
 ) -> Response[dict]:
@@ -519,6 +585,51 @@ def get_recommendation_cluster(
 
         return Response(result=recommendation_cluster)
     return recommendation_response
+
+
+def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Response[dict]:
+    """Apply project configuration to a job.
+
+    The job can only have tasks that run on the same job cluster. That cluster is updated with tags
+    and a log configuration to facilitate project continuity. The result can be tested in a
+    one-off run or applied to an existing job to surface run-time (see :py:func:`~run_job_object`) or cost optimizations.
+
+    :param job_id: ID of basis job
+    :type job_id: str
+    :param project_id: Sync project ID
+    :type project_id: str
+    :param region_name: region name, defaults to AWS configuration
+    :type region_name: str, optional
+    :return: project job object
+    :rtype: Response[dict]
+    """
+    job = get_default_client().get_job(job_id)
+    if "error_code" in job:
+        return Response(error=DatabricksAPIError(**job))
+
+    job_settings = job["settings"]
+    tasks = job_settings.get("tasks", [])
+    if tasks:
+        cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
+        cluster = cluster_response.result
+        if cluster:
+            project_cluster_response = get_project_cluster(cluster, project_id, region_name)
+            project_cluster = project_cluster_response.result
+            if project_cluster:
+                cluster_key = tasks[0].get("job_cluster_key")
+                if cluster_key:
+                    job_settings["job_clusters"] = [
+                        j
+                        for j in job_settings["job_clusters"]
+                        if j.get("job_cluster_key") != cluster_key
+                    ] + [{"job_cluster_key": cluster_key, "new_cluster": project_cluster}]
+                else:
+                    tasks[0]["new_cluster"] = project_cluster
+
+                return Response(result=job)
+            return project_cluster_response
+        return cluster_response
+    return Response(error=DatabricksError(message="No task found in job"))
 
 
 def get_project_cluster(cluster: dict, project_id: str, region_name: str = None) -> Response[dict]:
@@ -596,6 +707,342 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
     return project_response
 
 
+def run_job_object(job: dict) -> Response[Tuple[str, str]]:
+    """Create a Databricks one-off run based on the job configuration.
+
+    :param job: Databricks job object
+    :type job: dict
+    :return: run ID, and optionally ID of newly created cluster
+    :rtype: Response[Tuple[str, str]]
+    """
+    tasks = job["settings"]["tasks"]
+    cluster_response = _get_job_cluster(tasks, job["settings"].get("job_clusters", []))
+
+    cluster = cluster_response.result
+    if cluster:
+        new_cluster_id = None
+        if len(tasks) == 1:
+            # For `new_cluster` definitions, Databricks will automatically assign the newly created cluster a name,
+            #  and will reject any run submissions where the `cluster_name` is pre-populated
+            if "cluster_name" in cluster:
+                del cluster["cluster_name"]
+
+            tasks[0]["new_cluster"] = cluster
+            del tasks[0]["job_cluster_key"]
+        else:
+            # If the original Job has a pre-existing Policy, we want to remove this from the `create_cluster` payload,
+            #  since we are not allowed to create clusters with certain policies via that endpoint, e.g. we cannot
+            #  create a `Job Compute` cluster via this endpoint.
+            if "policy_id" in cluster:
+                del cluster["policy_id"]
+
+            # Create an "All-Purpose Compute" cluster
+            cluster["cluster_name"] = cluster["cluster_name"] or job["settings"]["name"]
+            cluster["autotermination_minutes"] = 10  # 10 minutes is the minimum
+
+            cluster_result = get_default_client().create_cluster(cluster)
+            if "error_code" in cluster_result:
+                return Response(error=DatabricksAPIError(**cluster_result))
+
+            new_cluster_id = cluster_result["cluster_id"]
+
+            for task in tasks:
+                task["existing_cluster_id"] = cluster_result["cluster_id"]
+                if "new_cluster" in task:
+                    del task["new_cluster"]
+                if "job_cluster_key" in task:
+                    del task["job_cluster_key"]
+
+        run_result = get_default_client().create_run(
+            {"run_name": job["settings"]["name"], "tasks": tasks}
+        )
+        if "error_code" in run_result:
+            return Response(error=DatabricksAPIError(**run_result))
+
+        return Response(result=(run_result["run_id"], new_cluster_id))
+    return cluster_response
+
+
+def create_run(run: dict) -> Response[str]:
+    """Creates a run based off the incoming Databricks run configuration
+
+    :param run: run object
+    :type run: dict
+    :return: run ID
+    :rtype: Response[str]
+    """
+    run_result = get_default_client().create_run(run)
+    if "error_code" in run_result:
+        return Response(error=DatabricksAPIError(**run_result))
+
+    return Response(result=run_result["run_id"])
+
+
+def run_and_record_project_job(
+    job_id: str, project_id: str, plan_type: str, compute_type: str, region_name: str = None
+) -> Response[str]:
+    """Runs the specified job and adds the result to the project.
+
+    This function waits for the run to complete.
+
+    :param job_id: Databricks job ID
+    :type job_id: str
+    :param project_id: Sync project ID
+    :type project_id: str
+    :param plan_type: either "Standard", "Premium" or "Enterprise"
+    :type plan_type: str
+    :param compute_type: e.g. "Jobs Compute"
+    :type compute_type: str
+    :param region_name: region name, defaults to AWS configuration
+    :type region_name: str, optional
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    project_job_response = get_project_job(job_id, project_id, region_name)
+    project_job = project_job_response.result
+    if project_job:
+        return run_and_record_job_object(project_job, plan_type, compute_type, project_id)
+    return project_job_response
+
+
+def run_and_record_job(
+    job_id: str, plan_type: str, compute_type: str, project_id: str = None
+) -> Response[str]:
+    """Runs the specified job and creates a prediction based on the result.
+
+    If a project is specified the prediction is added to it.
+
+    :param job_id: Databricks job ID
+    :type job_id: str
+    :param plan_type: either "Standard", "Premium" or "Enterprise"
+    :type plan_type: str
+    :param compute_type: e.g. "Jobs Compute"
+    :type compute_type: str
+    :param project_id: Sync project ID, defaults to None
+    :type project_id: str, optional
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    # creates a "Jobs Compute" cluster
+    run_result = get_default_client().create_job_run({"job_id": job_id})
+    if "error_code" in run_result:
+        return Response(error=DatabricksAPIError(**run_result))
+
+    run_id = run_result["run_id"]
+    return wait_for_and_record_run(run_id, plan_type, compute_type, project_id)
+
+
+def run_and_record_job_object(
+    job: dict, plan_type: str, compute_type: str, project_id: str = None
+) -> Response[str]:
+    """Creates a one-off Databricks run based on the provided job object.
+
+    Job tasks must use the same job cluster, and that cluster must be configured to store the
+    event logs in S3.
+
+    :param job: Databricks job object
+    :type job: dict
+    :param plan_type: either "Standard", "Premium" or "Enterprise"
+    :type plan_type: str
+    :param compute_type: e.g. "Jobs Compute"
+    :type compute_type: str
+    :param project_id: Sync project ID, defaults to None
+    :type project_id: str, optional
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    run_response = run_job_object(job)
+    run_and_cluster_ids = run_response.result
+    if run_and_cluster_ids:
+        response = wait_for_run_and_cluster(run_and_cluster_ids[0])
+        result_state = response.result
+        if result_state:
+            if result_state == "SUCCESS":
+                response = record_run(run_and_cluster_ids[0], plan_type, compute_type, project_id)
+            else:
+                response = Response(
+                    error=DatabricksError(message=f"Unsuccessful run result state: {result_state}")
+                )
+
+        for cluster_id in run_and_cluster_ids[1:]:
+            delete_cluster_response = get_default_client().delete_cluster(cluster_id)
+            if "error_code" in delete_cluster_response:
+                logger.warning(
+                    f"Failed to delete cluster {cluster_id}: {delete_cluster_response['error_code']}: {delete_cluster_response['message']}"
+                )
+
+        return response
+    return run_response
+
+
+def create_and_record_run(
+    run: dict, plan_type: str, compute_type: str, project_id: str = None
+) -> Response[str]:
+    """Applies the Databricks run configuration and creates a prediction based on the result.
+
+    If a project is specified the resulting prediction is added to it. This function waits for
+    run to complete.
+
+    :param run: Databricks run configuration
+    :type run: dict
+    :param plan_type: either "Standard", "Premium" or "Enterprise"
+    :type plan_type: str
+    :param compute_type: e.g. "Jobs Compute"
+    :type compute_type: str
+    :param project_id: Sync project ID, defaults to None
+    :type project_id: str, optional
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    run_response = create_run(run)
+    run_id = run_response.result
+    if run_id:
+        return wait_for_and_record_run(run_id, plan_type, compute_type, project_id)
+    return run_response
+
+
+def wait_for_and_record_run(
+    run_id: str, plan_type: str, compute_type: str, project_id: str = None
+) -> Response[str]:
+    """Waits for a run to complete before creating a prediction.
+
+    The run must save 1 event log to S3. If a project is specified the prediction is added
+    to that project.
+
+    :param run_id: Databricks run ID
+    :type run_id: str
+    :param plan_type: either "Standard", "Premium" or "Enterprise"
+    :type plan_type: str
+    :param compute_type: e.g. "Jobs Compute"
+    :type compute_type: str
+    :param project_id: Sync project ID, defaults to None
+    :type project_id: str, optional
+    :return: prediction ID
+    :rtype: Response[str]
+    """
+    wait_response = wait_for_final_run_status(run_id)
+    result_state = wait_response.result
+    if result_state:
+        if result_state == "SUCCESS":
+            return record_run(run_id, plan_type, compute_type, project_id)
+        return Response(
+            error=DatabricksError(message=f"Unsuccessful run result state: {result_state}")
+        )
+    return wait_response
+
+
+def create_and_wait_for_run(run: dict) -> Response[str]:
+    """Creates a Databricks run from the incoming configuration and returns the final status.
+
+    This function waits for the run to complete.
+
+    :param run: Databricks run configuration
+    :type run: dict
+    :return: result state, e.g. "SUCCESS"
+    :rtype: Response[str]
+    """
+    run_response = create_run(run)
+    if run_response.error:
+        return run_response
+
+    return wait_for_final_run_status(run_response.result)
+
+
+def wait_for_final_run_status(run_id: str) -> Response[str]:
+    """Waits for run returning final status.
+
+    :param run_id: Databricks run ID
+    :type run_id: str
+    :return: result state, e.g. "SUCCESS"
+    :rtype: Response[str]
+    """
+    run = get_default_client().get_run(run_id)
+    while "error_code" not in run:
+        result_state = run["state"].get("result_state")  # result_state isn't present while running
+        if result_state in {"SUCCESS", "FAILED", "TIMEDOUT", "CANCELED"}:
+            return Response(result=result_state)
+
+        sleep(30)
+        run = get_default_client().get_run(run_id)
+
+    return Response(error=DatabricksAPIError(**run))
+
+
+def wait_for_run_and_cluster(run_id: str) -> Response[str]:
+    """Waits for final run status and returns it after terminating the cluster.
+
+    :param run_id: Databricks run ID
+    :type run_id: str
+    :return: result state, e.g. "SUCCESS"
+    :rtype: Response[str]
+    """
+    run = get_default_client().get_run(run_id)
+    while "error_code" not in run:
+        result_state = run["state"].get("result_state")  # result_state isn't present while running
+        if result_state in {"SUCCESS", "FAILED", "TIMEDOUT", "CANCELED"}:
+            for cluster_id in {task.get("existing_cluster_id") for task in run["tasks"]}:
+                cluster_response = terminate_cluster(cluster_id)
+                if cluster_response.error:
+                    return cluster_response
+            return Response(result=result_state)
+
+        sleep(30)
+        run = get_default_client().get_run(run_id)
+
+    return Response(error=DatabricksAPIError(**run))
+
+
+def terminate_cluster(cluster_id: str) -> Response[dict]:
+    """Terminate Databricks cluster and wait to return final state.
+
+    :param cluster_id: Databricks cluster ID
+    :type cluster_id: str
+    :return: Databricks cluster object with state: "TERMINATED"
+    :rtype: Response[str]
+    """
+    cluster = get_default_client().get_cluster(cluster_id)
+    if "error_code" not in cluster:
+        state = cluster.get("state")
+        if state == "TERMINATED":
+            return Response(result=cluster)
+        elif state == "TERMINATING":
+            return _wait_for_cluster_termination(cluster_id)
+        elif state in {"PENDING", "RUNNING", "RESTARTING", "RESIZING"}:
+            get_default_client().terminate_cluster(cluster_id)
+            return _wait_for_cluster_termination(cluster_id)
+        else:
+            return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
+
+    return Response(error=DatabricksAPIError(**cluster))
+
+
+def _wait_for_cluster_termination(
+    cluster_id: str, timeout_seconds=600, poll_seconds=10
+) -> Response[dict]:
+    logging.info(f"Waiting for cluster {cluster_id} to terminate")
+    start_seconds = time.time()
+    cluster = get_default_client().get_cluster(cluster_id)
+    while "error_code" not in cluster:
+        state = cluster.get("state")
+        if state == "TERMINATED":
+            return Response(result=cluster)
+        elif state == "TERMINATING":
+            sleep(poll_seconds)
+        else:
+            return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
+
+        if time.time() - start_seconds > timeout_seconds:
+            return Response(
+                error=DatabricksError(
+                    message=f"Cluster failed to terminate after waiting {timeout_seconds} seconds"
+                )
+            )
+
+        cluster = get_default_client().get_cluster(cluster_id)
+
+    return Response(error=DatabricksAPIError(**cluster))
+
+
 def _cluster_log_destination(
     cluster: dict,
 ) -> Union[Tuple[str, str, str, str], Tuple[None, None, None, None]]:
@@ -618,6 +1065,20 @@ def _cluster_log_destination(
         return log_url, parsed_log_url.scheme, bucket, base_cluster_filepath_prefix
 
     return None, None, None, None
+
+
+def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
+    if len(tasks) == 1:
+        return _get_task_cluster(tasks[0], job_clusters)
+
+    if [t.get("job_cluster_key") for t in tasks].count(tasks[0].get("job_cluster_key")) == len(
+        tasks
+    ):
+        for cluster in job_clusters:
+            if cluster["job_cluster_key"] == tasks[0].get("job_cluster_key"):
+                return Response(result=cluster["new_cluster"])
+        return Response(error=DatabricksError(message="No cluster found for task"))
+    return Response(error=DatabricksError(message="Not all tasks use the same cluster"))
 
 
 def _get_project_job_clusters(
@@ -775,6 +1236,22 @@ def _get_run_spark_context_id(tasks: List[dict]) -> Response[str]:
         return Response(error=DatabricksError(message="More than 1 cluster found for tasks"))
 
 
+def _get_task_cluster(task: dict, clusters: list) -> Response[dict]:
+    cluster = task.get("new_cluster")
+
+    if not cluster:
+        cluster_matches = [
+            candidate
+            for candidate in clusters
+            if candidate["job_cluster_key"] == task.get("job_cluster_key")
+        ]
+        if cluster_matches:
+            cluster = cluster_matches[0]["new_cluster"]
+        else:
+            return Response(error=DatabricksError(message="No cluster found for task"))
+    return Response(result=cluster)
+
+
 def _s3_contents_have_all_rollover_logs(contents: List[dict], run_end_time_seconds: float):
     final_rollover_log = contents and next(
         (
@@ -832,6 +1309,11 @@ def _check_total_file_size_changed(
     else:
         logger.info("Total file size of eventlog directory changed")
         return True, new_total_file_size
+
+
+def _event_log_poll_duration_seconds():
+    """Convenience function to aid testing"""
+    return 15
 
 
 def _get_eventlog_from_s3(
@@ -989,7 +1471,7 @@ def _get_eventlog(
     #   https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1
     # So we will poll this location for *up to* 5 minutes until we see all the eventlog files we are expecting
     # in the S3 bucket
-    poll_duration_seconds = 15
+    poll_duration_seconds = _event_log_poll_duration_seconds()
 
     if filesystem == "s3":
         return _get_eventlog_from_s3(
@@ -1011,29 +1493,6 @@ def _get_eventlog(
         return Response(error=DatabricksError(message=f"Unknown log destination: {filesystem}"))
 
 
-KeyType = TypeVar("KeyType")
-
-
-def _deep_update(
-    mapping: Dict[KeyType, Any], *updating_mappings: Dict[KeyType, Any]
-) -> Dict[KeyType, Any]:
-    updated_mapping = mapping.copy()
-    for updating_mapping in updating_mappings:
-        for k, v in updating_mapping.items():
-            if k in updated_mapping:
-                if isinstance(updated_mapping[k], dict) and isinstance(v, dict):
-                    updated_mapping[k] = _deep_update(updated_mapping[k], v)
-                elif isinstance(updated_mapping[k], list) and isinstance(v, list):
-                    updated_mapping[k] += v
-                else:
-                    updated_mapping[k] = v
-            else:
-                updated_mapping[k] = v
-    return updated_mapping
-
-
-# The methods below here are all called within the "subclass scripts"
-# awsdatabricks.py and azuredatabricks.py
 def _get_all_cluster_events(cluster_id: str):
     """Fetches all ClusterEvents for a given Databricks cluster, optionally within a time window.
     Pages will be followed and returned as 1 object
@@ -1103,28 +1562,22 @@ def _update_monitored_timelines(
     return active_timelines_by_id, retired_inst_timeline_list
 
 
-def _wait_for_cluster_termination(
-    cluster_id: str, timeout_seconds=600, poll_seconds=10
-) -> Response[dict]:
-    logging.info(f"Waiting for cluster {cluster_id} to terminate")
-    start_seconds = time.time()
-    cluster = get_default_client().get_cluster(cluster_id)
-    while "error_code" not in cluster:
-        state = cluster.get("state")
-        if state == "TERMINATED":
-            return Response(result=cluster)
-        elif state == "TERMINATING":
-            sleep(poll_seconds)
-        else:
-            return Response(error=DatabricksError(message=f"Unexpected cluster state: {state}"))
+KeyType = TypeVar("KeyType")
 
-        if time.time() - start_seconds > timeout_seconds:
-            return Response(
-                error=DatabricksError(
-                    message=f"Cluster failed to terminate after waiting {timeout_seconds} seconds"
-                )
-            )
 
-        cluster = get_default_client().get_cluster(cluster_id)
-
-    return Response(error=DatabricksAPIError(**cluster))
+def _deep_update(
+    mapping: Dict[KeyType, Any], *updating_mappings: Dict[KeyType, Any]
+) -> Dict[KeyType, Any]:
+    updated_mapping = mapping.copy()
+    for updating_mapping in updating_mappings:
+        for k, v in updating_mapping.items():
+            if k in updated_mapping:
+                if isinstance(updated_mapping[k], dict) and isinstance(v, dict):
+                    updated_mapping[k] = _deep_update(updated_mapping[k], v)
+                elif isinstance(updated_mapping[k], list) and isinstance(v, list):
+                    updated_mapping[k] += v
+                else:
+                    updated_mapping[k] = v
+            else:
+                updated_mapping[k] = v
+    return updated_mapping

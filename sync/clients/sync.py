@@ -60,6 +60,9 @@ class SyncClient(RetryableHTTPClient):
             )
         )
 
+    def get_products(self) -> dict:
+        return self._send(self._client.build_request("GET", "/v1/projects/products"))
+
     def create_project(self, project: dict) -> dict:
         headers, content = encode_json(project)
         return self._send(

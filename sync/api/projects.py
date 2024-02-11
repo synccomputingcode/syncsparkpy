@@ -16,6 +16,15 @@ from . import generate_presigned_url
 logger = logging.getLogger(__name__)
 
 
+def get_products() -> Response[List[str]]:
+    """Get supported platforms
+    :return: list of platform names
+    :rtype: Response[list[str]]
+    """
+    response = get_default_client().get_products()
+    return Response(**response)
+
+
 def create_project(
     name: str,
     product_code: str,

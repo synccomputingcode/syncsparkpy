@@ -342,7 +342,7 @@ def monitor_cluster(
     cluster_report_destination_override: dict = None,
 ) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
-    spark_context_id = cluster.get("spark_context_id")
+    initial_spark_context_id = cluster.get("spark_context_id")
 
     while not spark_context_id:
         # This is largely just a convenience for when this command is run by someone locally
@@ -360,7 +360,7 @@ def monitor_cluster(
         _monitor_cluster(
             (log_url, filesystem, bucket, base_prefix),
             cluster_id,
-            spark_context_id,
+            initial_spark_context_id,
             polling_period,
         )
     else:
@@ -370,7 +370,7 @@ def monitor_cluster(
 def _monitor_cluster(
     cluster_log_destination,
     cluster_id: str,
-    spark_context_id: int,
+    initial_spark_context_id: int,
     polling_period: int,
 ) -> None:
 
@@ -378,8 +378,7 @@ def _monitor_cluster(
     # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
     #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
     #  we make sure to re-strip our final Prefix
-    file_key = f"{base_prefix}/sync_data/{spark_context_id}/aws_cluster_info.json".strip("/")
-
+    file_key = None
     aws_region_name = DB_CONFIG.aws_region_name
     ec2 = boto.client("ec2", region_name=aws_region_name)
 
@@ -391,6 +390,11 @@ def _monitor_cluster(
     recorded_volumes_by_id = {}
     while True:
         try:
+            cluster = get_default_client().get_cluster(cluster_id)
+            spark_context_id = cluster.get("spark_context_id")
+            if spark_context_id != initial_spark_context_id:
+                file_key = f"{base_prefix}/sync_data/{spark_context_id}/aws_cluster_info.json".strip("/")
+
             current_insts = _get_ec2_instances(cluster_id, ec2)
             recorded_volumes_by_id.update(
                 {v["VolumeId"]: v for v in _get_ebs_volumes_for_instances(current_insts, ec2)}
@@ -410,20 +414,21 @@ def _monitor_cluster(
 
             retired_timelines.extend(new_retired_timelines)
             all_timelines = retired_timelines + list(active_timelines_by_id.values())
-
-            write_file(
-                bytes(
-                    json.dumps(
-                        {
-                            "instances": list(all_inst_by_id.values()),
-                            "instance_timelines": all_timelines,
-                            "volumes": list(recorded_volumes_by_id.values()),
-                        },
-                        cls=DefaultDateTimeEncoder,
-                    ),
-                    "utf-8",
+            
+            if file_key:
+                write_file(
+                    bytes(
+                        json.dumps(
+                            {
+                                "instances": list(all_inst_by_id.values()),
+                                "instance_timelines": all_timelines,
+                                "volumes": list(recorded_volumes_by_id.values()),
+                            },
+                            cls=DefaultDateTimeEncoder,
+                        ),
+                        "utf-8",
+                    )
                 )
-            )
         except Exception as e:
             logger.error(f"Exception encountered while polling cluster: {e}")
 

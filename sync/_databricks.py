@@ -1558,10 +1558,10 @@ def _get_project_cluster_tasks(
     run: dict,
     project_id: str = None,
     cluster_path: str = None,
-    exclude_tasks: Union[Collection[str], None] = None,
+    exclude_tasks: Union[Collection[str], None] = None
 ) -> Dict[str, Tuple[str, List[dict]]]:
     """Returns a mapping of project IDs to cluster-ID-tasks pairs"""
-    project_cluster_tasks = _get_cluster_tasks(run, exclude_tasks)
+    project_cluster_tasks = _get_cluster_tasks(run, exclude_tasks, project_id)
 
     filtered_project_cluster_tasks = {}
     if project_id:
@@ -1609,6 +1609,7 @@ def _get_project_cluster_tasks(
 def _get_cluster_tasks(
     run: dict,
     exclude_tasks: Union[Collection[str], None] = None,
+    project_id: str = None
 ) -> Dict[str, Dict[str, Tuple[str, List[dict]]]]:
     """Returns a mapping of project IDs to cluster paths to cluster IDs and tasks"""
     job_clusters = {c["job_cluster_key"]: c["new_cluster"] for c in run.get("job_clusters", [])}
@@ -1623,18 +1624,28 @@ def _get_cluster_tasks(
         ):
             cluster_id = task["cluster_instance"]["cluster_id"]
 
-            task_cluster = task.get("new_cluster")
-            if task_cluster:
-                cluster_path = f"tasks/{task['task_key']}"
-            else:
-                task_cluster = job_clusters.get(task.get("job_cluster_key"))
-                cluster_path = f"job_clusters/{task.get('job_cluster_key')}"
-
-            if task_cluster:
-                cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
-                cluster_id_tasks[cluster_id].append(task)
-                cluster_path_ids[cluster_path].add(cluster_id)
+            apc_cluster_id = task.get("existing_cluster_id")
+            if apc_cluster_id:
+                #cluster = get_default_client().get_cluster(apc_cluster_id)
+                cluster_project_id = project_id
+                cluster_path = apc_cluster_id
+                cluster_id_tasks[apc_cluster_id].append(task)
+                cluster_path_ids[cluster_path].add(apc_cluster_id)
                 cluster_project_paths[cluster_project_id].add(cluster_path)
+
+            else:
+                task_cluster = task.get("new_cluster")
+                if task_cluster:
+                    cluster_path = f"tasks/{task['task_key']}"
+                else:
+                    task_cluster = job_clusters.get(task.get("job_cluster_key"))
+                    cluster_path = f"job_clusters/{task.get('job_cluster_key')}"
+
+                if task_cluster:
+                    cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
+                    cluster_id_tasks[cluster_id].append(task)
+                    cluster_path_ids[cluster_path].add(cluster_id)
+                    cluster_project_paths[cluster_project_id].add(cluster_path)
 
     result_cluster_project_tasks = {}
     for project_id, cluster_paths in cluster_project_paths.items():
@@ -1651,6 +1662,8 @@ def _get_cluster_tasks(
 
         if cluster_path_tasks:
             result_cluster_project_tasks[project_id] = cluster_path_tasks
+
+    print(result_cluster_project_tasks)
 
     return result_cluster_project_tasks
 

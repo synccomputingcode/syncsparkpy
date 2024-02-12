@@ -17,6 +17,7 @@ import boto3 as boto
 
 from sync.api import projects
 from sync.clients.databricks import get_default_client
+from sync.config import CONFIG  # noqa F401
 from sync.models import DatabricksAPIError, DatabricksClusterReport, DatabricksError, Response
 from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file
 

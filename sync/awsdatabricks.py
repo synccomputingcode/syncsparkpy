@@ -382,8 +382,6 @@ def _monitor_cluster(
     aws_region_name = DB_CONFIG.aws_region_name
     ec2 = boto.client("ec2", region_name=aws_region_name)
 
-    write_file = _define_write_file(file_key, filesystem, bucket)
-
     all_inst_by_id = {}
     active_timelines_by_id = {}
     retired_timelines = []
@@ -416,6 +414,7 @@ def _monitor_cluster(
             all_timelines = retired_timelines + list(active_timelines_by_id.values())
             
             if file_key:
+                write_file = _define_write_file(file_key, filesystem, bucket)
                 write_file(
                     bytes(
                         json.dumps(

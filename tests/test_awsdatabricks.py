@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch
+
 from sync.awsdatabricks import monitor_cluster
+
 
 @patch("sync.awsdatabricks._monitor_cluster")
 @patch("sync.clients.databricks.DatabricksClient.get_cluster")

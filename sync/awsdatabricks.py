@@ -344,12 +344,12 @@ def monitor_cluster(
     cluster = get_default_client().get_cluster(cluster_id)
     initial_spark_context_id = cluster.get("spark_context_id")
 
-    while not spark_context_id:
+    while not initial_spark_context_id:
         # This is largely just a convenience for when this command is run by someone locally
         logger.info("Waiting for cluster startup...")
         sleep(30)
         cluster = get_default_client().get_cluster(cluster_id)
-        spark_context_id = cluster.get("spark_context_id")
+        initial_spark_context_id = cluster.get("spark_context_id")
 
     (log_url, filesystem, bucket, base_prefix) = _cluster_log_destination(cluster)
     if cluster_report_destination_override:

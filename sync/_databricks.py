@@ -1764,6 +1764,7 @@ def _event_log_poll_duration_seconds():
 
 def _get_eventlog_from_s3(
     cluster_id: str,
+    spark_context_id: str,
     bucket: str,
     base_filepath: str,
     run_end_time_millis: int,
@@ -1780,11 +1781,12 @@ def _get_eventlog_from_s3(
     logger.info(f"Looking for eventlogs at location: {prefix}")
 
     contents = s3.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents")
+    filter_contents = [ content for content in contents if spark_context_id in content['Key'] ]
     run_end_time_seconds = run_end_time_millis / 1000
     poll_num_attempts = 0
     poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
     while (
-        not _s3_contents_have_all_rollover_logs(contents, run_end_time_seconds)
+        not _s3_contents_have_all_rollover_logs(filter_contents, run_end_time_seconds)
         and poll_num_attempts < poll_max_attempts
     ):
         if poll_num_attempts > 0:
@@ -1796,11 +1798,12 @@ def _get_eventlog_from_s3(
         contents = s3.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents")
         poll_num_attempts += 1
 
-    if contents:
+    filter_contents = [ content for content in contents if spark_context_id in content['Key'] ]
+    if filter_contents:
         eventlog_zip = io.BytesIO()
         eventlog_zip_file = zipfile.ZipFile(eventlog_zip, "a", zipfile.ZIP_DEFLATED)
 
-        for content in contents:
+        for content in filter_contents:
             obj = s3.get_object(Bucket=bucket, Key=content["Key"])
             eventlog_zip_file.writestr(content["Key"].split("/")[-1], obj["Body"].read())
 
@@ -1922,6 +1925,7 @@ def _get_eventlog(
     if filesystem == "s3":
         return _get_eventlog_from_s3(
             cluster_id=cluster_description["cluster_id"],
+            spark_context_id=run_spark_context_id,
             bucket=bucket,
             base_filepath=base_cluster_filepath_prefix,
             run_end_time_millis=run_end_time_millis,

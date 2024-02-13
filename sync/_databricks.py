@@ -836,7 +836,7 @@ def apply_project_recommendation(
     databricks_client = get_default_client()
 
     job = databricks_client.get_job(job_id)
-    job_clusters = _get_project_job_clusters(job)
+    job_clusters = _get_project_job_clusters(job, project_id)
 
     project_cluster = job_clusters.get(project_id)
     if not project_cluster:
@@ -870,6 +870,8 @@ def apply_project_recommendation(
         }
 
     response = databricks_client.update_job(job_id, new_settings)
+
+    print(response)
 
     if "error_code" in response:
         return Response(error=DatabricksAPIError(**response))
@@ -1516,6 +1518,7 @@ def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
 
 def _get_project_job_clusters(
     job: dict,
+    project_id: str,
     exclude_tasks: Union[Collection[str], None] = None,
 ) -> Dict[str, Tuple[Tuple[str], dict]]:
     """Returns a mapping of project IDs to cluster paths and clusters.
@@ -1532,24 +1535,36 @@ def _get_project_job_clusters(
 
     for task in job["settings"]["tasks"]:
         if not exclude_tasks or task["task_key"] not in exclude_tasks:
-            task_cluster = task.get("new_cluster")
-            if task_cluster:
-                task_cluster_path = ("tasks", task["task_key"])
 
-            if not task_cluster:
-                task_cluster = job_clusters.get(task.get("job_cluster_key"))
-                task_cluster_path = ("job_clusters", task.get("job_cluster_key"))
-
-            if task_cluster:
-                cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
+            if apc_cluster_id := task["existing_cluster_id"]:
+                task_cluster = get_default_client().get_cluster(apc_cluster_id)["spec"]
+                task_cluster.pop("autotermination_minutes")
+                task_cluster.pop("cluster_name")
+                cluster_project_id = project_id
+                task_cluster_path = ("apc", task["task_key"])
                 all_project_clusters[cluster_project_id][task_cluster_path] = task_cluster
+            
+            else:
+                task_cluster = task.get("new_cluster")
+                if task_cluster:
+                    task_cluster_path = ("tasks", task["task_key"])
+
+                if not task_cluster:
+                    task_cluster = job_clusters.get(task.get("job_cluster_key"))
+                    task_cluster_path = ("job_clusters", task.get("job_cluster_key"))
+
+                if task_cluster:
+                    cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
+                    all_project_clusters[cluster_project_id][task_cluster_path] = task_cluster
 
     filtered_project_clusters = {}
-    for project_id, clusters in all_project_clusters.items():
+    for cluster_project_id, clusters in all_project_clusters.items():
         if len(clusters) > 1:
             logger.warning(f"More than 1 cluster found for project ID {project_id}")
         else:
-            filtered_project_clusters[project_id] = next(iter(clusters.items()))
+            filtered_project_clusters[cluster_project_id] = next(iter(clusters.items()))
+    
+    print(filtered_project_clusters)
 
     return filtered_project_clusters
 

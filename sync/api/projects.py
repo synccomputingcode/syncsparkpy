@@ -8,44 +8,21 @@ from urllib.parse import urlparse
 
 import httpx
 
-from sync.api.predictions import generate_presigned_url, get_predictions
 from sync.clients.sync import get_default_client
-from sync.models import (
-    Platform,
-    Preference,
-    ProjectError,
-    RecommendationError,
-    Response,
-    SubmissionError,
-)
+from sync.models import Platform, ProjectError, RecommendationError, Response, SubmissionError
+
+from . import generate_presigned_url
 
 logger = logging.getLogger(__name__)
 
 
-def get_prediction(project_id: str, preference: Preference = None) -> Response[dict]:
-    """Get the latest prediction of a project
-
-    :param project_id: project ID
-    :type project_id: str
-    :param preference: preferred prediction solution, defaults to project setting
-    :type preference: Preference, optional
-    :return: prediction object
-    :rtype: Response[dict]
+def get_products() -> Response[List[str]]:
+    """Get supported platforms
+    :return: list of platform names
+    :rtype: Response[list[str]]
     """
-    project_response = get_project(project_id)
-    project = project_response.result
-    if project:
-        predictions_response = get_predictions(
-            project_id=project_id, preference=preference or project.get("preference")
-        )
-        if predictions_response.error:
-            return predictions_response
-
-        predictions = predictions_response.result
-        if predictions:
-            return Response(result=predictions[0])
-        return Response(error=ProjectError(message="No predictions in the project"))
-    return project_response
+    response = get_default_client().get_products()
+    return Response(**response)
 
 
 def create_project(
@@ -56,7 +33,6 @@ def create_project(
     cluster_path: str = None,
     workspace_id: str = None,
     cluster_log_url: str = None,
-    prediction_preference: Preference = Preference.ECONOMY,
     auto_apply_recs: bool = False,
     prediction_params: dict = None,
     app_id: str = None,
@@ -78,8 +54,6 @@ def create_project(
     :type workspace_id: str, optional
     :param cluster_log_url: S3 or DBFS URL under which to store project configurations and logs, defaults to None
     :type cluster_log_url: str, optional
-    :param prediction_preference: preferred prediction solution, defaults to `Preference.ECONOMY`
-    :type prediction_preference: Preference, optional
     :param auto_apply_recs: automatically apply project recommendations, defaults to False
     :type auto_apply_recs: bool, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/create_project_v1_projects_post>`__
@@ -99,7 +73,6 @@ def create_project(
                 "cluster_path": cluster_path,
                 "workspace_id": workspace_id,
                 "cluster_log_url": cluster_log_url,
-                "prediction_preference": prediction_preference,
                 "auto_apply_recs": auto_apply_recs,
                 "prediction_params": prediction_params,
                 "app_id": app_id,
@@ -127,7 +100,6 @@ def update_project(
     workspace_id: str = None,
     cluster_log_url: str = None,
     app_id: str = None,
-    prediction_preference: Preference = None,
     auto_apply_recs: bool = None,
     prediction_params: dict = None,
     optimize_instance_size=None,
@@ -146,12 +118,9 @@ def update_project(
     :type cluster_log_url: str, optional
     :param app_id: external identifier, defaults to None
     :type app_id: str, optional
-    :param prediction_preference: default preference for predictions, defaults to None
-    :type prediction_preference: Preference, optional
     :param auto_apply_recs: automatically apply project recommendations, defaults to None
     :type auto_apply_recs: bool, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/update_project_v1_projects__project_id__put>`__
-    :type prediction_preference: dict, optional
     :return: updated project
     :rtype: Response[dict]
     """
@@ -162,8 +131,6 @@ def update_project(
         project_update["cluster_log_url"] = cluster_log_url
     if app_id:
         project_update["app_id"] = app_id
-    if prediction_preference:
-        project_update["prediction_preference"] = prediction_preference
     if auto_apply_recs is not None:
         project_update["auto_apply_recs"] = auto_apply_recs
     if prediction_params:
@@ -240,7 +207,7 @@ def create_project_submission(
 ) -> Response[str]:
     """Create a submission
 
-    :param platform: platform, e.g. "aws-emr"
+    :param platform: platform, e.g. "aws-databricks"
     :type platform: Platform
     :param cluster_report: cluster report
     :type cluster_report: dict
@@ -319,7 +286,7 @@ def create_project_submission_with_eventlog_bytes(
 ) -> Response[str]:
     """Creates a submission given event log bytes instead of a URL
 
-    :param platform: platform, e.g. "aws-emr"
+    :param platform: platform, e.g. "aws-databricks"
     :type platform: Platform
     :param cluster_report: cluster report
     :type cluster_report: dict

@@ -4,13 +4,11 @@ Utilities providing configuration to the SDK
 
 import json
 from pathlib import Path
-from typing import Any, Callable, Dict, Union
+from typing import Any, Callable, Dict
 from urllib.parse import urlparse
 
 import boto3 as boto
-from pydantic import BaseSettings, Field, validator, Extra
-
-from .models import Preference
+from pydantic import BaseSettings, Extra, Field, validator
 
 CREDENTIALS_FILE = "credentials"
 CONFIG_FILE = "config"
@@ -39,7 +37,6 @@ class APIKey(BaseSettings):
 
 
 class Configuration(BaseSettings):
-    default_prediction_preference: Union[Preference, None] = Preference.ECONOMY
     api_url: str = Field("https://api.synccomputing.com", env="SYNC_API_URL")
 
     class Config:

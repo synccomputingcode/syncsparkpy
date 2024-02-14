@@ -19,7 +19,6 @@ Welcome to the Sync Library!
    :caption: Reference
 
    reference/api
-   reference/awsemr
    reference/awsdatabricks
    reference/azuredatabricks
 

@@ -1,5 +1,5 @@
 import logging
-from typing import Generator, List
+from typing import Generator
 
 import httpx
 
@@ -61,32 +61,7 @@ class SyncClient(RetryableHTTPClient):
         )
 
     def get_products(self) -> dict:
-        return self._send(self._client.build_request("GET", "/v1/autotuner/products"))
-
-    def create_prediction(self, prediction: dict) -> dict:
-        headers, content = encode_json(prediction)
-        return self._send(
-            self._client.build_request(
-                "POST", "/v1/autotuner/predictions", headers=headers, content=content
-            )
-        )
-
-    def get_prediction(self, prediction_id, params: dict = None) -> dict:
-        return self._send(
-            self._client.build_request(
-                "GET", f"/v1/autotuner/predictions/{prediction_id}", params=params
-            )
-        )
-
-    def get_predictions(self, params: dict = None) -> List[dict]:
-        return self._send(
-            self._client.build_request("GET", "/v1/autotuner/predictions", params=params)
-        )
-
-    def get_prediction_status(self, prediction_id) -> dict:
-        return self._send(
-            self._client.build_request("GET", f"/v1/autotuner/predictions/{prediction_id}/status")
-        )
+        return self._send(self._client.build_request("GET", "/v1/projects/products"))
 
     def create_project(self, project: dict) -> dict:
         headers, content = encode_json(project)
@@ -251,31 +226,6 @@ class ASyncClient(RetryableHTTPClient):
                 auth=SyncAuth(api_url, api_key),
                 timeout=60.0,
             )
-        )
-
-    async def create_prediction(self, prediction: dict) -> dict:
-        headers, content = encode_json(prediction)
-        return await self._send(
-            self._client.build_request(
-                "POST", "/v1/autotuner/predictions", headers=headers, content=content
-            )
-        )
-
-    async def get_prediction(self, prediction_id, params: dict = None) -> dict:
-        return await self._send(
-            self._client.build_request(
-                "GET", f"/v1/autotuner/predictions/{prediction_id}", params=params
-            )
-        )
-
-    async def get_predictions(self, params: dict = None) -> dict:
-        return await self._send(
-            self._client.build_request("GET", "/v1/autotuner/predictions", params=params)
-        )
-
-    async def get_prediction_status(self, prediction_id) -> dict:
-        return await self._send(
-            self._client.build_request("GET", f"/v1/autotuner/predictions/{prediction_id}/status")
         )
 
     async def create_project(self, project: dict) -> dict:

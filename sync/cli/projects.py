@@ -5,15 +5,12 @@ import click
 from sync.api.projects import (
     create_project,
     delete_project,
-    get_prediction,
     get_project,
     get_projects,
     reset_project,
     update_project,
 )
 from sync.cli.util import validate_project
-from sync.config import CONFIG
-from sync.models import Preference
 from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
 
@@ -61,12 +58,6 @@ def get(project: dict):
 @click.option("-w", "--workspace-id", help="Databricks workspace ID")
 @click.option("-l", "--location", help="S3 URL under which to store event logs and configuration")
 @click.option(
-    "-p",
-    "--preference",
-    type=click.Choice(Preference),
-    default=CONFIG.default_prediction_preference,
-)
-@click.option(
     "--auto-apply-recs",
     is_flag=True,
     default=False,
@@ -84,7 +75,6 @@ def create(
     cluster_path: str = None,
     workspace_id: str = None,
     location: str = None,
-    preference: Preference = None,
     app_id: str = None,
 ):
     """Create a project for a Spark application that runs on the platform identified by PRODUCT_CODE.
@@ -98,7 +88,6 @@ def create(
         cluster_path=cluster_path,
         workspace_id=workspace_id,
         cluster_log_url=location,
-        prediction_preference=preference,
         auto_apply_recs=auto_apply_recs,
         app_id=app_id,
     )
@@ -122,12 +111,6 @@ def create(
     help="Path to cluster definition in job object, e.g. 'job_clusters/Job_cluster'",
 )
 @click.option("-w", "--workspace-id", help="Databricks workspace ID")
-@click.option(
-    "-p",
-    "--preference",
-    type=click.Choice(Preference),
-    default=CONFIG.default_prediction_preference,
-)
 @click.option("--auto-apply-recs", type=bool, help="Automatically apply project recommendations")
 def update(
     project_id: str,
@@ -136,7 +119,6 @@ def update(
     app_id: str = None,
     cluster_path: str = None,
     workspace_id: str = None,
-    preference: Preference = None,
     auto_apply_recs: bool = None,
 ):
     """Update a project"""
@@ -147,7 +129,6 @@ def update(
         app_id=app_id,
         cluster_path=cluster_path,
         workspace_id=workspace_id,
-        prediction_preference=preference,
         auto_apply_recs=auto_apply_recs,
     )
     if response.result:
@@ -180,20 +161,3 @@ def delete(project: dict):
         click.echo(response.result)
     else:
         click.echo(str(response.error), err=True)
-
-
-@projects.command("get-prediction")
-@click.argument("project", callback=validate_project)
-@click.option(
-    "-p",
-    "--preference",
-    type=click.Choice(Preference),
-)
-def get_latest_prediction(project: dict, preference: Preference):
-    """Get the latest prediction in a project"""
-    prediction_response = get_prediction(project["id"], preference)
-    prediction = prediction_response.result
-    if prediction:
-        click.echo(json.dumps(prediction, indent=2, cls=DateTimeEncoderNaiveUTCDropMicroseconds))
-    else:
-        click.echo(str(prediction_response.error), err=True)

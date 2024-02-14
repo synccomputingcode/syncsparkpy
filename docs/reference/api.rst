@@ -6,4 +6,3 @@ Sync API
    :caption: Reference
 
    api/projects
-   api/predictions

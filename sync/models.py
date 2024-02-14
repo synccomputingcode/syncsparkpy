@@ -11,14 +11,7 @@ from pydantic import BaseModel, Field, root_validator, validator
 from pydantic.generics import GenericModel
 
 
-class Preference(str, Enum):
-    PERFORMANCE = "performance"
-    BALANCED = "balanced"
-    ECONOMY = "economy"
-
-
 class Platform(str, Enum):
-    AWS_EMR = "aws-emr"
     AWS_DATABRICKS = "aws-databricks"
     AZURE_DATABRICKS = "azure-databricks"
 
@@ -72,10 +65,6 @@ class Error(BaseModel):
         return f"{self.code}: {self.message}"
 
 
-class PredictionError(Error):
-    code: str = Field("Prediction Error", const=True)
-
-
 class ProjectError(Error):
     code: str = Field("Project Error", const=True)
 
@@ -86,10 +75,6 @@ class RecommendationError(Error):
 
 class SubmissionError(Error):
     code: str = Field("Submission Error", const=True)
-
-
-class EMRError(Error):
-    code: str = Field("EMR Error", const=True)
 
 
 @unique

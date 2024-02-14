@@ -2,7 +2,7 @@ import json
 import logging
 from pathlib import Path
 from time import sleep
-from typing import List, Tuple
+from typing import Iterator, List, Tuple
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -481,28 +481,39 @@ def _get_ebs_volumes_for_instances(
 ) -> List[dict]:
     """Get all ebs volumes associated with a list of instance reservations"""
 
+    def get_chunk(instance_ids: list, chunk_size: int) -> Iterator[list]:
+        """
+        Splits the instance_ids list into chunks of size determined by chunk_size.
+        This function exists to respect thresholds required by the call to
+        ec2_client.describe_volumes below.
+        """
+        for idx in range(0, len(instance_ids), chunk_size):
+            yield instance_ids[idx : idx + chunk_size]
+
     instance_ids = []
     if instances:
         for instance in instances:
             instance_ids.append(instance.get("InstanceId"))
 
     volumes = []
+    MAX_CHUNK_SIZE = 199
+
     if instance_ids:
-        filters = [
-            {"Name": "tag:Vendor", "Values": ["Databricks"]},
-            {"Name": "attachment.instance-id", "Values": instance_ids},
-        ]
+        for chunk in get_chunk(instance_ids, MAX_CHUNK_SIZE):
+            filters = [
+                {"Name": "tag:Vendor", "Values": ["Databricks"]},
+                {"Name": "attachment.instance-id", "Values": chunk},
+            ]
 
-        response = ec2_client.describe_volumes(Filters=filters)
-        volumes = response.get("Volumes", [])
-        next_token = response.get("NextToken")
-
-        while next_token:
-            response = ec2_client.describe_volumes(Filters=filters, NextToken=next_token)
-            volumes += response.get("Volumes", [])
+            response = ec2_client.describe_volumes(Filters=filters)
+            volumes = response.get("Volumes", [])
             next_token = response.get("NextToken")
+
+            while next_token:
+                response = ec2_client.describe_volumes(Filters=filters, NextToken=next_token)
+                volumes += response.get("Volumes", [])
+                next_token = response.get("NextToken")
 
     num_vol = len(volumes)
     logger.info(f"Identified {num_vol} ebs volumes in cluster")
-
     return volumes

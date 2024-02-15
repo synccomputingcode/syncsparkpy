@@ -116,6 +116,11 @@ def get_api_key() -> APIKey:
     return _api_key
 
 
+def set_api_key(api_key: APIKey):
+    global _api_key
+    _api_key = api_key
+
+
 def get_config() -> Configuration:
     """Gets configuration
 
@@ -138,11 +143,14 @@ def get_databricks_config() -> DatabricksConf:
     return _db_config
 
 
+def set_databricks_config(db_config: DatabricksConf):
+    global _db_config
+    _db_config = db_config
+
+
 CONFIG: Configuration
 _config = None
-API_KEY: APIKey
 _api_key = None
-DB_CONFIG: DatabricksConf
 _db_config = None
 
 

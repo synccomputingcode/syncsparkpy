@@ -3,8 +3,8 @@ from typing import Generator
 
 import httpx
 
-from ..config import API_KEY, CONFIG, APIKey
 from . import USER_AGENT, RetryableHTTPClient, encode_json
+from ..config import get_api_key, CONFIG, APIKey
 
 logger = logging.getLogger(__name__)
 
@@ -266,13 +266,20 @@ class ASyncClient(RetryableHTTPClient):
 
 
 _sync_client: SyncClient = None
+_current_api_key: APIKey = None
 
 
 def get_default_client() -> SyncClient:
-    global _sync_client
-    if not _sync_client:
-        _sync_client = SyncClient(CONFIG.api_url, API_KEY)
+    global _sync_client, _current_api_key
+
+    if not _sync_client or api_key_changed():
+        _current_api_key = get_api_key()
+        _sync_client = SyncClient(CONFIG.api_url, _current_api_key)
     return _sync_client
+
+
+def api_key_changed() -> bool:
+    return _current_api_key != get_api_key()
 
 
 _async_sync_client: ASyncClient = None
@@ -281,5 +288,5 @@ _async_sync_client: ASyncClient = None
 def get_default_async_client() -> ASyncClient:
     global _async_sync_client
     if not _async_sync_client:
-        _async_sync_client = ASyncClient(CONFIG.api_url, API_KEY)
+        _async_sync_client = ASyncClient(CONFIG.api_url, get_api_key())
     return _async_sync_client

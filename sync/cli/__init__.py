@@ -1,6 +1,7 @@
 """
 Basic Sync CLI
 """
+
 import logging
 
 import click
@@ -9,7 +10,7 @@ from sync.api.projects import get_products
 from sync.cli import awsdatabricks, azuredatabricks, projects, workspaces
 from sync.cli.util import OPTIONAL_DEFAULT
 from sync.clients.sync import get_default_client
-from sync.config import API_KEY, DB_CONFIG, APIKey, DatabricksConf, init
+from sync.config import get_api_key, get_databricks_config, APIKey, DatabricksConf, init
 
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 
@@ -45,11 +46,11 @@ def configure(
 ):
     """Configure Sync Library"""
     api_key_id = api_key_id or click.prompt(
-        "Sync API key ID", default=API_KEY.id if API_KEY else None
+        "Sync API key ID", default=get_api_key().id if get_api_key() else None
     )
     api_key_secret = api_key_secret or click.prompt(
         "Sync API key secret",
-        default=API_KEY.secret if API_KEY else None,
+        default=get_api_key().secret if get_api_key() else None,
         hide_input=True,
         show_default=False,
     )
@@ -62,26 +63,36 @@ def configure(
         if click.confirm("Would you like to configure a Databricks workspace?"):
             dbx_host = click.prompt(
                 "Databricks host (prefix with https://)",
-                default=DB_CONFIG.host if DB_CONFIG else OPTIONAL_DEFAULT,
+                default=(
+                    get_databricks_config().host if get_databricks_config() else OPTIONAL_DEFAULT
+                ),
             )
             dbx_token = click.prompt(
                 "Databricks token",
-                default=DB_CONFIG.token if DB_CONFIG else OPTIONAL_DEFAULT,
+                default=(
+                    get_databricks_config().token if get_databricks_config() else OPTIONAL_DEFAULT
+                ),
                 hide_input=True,
                 show_default=False,
             )
             dbx_region = click.prompt(
                 "Databricks AWS region name",
-                default=DB_CONFIG.aws_region_name if DB_CONFIG else OPTIONAL_DEFAULT,
+                default=(
+                    get_databricks_config().aws_region_name
+                    if get_databricks_config()
+                    else OPTIONAL_DEFAULT
+                ),
             )
 
     init(
         APIKey(api_key_id=api_key_id, api_key_secret=api_key_secret),
-        DatabricksConf(host=dbx_host, token=dbx_token, aws_region_name=dbx_region)
-        if dbx_host != OPTIONAL_DEFAULT
-        and dbx_token != OPTIONAL_DEFAULT
-        and dbx_region != OPTIONAL_DEFAULT
-        else None,
+        (
+            DatabricksConf(host=dbx_host, token=dbx_token, aws_region_name=dbx_region)
+            if dbx_host != OPTIONAL_DEFAULT
+            and dbx_token != OPTIONAL_DEFAULT
+            and dbx_region != OPTIONAL_DEFAULT
+            else None
+        ),
     )
 
 

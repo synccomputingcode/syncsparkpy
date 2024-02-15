@@ -4,9 +4,8 @@ from typing import Generator, Union
 import httpx
 
 from sync.models import Platform
-
-from ..config import DB_CONFIG
 from . import DATABRICKS_USER_AGENT, RetryableHTTPClient, encode_json
+from ..config import get_databricks_config, DatabricksConf
 
 logger = logging.getLogger(__name__)
 
@@ -189,11 +188,16 @@ class DatabricksClient(RetryableHTTPClient):
 
 
 _sync_client: Union[DatabricksClient, None] = None
+_current_db_config: Union[DatabricksConf, None] = None
 
 
 def get_default_client() -> DatabricksClient:
-    global _sync_client
-    if not _sync_client:
-        conf = DB_CONFIG
-        _sync_client = DatabricksClient(conf.host, conf.token)
+    global _sync_client, _current_db_config
+    if not _sync_client or databricks_config_changed():
+        _current_db_config = get_databricks_config()
+        _sync_client = DatabricksClient(_current_db_config.host, _current_db_config.token)
     return _sync_client
+
+
+def databricks_config_changed() -> bool:
+    return _current_db_config != get_databricks_config()

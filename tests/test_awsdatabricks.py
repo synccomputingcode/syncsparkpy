@@ -4,15 +4,14 @@ from unittest.mock import patch
 from sync.awsdatabricks import monitor_cluster
 from sync.config import DatabricksConf
 
-MOCK_DBX_CONF = DatabricksConf(
-    host="https://dbc-123.cloud.databricks.com",
-    token="my_secret_token",
-    aws_region_name="us-east-1",
-)
+MOCK_DBX_CONF = DatabricksConf
+MOCK_DBX_CONF.host = "https://dbc-123.cloud.databricks.com"
+MOCK_DBX_CONF.token = "my_secret_token"
+MOCK_DBX_CONF.aws_region_name = "us-east-1"
 
 
-@patch("sync.awsdatabricks.DB_CONFIG", new=MOCK_DBX_CONF)
-@patch("sync.clients.databricks.DB_CONFIG", new=MOCK_DBX_CONF)
+@patch("sync.awsdatabricks.get_databricks_config", new=MOCK_DBX_CONF)
+@patch("sync.clients.databricks.get_databricks_config", new=MOCK_DBX_CONF)
 @patch("sync.awsdatabricks._monitor_cluster")
 @patch("sync.clients.databricks.DatabricksClient.get_cluster")
 @patch("sync.awsdatabricks._cluster_log_destination")

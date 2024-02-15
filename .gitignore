@@ -7,3 +7,4 @@ venv/*
 .python-version
 .DS_Store
 .venv
+tmp

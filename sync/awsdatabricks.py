@@ -12,7 +12,7 @@ from botocore.exceptions import ClientError
 import sync._databricks
 from sync._databricks import (
     _cluster_log_destination,
-    _get_all_cluster_events,
+    get_all_cluster_events,
     _get_cluster_instances_from_dbfs,
     _update_monitored_timelines,
     _wait_for_cluster_termination,
@@ -22,6 +22,7 @@ from sync._databricks import (
     create_cluster,
     create_run,
     create_submission_for_run,
+    create_submission_with_cluster_report,
     get_cluster,
     get_cluster_report,
     get_project_cluster,
@@ -57,7 +58,9 @@ __all__ = [
     "get_access_report",
     "run_and_record_job",
     "create_submission_for_run",
+    "create_submission_with_cluster_report",
     "get_cluster_report",
+    "get_all_cluster_events",
     "monitor_cluster",
     "create_cluster",
     "get_cluster",
@@ -217,7 +220,7 @@ def _get_cluster_report(
     else:
         timelines = timeline_response.result
 
-    cluster_events = _get_all_cluster_events(cluster_id)
+    cluster_events = get_all_cluster_events(cluster_id)
     return Response(
         result=AWSDatabricksClusterReport(
             plan_type=plan_type,

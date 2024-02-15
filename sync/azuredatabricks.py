@@ -15,7 +15,7 @@ from azure.mgmt.resource import ResourceManagementClient
 import sync._databricks
 from sync._databricks import (
     _cluster_log_destination,
-    _get_all_cluster_events,
+    get_all_cluster_events,
     _get_cluster_instances_from_dbfs,
     _update_monitored_timelines,
     _wait_for_cluster_termination,
@@ -25,6 +25,7 @@ from sync._databricks import (
     create_cluster,
     create_run,
     create_submission_for_run,
+    create_submission_with_cluster_report,
     get_cluster,
     get_cluster_report,
     get_project_cluster,
@@ -62,7 +63,9 @@ __all__ = [
     "create_cluster",
     "get_cluster",
     "create_submission_for_run",
+    "create_submission_with_cluster_report",
     "get_cluster_report",
+    "get_all_cluster_events",
     "handle_successful_job_run",
     "record_run",
     "get_project_cluster",
@@ -209,7 +212,7 @@ def _get_cluster_report(
         else:
             return instances
 
-    cluster_events = _get_all_cluster_events(cluster_id)
+    cluster_events = get_all_cluster_events(cluster_id)
     return Response(
         result=AzureDatabricksClusterReport(
             plan_type=plan_type,

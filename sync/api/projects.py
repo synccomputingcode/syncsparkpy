@@ -37,7 +37,7 @@ def create_project(
     prediction_params: dict = None,
     app_id: str = None,
     optimize_instance_size: bool = False,
-    project_periodicity: str = None
+    project_periodicity: str = None,
 ) -> Response[dict]:
     """Creates a Sync project for tracking and optimizing Apache Spark applications
 
@@ -78,7 +78,7 @@ def create_project(
                 "prediction_params": prediction_params,
                 "app_id": app_id,
                 "optimize_instance_size": optimize_instance_size,
-                "project_periodicity": project_periodicity
+                "project_periodicity": project_periodicity,
             }
         )
     )
@@ -105,7 +105,7 @@ def update_project(
     auto_apply_recs: bool = None,
     prediction_params: dict = None,
     optimize_instance_size: bool = None,
-    project_periodicity: str = None
+    project_periodicity: str = None,
 ) -> Response[dict]:
     """Updates a project's mutable properties
 

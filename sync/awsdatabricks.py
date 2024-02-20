@@ -331,7 +331,7 @@ def monitor_cluster(
     cluster_id: str,
     polling_period: int = 20,
     cluster_report_destination_override: dict = None,
-) -> None:
+) -> int:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
 
@@ -356,6 +356,8 @@ def monitor_cluster(
         )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
+
+    return spark_context_id
 
 
 def _monitor_cluster(

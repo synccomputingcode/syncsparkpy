@@ -22,7 +22,7 @@ from sync._databricks import (
     create_cluster,
     create_run,
     create_submission_for_run,
-    create_submission_with_cluster_report,
+    create_submission_with_cluster_info,
     get_cluster,
     get_cluster_report,
     get_project_cluster,
@@ -49,6 +49,8 @@ from sync.models import (
     AccessStatusCode,
     AWSDatabricksClusterReport,
     DatabricksError,
+    DatabricksPlanType,
+    DatabricksComputeType,
     Response,
 )
 from sync.utils.dbfs import format_dbfs_filepath, write_dbfs_file
@@ -58,7 +60,7 @@ __all__ = [
     "get_access_report",
     "run_and_record_job",
     "create_submission_for_run",
-    "create_submission_with_cluster_report",
+    "create_submission_with_cluster_info",
     "get_cluster_report",
     "get_all_cluster_events",
     "monitor_cluster",
@@ -235,12 +237,33 @@ def _get_cluster_report(
     )
 
 
+def _create_cluster_report(
+        cluster: dict,
+        cluster_info: dict,
+        cluster_activity_events: dict,
+        tasks: List[dict],
+        plan_type: DatabricksPlanType,
+        compute_type: DatabricksComputeType
+) -> AWSDatabricksClusterReport:
+    return AWSDatabricksClusterReport(
+        plan_type=plan_type,
+        compute_type=compute_type,
+        cluster=cluster,
+        cluster_events=cluster_activity_events,
+        tasks=tasks,
+        instances=cluster_info.get("instances"),
+        volumes=cluster_info.get("volumes"),
+        instance_timelines=cluster_info.get("instance_timelines")
+    )
+
+
 if getattr(sync._databricks, "__claim", __name__) != __name__:
     raise RuntimeError(
         "Databricks modules for different cloud providers cannot be used in the same context"
     )
 
 sync._databricks._get_cluster_report = _get_cluster_report
+sync._databricks._create_cluster_report = _create_cluster_report
 setattr(sync._databricks, "__claim", __name__)
 
 

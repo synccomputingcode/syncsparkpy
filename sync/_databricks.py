@@ -18,7 +18,14 @@ import boto3 as boto
 from sync.api import projects
 from sync.clients.databricks import get_default_client
 from sync.config import CONFIG  # noqa F401
-from sync.models import DatabricksAPIError, DatabricksClusterReport, DatabricksError, Response
+from sync.models import (
+    DatabricksAPIError,
+    DatabricksClusterReport,
+    DatabricksError,
+    DatabricksComputeType,
+    DatabricksPlanType,
+    Response
+)
 from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file
 
 logger = logging.getLogger(__name__)
@@ -56,10 +63,14 @@ def get_cluster(cluster_id: str) -> Response[dict]:
     return Response(result=cluster)
 
 
-def create_submission_with_cluster_report(
+def create_submission_with_cluster_info(
     run_id: str,
     project_id: str,
-    cluster_report: DatabricksClusterReport
+    cluster: Dict,
+    cluster_info: Dict,
+    cluster_activity_events: Dict,
+    plan_type: DatabricksPlanType,
+    compute_type: DatabricksComputeType,
 ) -> Response[str]:
     """Create a Submission for the specified Databricks run given a cluster report"""
 
@@ -85,7 +96,14 @@ def create_submission_with_cluster_report(
 
     _, tasks = cluster_tasks
 
-    cluster = cluster_report.cluster
+    cluster_report = _create_cluster_report(
+        cluster=cluster,
+        cluster_info=cluster_info,
+        cluster_activity_events=cluster_activity_events,
+        tasks=tasks,
+        plan_type=plan_type,
+        compute_type=compute_type
+    )
     eventlog = _get_event_log_from_cluster(cluster, tasks).result
 
     return projects.create_project_submission_with_eventlog_bytes(
@@ -283,6 +301,17 @@ def _get_cluster_report(
     compute_type: str,
     allow_incomplete: bool,
 ) -> Response[DatabricksClusterReport]:
+    raise NotImplementedError()
+
+
+def _create_cluster_report(
+        cluster: dict,
+        cluster_info: dict,
+        cluster_activity_events: dict,
+        tasks: List[dict],
+        plan_type: DatabricksPlanType,
+        compute_type: DatabricksComputeType
+) -> DatabricksClusterReport:
     raise NotImplementedError()
 
 

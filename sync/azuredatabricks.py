@@ -25,7 +25,7 @@ from sync._databricks import (
     create_cluster,
     create_run,
     create_submission_for_run,
-    create_submission_with_cluster_report,
+    create_submission_with_cluster_info,
     get_cluster,
     get_cluster_report,
     get_project_cluster,
@@ -51,6 +51,8 @@ from sync.models import (
     AccessStatusCode,
     AzureDatabricksClusterReport,
     DatabricksError,
+    DatabricksPlanType,
+    DatabricksComputeType,
     Response,
 )
 from sync.utils.dbfs import format_dbfs_filepath, write_dbfs_file
@@ -63,7 +65,7 @@ __all__ = [
     "create_cluster",
     "get_cluster",
     "create_submission_for_run",
-    "create_submission_with_cluster_report",
+    "create_submission_with_cluster_info",
     "get_cluster_report",
     "get_all_cluster_events",
     "handle_successful_job_run",
@@ -226,6 +228,25 @@ def _get_cluster_report(
     )
 
 
+def _create_cluster_report(
+        cluster: dict,
+        cluster_info: dict,
+        cluster_activity_events: dict,
+        tasks: List[dict],
+        plan_type: DatabricksPlanType,
+        compute_type: DatabricksComputeType
+) -> AzureDatabricksClusterReport:
+    return AzureDatabricksClusterReport(
+        plan_type=plan_type,
+        compute_type=compute_type,
+        cluster=cluster,
+        cluster_events=cluster_activity_events,
+        tasks=tasks,
+        instances=cluster_info.get("instances"),
+        instance_timelines=cluster_info.get("timelines")
+    )
+
+
 if getattr(sync._databricks, "__claim", __name__) != __name__:
     # Unless building documentation you can't load both databricks modules in the same program
     if not sys.argv[0].endswith("sphinx-build"):
@@ -234,6 +255,7 @@ if getattr(sync._databricks, "__claim", __name__) != __name__:
         )
 
 sync._databricks._get_cluster_report = _get_cluster_report
+sync._databricks._create_cluster_report = _create_cluster_report
 setattr(sync._databricks, "__claim", __name__)
 
 

@@ -35,7 +35,7 @@ class TestMonitorCluster(unittest.TestCase):
             "base_prefix": "test_file_path",
         }
 
-        monitor_cluster("0101-214342-tpi6qdp2", 1, cluster_report_destination_override)
+        monitor_cluster("0101-214342-tpi6qdp2", 1, cluster_report_destination_override, True)
 
         expected_log_destination_override = ("s3://bucket/path", "file", "bucket", "test_file_path")
         mock_monitor_cluster.assert_called_with(
@@ -43,7 +43,7 @@ class TestMonitorCluster(unittest.TestCase):
         )
 
         mock_cluster_log_destination.return_value = (None, "s3", None, "path")
-        monitor_cluster("0101-214342-tpi6qdp2", 1, cluster_report_destination_override)
+        monitor_cluster("0101-214342-tpi6qdp2", 1, cluster_report_destination_override, True)
         expected_log_destination_override = (None, "file", None, "test_file_path")
         mock_monitor_cluster.assert_called_with(
             expected_log_destination_override, "0101-214342-tpi6qdp2", 1443449481634833945, 1, True

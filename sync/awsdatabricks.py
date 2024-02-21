@@ -354,7 +354,8 @@ def monitor_cluster(
     cluster_id: str,
     polling_period: int = 20,
     cluster_report_destination_override: dict = None,
-) -> int:
+    kill_on_termination: bool = False,
+) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
 
@@ -369,8 +370,6 @@ def monitor_cluster(
     if cluster_report_destination_override:
         filesystem = cluster_report_destination_override.get("filesystem", filesystem)
         base_prefix = cluster_report_destination_override.get("base_prefix", base_prefix)
-
-    kill_on_termination: bool = cluster_report_destination_override is not None
 
     if log_url or cluster_report_destination_override:
         _monitor_cluster(

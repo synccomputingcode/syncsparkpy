@@ -2,7 +2,7 @@ import json
 import logging
 from pathlib import Path
 from time import sleep
-from typing import Iterator, List, Tuple
+from typing import Generator, List, Tuple
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -481,7 +481,7 @@ def _get_ebs_volumes_for_instances(
 ) -> List[dict]:
     """Get all ebs volumes associated with a list of instance reservations"""
 
-    def get_chunk(instance_ids: list, chunk_size: int) -> Iterator[list]:
+    def get_chunk(instance_ids: list[str], chunk_size: int) -> Generator[list[str]]:
         """
         Splits the instance_ids list into chunks of size determined by chunk_size.
         This function exists to respect thresholds required by the call to

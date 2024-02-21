@@ -238,12 +238,12 @@ def _get_cluster_report(
 
 
 def _create_cluster_report(
-        cluster: dict,
-        cluster_info: dict,
-        cluster_activity_events: dict,
-        tasks: List[dict],
-        plan_type: DatabricksPlanType,
-        compute_type: DatabricksComputeType
+    cluster: dict,
+    cluster_info: dict,
+    cluster_activity_events: dict,
+    tasks: List[dict],
+    plan_type: DatabricksPlanType,
+    compute_type: DatabricksComputeType,
 ) -> AWSDatabricksClusterReport:
     return AWSDatabricksClusterReport(
         plan_type=plan_type,
@@ -253,7 +253,7 @@ def _create_cluster_report(
         tasks=tasks,
         instances=cluster_info.get("instances"),
         volumes=cluster_info.get("volumes"),
-        instance_timelines=cluster_info.get("instance_timelines")
+        instance_timelines=cluster_info.get("instance_timelines"),
     )
 
 
@@ -379,8 +379,6 @@ def monitor_cluster(
         )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
-
-    return spark_context_id
 
 
 def _monitor_cluster(

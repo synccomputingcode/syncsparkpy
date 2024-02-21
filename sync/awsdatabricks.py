@@ -335,7 +335,7 @@ def monitor_cluster(
     while not spark_context_id:
         # This is largely just a convenience for when this command is run by someone locally
         logger.info("Waiting for cluster startup...")
-        sleep(30)
+        sleep(15)
         cluster = get_default_client().get_cluster(cluster_id)
         spark_context_id = cluster.get("spark_context_id")
 
@@ -420,7 +420,7 @@ def _monitor_cluster(
 
 def _define_write_file(file_key, filesystem, bucket):
     if filesystem == "file":
-        file_path = Path(f"{Path.home()}{file_key}")
+        file_path = Path(file_key)
 
         def ensure_path_exists(report_path: Path):
             logger.info(f"Ensuring path exists for {report_path}")

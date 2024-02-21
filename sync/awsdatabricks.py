@@ -370,12 +370,15 @@ def monitor_cluster(
         filesystem = cluster_report_destination_override.get("filesystem", filesystem)
         base_prefix = cluster_report_destination_override.get("base_prefix", base_prefix)
 
+    kill_on_termination: bool = cluster_report_destination_override is not None
+
     if log_url or cluster_report_destination_override:
         _monitor_cluster(
             (log_url, filesystem, bucket, base_prefix),
             cluster_id,
             spark_context_id,
             polling_period,
+            kill_on_termination,
         )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
@@ -386,6 +389,7 @@ def _monitor_cluster(
     cluster_id: str,
     spark_context_id: int,
     polling_period: int,
+    kill_on_termination: bool = False,
 ) -> None:
 
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
@@ -403,14 +407,16 @@ def _monitor_cluster(
     active_timelines_by_id = {}
     retired_timelines = []
     recorded_volumes_by_id = {}
-    while True:
+
+    while_condition = True
+    while while_condition:
         try:
             current_insts = _get_ec2_instances(cluster_id, ec2)
             recorded_volumes_by_id.update(
                 {v["VolumeId"]: v for v in _get_ebs_volumes_for_instances(current_insts, ec2)}
             )
 
-            # Record new (or overrwite) existing instances.
+            # Record new (or overwrite) existing instances.
             # Separately record the ids of those that are in the "running" state.
             running_inst_ids = set({})
             for inst in current_insts:
@@ -438,6 +444,11 @@ def _monitor_cluster(
                     "utf-8",
                 )
             )
+
+            if kill_on_termination:
+                cluster_state = get_default_client().get_cluster(cluster_id).get("state")
+                if cluster_state == "TERMINATED":
+                    while_condition = False
         except Exception as e:
             logger.error(f"Exception encountered while polling cluster: {e}")
 

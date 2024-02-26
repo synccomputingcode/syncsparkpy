@@ -219,12 +219,14 @@ def _get_run_information(
     cluster_report = cluster_report_response.result
     if cluster_report:
         cluster = cluster_report.cluster
-        return _get_event_log_from_cluster(cluster, tasks)
+        eventlog = _get_event_log_from_cluster(cluster, tasks)
+        if eventlog:
+            return Response(result=(cluster_report, eventlog))
 
     return cluster_report_response
 
 
-def _get_event_log_from_cluster(cluster: Dict, tasks: List[Dict]) -> Response[str]:
+def _get_event_log_from_cluster(cluster: Dict, tasks: List[Dict]) -> Response[bytes]:
     spark_context_id = _get_run_spark_context_id(tasks)
     end_time = max(task["end_time"] for task in tasks)
     eventlog_response = _get_eventlog(cluster, spark_context_id.result, end_time)

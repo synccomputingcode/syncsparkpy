@@ -481,7 +481,7 @@ def _get_ebs_volumes_for_instances(
 ) -> List[dict]:
     """Get all ebs volumes associated with a list of instance reservations"""
 
-    def get_chunk(instance_ids: list[str], chunk_size: int) -> Generator[list[str]]:
+    def get_chunk(instance_ids: list[str], chunk_size: int) -> Generator[list[str], None, None]:
         """
         Splits the instance_ids list into chunks of size determined by chunk_size.
         This function exists to respect thresholds required by the call to

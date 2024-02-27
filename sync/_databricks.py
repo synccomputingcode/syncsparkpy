@@ -219,7 +219,8 @@ def _get_run_information(
     cluster_report = cluster_report_response.result
     if cluster_report:
         cluster = cluster_report.cluster
-        eventlog = _get_event_log_from_cluster(cluster, tasks)
+        eventlog_response = _get_event_log_from_cluster(cluster, tasks)
+        eventlog = eventlog_response.result
         if eventlog:
             return Response(result=(cluster_report, eventlog))
 

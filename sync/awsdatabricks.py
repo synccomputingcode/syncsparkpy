@@ -12,7 +12,7 @@ from botocore.exceptions import ClientError
 import sync._databricks
 from sync._databricks import (
     _cluster_log_destination,
-    _get_all_cluster_events,
+    get_all_cluster_events,
     _get_cluster_instances_from_dbfs,
     _update_monitored_timelines,
     _wait_for_cluster_termination,
@@ -22,6 +22,7 @@ from sync._databricks import (
     create_cluster,
     create_run,
     create_submission_for_run,
+    create_submission_with_cluster_info,
     get_cluster,
     get_cluster_report,
     get_project_cluster,
@@ -48,6 +49,8 @@ from sync.models import (
     AccessStatusCode,
     AWSDatabricksClusterReport,
     DatabricksError,
+    DatabricksPlanType,
+    DatabricksComputeType,
     Response,
 )
 from sync.utils.dbfs import format_dbfs_filepath, write_dbfs_file
@@ -57,7 +60,9 @@ __all__ = [
     "get_access_report",
     "run_and_record_job",
     "create_submission_for_run",
+    "create_submission_with_cluster_info",
     "get_cluster_report",
+    "get_all_cluster_events",
     "monitor_cluster",
     "create_cluster",
     "get_cluster",
@@ -217,7 +222,7 @@ def _get_cluster_report(
     else:
         timelines = timeline_response.result
 
-    cluster_events = _get_all_cluster_events(cluster_id)
+    cluster_events = get_all_cluster_events(cluster_id)
     return Response(
         result=AWSDatabricksClusterReport(
             plan_type=plan_type,
@@ -232,12 +237,33 @@ def _get_cluster_report(
     )
 
 
+def _create_cluster_report(
+    cluster: dict,
+    cluster_info: dict,
+    cluster_activity_events: dict,
+    tasks: List[dict],
+    plan_type: DatabricksPlanType,
+    compute_type: DatabricksComputeType,
+) -> AWSDatabricksClusterReport:
+    return AWSDatabricksClusterReport(
+        plan_type=plan_type,
+        compute_type=compute_type,
+        cluster=cluster,
+        cluster_events=cluster_activity_events,
+        tasks=tasks,
+        instances=cluster_info.get("instances"),
+        volumes=cluster_info.get("volumes"),
+        instance_timelines=cluster_info.get("instance_timelines"),
+    )
+
+
 if getattr(sync._databricks, "__claim", __name__) != __name__:
     raise RuntimeError(
         "Databricks modules for different cloud providers cannot be used in the same context"
     )
 
 sync._databricks._get_cluster_report = _get_cluster_report
+sync._databricks._create_cluster_report = _create_cluster_report
 setattr(sync._databricks, "__claim", __name__)
 
 
@@ -328,6 +354,7 @@ def monitor_cluster(
     cluster_id: str,
     polling_period: int = 20,
     cluster_report_destination_override: dict = None,
+    kill_on_termination: bool = False,
 ) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
@@ -350,6 +377,7 @@ def monitor_cluster(
             cluster_id,
             spark_context_id,
             polling_period,
+            kill_on_termination,
         )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
@@ -360,6 +388,7 @@ def _monitor_cluster(
     cluster_id: str,
     spark_context_id: int,
     polling_period: int,
+    kill_on_termination: bool = False,
 ) -> None:
 
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
@@ -377,14 +406,16 @@ def _monitor_cluster(
     active_timelines_by_id = {}
     retired_timelines = []
     recorded_volumes_by_id = {}
-    while True:
+
+    while_condition = True
+    while while_condition:
         try:
             current_insts = _get_ec2_instances(cluster_id, ec2)
             recorded_volumes_by_id.update(
                 {v["VolumeId"]: v for v in _get_ebs_volumes_for_instances(current_insts, ec2)}
             )
 
-            # Record new (or overrwite) existing instances.
+            # Record new (or overwrite) existing instances.
             # Separately record the ids of those that are in the "running" state.
             running_inst_ids = set({})
             for inst in current_insts:
@@ -412,6 +443,11 @@ def _monitor_cluster(
                     "utf-8",
                 )
             )
+
+            if kill_on_termination:
+                cluster_state = get_default_client().get_cluster(cluster_id).get("state")
+                if cluster_state == "TERMINATED":
+                    while_condition = False
         except Exception as e:
             logger.error(f"Exception encountered while polling cluster: {e}")
 

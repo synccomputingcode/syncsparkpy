@@ -18,7 +18,14 @@ import boto3 as boto
 from sync.api import projects
 from sync.clients.databricks import get_default_client
 from sync.config import CONFIG  # noqa F401
-from sync.models import DatabricksAPIError, DatabricksClusterReport, DatabricksError, Response
+from sync.models import (
+    DatabricksAPIError,
+    DatabricksClusterReport,
+    DatabricksError,
+    DatabricksComputeType,
+    DatabricksPlanType,
+    Response
+)
 from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file
 
 logger = logging.getLogger(__name__)
@@ -54,6 +61,58 @@ def get_cluster(cluster_id: str) -> Response[dict]:
         return Response(error=DatabricksAPIError(**cluster))
 
     return Response(result=cluster)
+
+
+def create_submission_with_cluster_info(
+    run_id: str,
+    project_id: str,
+    cluster: Dict,
+    cluster_info: Dict,
+    cluster_activity_events: Dict,
+    plan_type: DatabricksPlanType,
+    compute_type: DatabricksComputeType,
+) -> Response[str]:
+    """Create a Submission for the specified Databricks run given a cluster report"""
+
+    run = get_default_client().get_run(run_id)
+
+    if "error_code" in run:
+        return Response(error=DatabricksAPIError(**run))
+
+    project_response = projects.get_project(project_id)
+    if project_response.error:
+        return project_response
+    cluster_path = project_response.result.get("cluster_path")
+
+    project_cluster_tasks = _get_project_cluster_tasks(run, project_id, cluster_path)
+
+    cluster_tasks = project_cluster_tasks.get(project_id)
+    if not cluster_tasks:
+        return Response(
+            error=DatabricksError(
+                message=f"Failed to locate cluster in run {run_id} for project {project_id}"
+            )
+        )
+
+    _, tasks = cluster_tasks
+
+    cluster_report = _create_cluster_report(
+        cluster=cluster,
+        cluster_info=cluster_info,
+        cluster_activity_events=cluster_activity_events,
+        tasks=tasks,
+        plan_type=plan_type,
+        compute_type=compute_type
+    )
+    eventlog = _get_event_log_from_cluster(cluster, tasks).result
+
+    return projects.create_project_submission_with_eventlog_bytes(
+        get_default_client().get_platform(),
+        cluster_report.dict(exclude_none=True),
+        "eventlog.zip",
+        eventlog,
+        project_id,
+    )
 
 
 def create_submission_for_run(
@@ -160,17 +219,25 @@ def _get_run_information(
     cluster_report = cluster_report_response.result
     if cluster_report:
         cluster = cluster_report.cluster
-        spark_context_id = _get_run_spark_context_id(tasks)
-        end_time = max(task["end_time"] for task in tasks)
-        eventlog_response = _get_eventlog(cluster, spark_context_id.result, end_time)
-
+        eventlog_response = _get_event_log_from_cluster(cluster, tasks)
         eventlog = eventlog_response.result
         if eventlog:
-            # TODO - allow submissions w/out eventlog. Best way to make eventlog optional?..
             return Response(result=(cluster_report, eventlog))
 
-        return eventlog_response
     return cluster_report_response
+
+
+def _get_event_log_from_cluster(cluster: Dict, tasks: List[Dict]) -> Response[bytes]:
+    spark_context_id = _get_run_spark_context_id(tasks)
+    end_time = max(task["end_time"] for task in tasks)
+    eventlog_response = _get_eventlog(cluster, spark_context_id.result, end_time)
+
+    eventlog = eventlog_response.result
+    if eventlog:
+        # TODO - allow submissions w/out eventlog. Best way to make eventlog optional?..
+        return Response(result=eventlog)
+
+    return eventlog_response  # return eventlog response with errors
 
 
 def get_cluster_report(
@@ -237,6 +304,17 @@ def _get_cluster_report(
     compute_type: str,
     allow_incomplete: bool,
 ) -> Response[DatabricksClusterReport]:
+    raise NotImplementedError()
+
+
+def _create_cluster_report(
+        cluster: dict,
+        cluster_info: dict,
+        cluster_activity_events: dict,
+        tasks: List[dict],
+        plan_type: DatabricksPlanType,
+        compute_type: DatabricksComputeType
+) -> DatabricksClusterReport:
     raise NotImplementedError()
 
 
@@ -1493,7 +1571,7 @@ def _get_eventlog(
         return Response(error=DatabricksError(message=f"Unknown log destination: {filesystem}"))
 
 
-def _get_all_cluster_events(cluster_id: str):
+def get_all_cluster_events(cluster_id: str):
     """Fetches all ClusterEvents for a given Databricks cluster, optionally within a time window.
     Pages will be followed and returned as 1 object
     """

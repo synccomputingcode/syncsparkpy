@@ -7,8 +7,7 @@ from enum import Enum, unique
 from typing import Callable, Generic, List, TypeVar, Union
 
 from botocore.exceptions import ClientError
-from pydantic import BaseModel, Field, root_validator, validator
-from pydantic.generics import GenericModel
+from pydantic import BaseModel, Field, model_validator, field_validator
 
 
 class Platform(str, Enum):
@@ -40,9 +39,10 @@ class AccessReport(List[AccessReportLine]):
         name = f"{method.__self__.meta._service_model._service_description['metadata']['serviceId']} {''.join(word.capitalize() for word in method.__func__.__name__.split('_'))}"
         try:
             method(**params)
-        except (
-            ClientError
-        ) as error:  # as when the code is 'AccessDeniedException', a bad parameter like a mistyped cluster ID yields a botocore.errorfactory.InvalidRequestException with code 'InvalidRequestException'
+        except ClientError as error:
+            # as when the code is 'AccessDeniedException', a bad parameter like a mistyped
+            # cluster ID yields a botocore.errorfactory.InvalidRequestException with
+            # code 'InvalidRequestException'
             if error.response.get("Error", {}).get("Code") != "DryRunOperation":
                 line = AccessReportLine(name, error_status, str(error))
         except Exception as exc:
@@ -114,7 +114,8 @@ class DatabricksError(Error):
 
 
 class DatabricksAPIError(Error):
-    @root_validator(pre=True)
+    @classmethod
+    @model_validator(mode="before")
     def validate_error(cls, values):
         values["code"] = "Databricks API Error"
         if values.get("error_code"):
@@ -126,11 +127,12 @@ class DatabricksAPIError(Error):
 DataType = TypeVar("DataType")
 
 
-class Response(GenericModel, Generic[DataType]):
+class Response(BaseModel, Generic[DataType]):
     result: Union[DataType, None]
     error: Union[Error, None]
 
-    @validator("error", always=True)
+    @classmethod
+    @field_validator("error")
     def check_consistency(cls, err, values):
         if err is not None and values["result"] is not None:
             raise ValueError("must not provide both result and error")

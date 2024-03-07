@@ -8,7 +8,8 @@ from typing import Any, Callable, Dict
 from urllib.parse import urlparse
 
 import boto3 as boto
-from pydantic import BaseSettings, Extra, Field, validator
+from pydantic import field_validator, Field, ConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 CREDENTIALS_FILE = "credentials"
 CONFIG_FILE = "config"
@@ -27,45 +28,79 @@ def json_config_settings_source(path: str) -> Callable[[BaseSettings], Dict[str,
 
 
 class APIKey(BaseSettings):
-    id: str = Field(..., alias="api_key_id", env="SYNC_API_KEY_ID")
-    secret: str = Field(..., alias="api_key_secret", env="SYNC_API_KEY_SECRET")
+    id: str = Field(..., alias="api_key_id", validation_alias="SYNC_API_KEY_ID")
+    secret: str = Field(..., alias="api_key_secret", validation_alias="SYNC_API_KEY_SECRET")
 
-    class Config:
-        @classmethod
-        def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return (init_settings, env_settings, json_config_settings_source(CREDENTIALS_FILE))
+    model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[
+        PydanticBaseSettingsSource,
+        PydanticBaseSettingsSource,
+        Callable[[BaseSettings], dict[str, Any]],
+    ]:
+        return init_settings, env_settings, json_config_settings_source(CREDENTIALS_FILE)
 
 
 class Configuration(BaseSettings):
-    api_url: str = Field("https://api.synccomputing.com", env="SYNC_API_URL")
+    api_url: str = Field("https://api.synccomputing.com", validation_alias="SYNC_API_URL")
 
-    class Config:
-        extra = Extra.ignore
+    model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
 
-        @classmethod
-        def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return (init_settings, env_settings, json_config_settings_source(CONFIG_FILE))
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[
+        PydanticBaseSettingsSource,
+        PydanticBaseSettingsSource,
+        Callable[[BaseSettings], dict[str, Any]],
+    ]:
+        return init_settings, env_settings, json_config_settings_source(CONFIG_FILE)
 
 
 class DatabricksConf(BaseSettings):
-    host: str = Field(..., env="DATABRICKS_HOST")
-    token: str = Field(..., env="DATABRICKS_TOKEN")
-    aws_region_name: str = Field(boto.client("s3").meta.region_name, env="DATABRICKS_AWS_REGION")
+    host: str = Field(..., validation_alias="DATABRICKS_HOST")
+    token: str = Field(..., validation_alias="DATABRICKS_TOKEN")
+    aws_region_name: str = Field(
+        boto.client("s3").meta.region_name, validation_alias="DATABRICKS_AWS_REGION"
+    )
 
-    @validator("host")
+    model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
+
+    @classmethod
+    @field_validator("host")
     def validate_host(cls, host):
+
         if host:
             parsed_host = urlparse(host)
             return f"https://{parsed_host.netloc}"
 
-    class Config:
-        @classmethod
-        def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return (
-                init_settings,
-                env_settings,
-                json_config_settings_source(DATABRICKS_CONFIG_FILE),
-            )
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[
+        PydanticBaseSettingsSource,
+        PydanticBaseSettingsSource,
+        Callable[[BaseSettings], dict[str, Any]],
+    ]:
+        return init_settings, env_settings, json_config_settings_source(DATABRICKS_CONFIG_FILE)
 
 
 def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = None):
@@ -119,8 +154,10 @@ def get_api_key() -> APIKey:
 def set_api_key(api_key: APIKey):
     global _api_key
     if _api_key is not None:
-        raise RuntimeError("Sync API key/secret has already been set and the library does not support resetting "
-                           "credentials")
+        raise RuntimeError(
+            "Sync API key/secret has already been set and the library does not support resetting "
+            "credentials"
+        )
     _api_key = api_key
 
 
@@ -149,8 +186,10 @@ def get_databricks_config() -> DatabricksConf:
 def set_databricks_config(db_config: DatabricksConf):
     global _db_config
     if _db_config is not None:
-        raise RuntimeError("Databricks config has already been set and the library does not support resetting "
-                           "credentials")
+        raise RuntimeError(
+            "Databricks config has already been set and the library does not support resetting "
+            "credentials"
+        )
     _db_config = db_config
 
 

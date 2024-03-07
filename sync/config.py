@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict
 from urllib.parse import urlparse
 
 import boto3 as boto
-from pydantic import field_validator, Field, ConfigDict
+from pydantic import ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 CREDENTIALS_FILE = "credentials"

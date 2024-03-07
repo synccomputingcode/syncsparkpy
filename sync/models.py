@@ -7,7 +7,7 @@ from enum import Enum, unique
 from typing import Callable, Generic, List, TypeVar, Union
 
 from botocore.exceptions import ClientError
-from pydantic import BaseModel, Field, model_validator, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Platform(str, Enum):

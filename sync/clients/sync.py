@@ -1,12 +1,45 @@
+import json
 import logging
-from typing import Generator
+from typing import Dict, Generator
 
 import httpx
+from pydantic import BaseModel
 
 from ..config import API_KEY, CONFIG, APIKey
 from . import USER_AGENT, RetryableHTTPClient, encode_json
 
 logger = logging.getLogger(__name__)
+
+
+class S3ClusterLogConfiguration(BaseModel):
+    destination: str
+    region: str
+    enable_encryption: bool
+    canned_acl: str
+
+
+class DBFSClusterLogConfiguration(BaseModel):
+    destination: str
+
+
+class ClusterLogConfiguration(BaseModel):
+    s3: S3ClusterLogConfiguration
+    dbfs: DBFSClusterLogConfiguration
+
+
+class ProjectConfiguration(BaseModel):
+    node_type_id: str
+    driver_node_type: str
+    custom_tags: Dict
+    cluster_log_conf: ClusterLogConfiguration
+    cluster_name: str
+    num_workers: int
+    spark_version: str
+    runtime_engine: str
+    autoscale: Dict
+    spark_conf: Dict
+    aws_attributes: Dict
+    spark_env_vars: Dict
 
 
 class SyncAuth(httpx.Auth):
@@ -200,6 +233,32 @@ class SyncClient(RetryableHTTPClient):
                 content=content,
             )
         )
+
+    def get_latest_project_config_recommendation(self, project_id: str) -> ProjectConfiguration:
+        latest_recommendation = self.get_latest_project_recommendation(project_id)
+        if latest_recommendation.get("result"):
+            return latest_recommendation["result"][0]["recommendation"]["configuration"]
+        else:
+            return {"error": f"No project recommendation found for Project {project_id}"}
+
+    def get_cluster_definition_and_recommendation(
+        self, project_id: str, cluster_spec_str: str
+    ) -> dict:
+        cluster_recommendation = self.get_latest_project_config_recommendation(project_id)
+        return {
+            "cluster_recommendations": cluster_recommendation,
+            "cluster_definition": json.loads(cluster_spec_str),
+        }
+
+    def get_updated_cluster_defintion(
+        self, project_id: str, cluster_spec_str: str
+    ) -> ProjectConfiguration:
+        latest_recommendation = self.get_latest_project_config_recommendation(project_id)
+        cluster_definition = json.loads(cluster_spec_str)
+        for key in latest_recommendation.keys():
+            cluster_definition[key] = latest_recommendation[key]
+
+        return cluster_definition
 
     def _send(self, request: httpx.Request) -> dict:
         response = self._send_request(request)

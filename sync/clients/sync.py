@@ -1,4 +1,3 @@
-import difflib
 import json
 import logging
 from typing import Dict, Generator

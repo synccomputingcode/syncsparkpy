@@ -1,25 +1,15 @@
 """Project functions
 """
 import io
-import json
 import logging
 from time import sleep
-from typing import List, Union
+from typing import List
 from urllib.parse import urlparse
 
 import httpx
 
 from sync.clients.sync import get_default_client
-from sync.models import (
-    AWSProjectConfiguration,
-    AzureProjectConfiguration,
-    Platform,
-    ProjectError,
-    RecommendationError,
-    Response,
-    SubmissionError,
-)
-from sync.utils.json import deep_update
+from sync.models import Platform, ProjectError, RecommendationError, Response, SubmissionError
 
 from . import generate_presigned_url
 
@@ -406,81 +396,3 @@ def get_project_submission(project_id: str, submission_id: str) -> Response[dict
         return Response(**response)
 
     return Response(result=response["result"])
-
-
-def get_latest_project_config_recommendation(
-    project_id: str,
-) -> Response[Union[AWSProjectConfiguration, AzureProjectConfiguration]]:
-    """Get Latest Project Configuration Recommendation.
-
-    :param project_id: project ID
-    :type project_id: str
-    :return: Project Configuration Recommendation object
-    :rtype: AWSProjectConfiguration or AzureProjectConfiguration
-    """
-    latest_recommendation = get_default_client().get_latest_project_recommendation(project_id)
-    if latest_recommendation.get("result"):
-        return Response(
-            result=latest_recommendation["result"][0]["recommendation"]["configuration"]
-        )
-
-
-def get_cluster_definition_and_recommendation(
-    project_id: str, cluster_spec_str: str
-) -> Response[dict]:
-    """Print Current Cluster Definition and Project Configuration Recommendatio.
-    Throws error if no cluster recommendation found for project
-
-    :param project_id: project ID
-    :type project_id: str
-    :param cluster_spec_str: Current Cluster Recommendation
-    :type cluster_spec_str: str
-    :return: Current Cluster Definition and Project Configuration Recommendation object
-    :rtype: dict
-    """
-    recommendation_response = get_latest_project_config_recommendation(project_id)
-    if not recommendation_response:
-        logger.info(f"No cluster recommendation found for {project_id}")
-        return Response(error=RecommendationError(message="Recommendation failed"))
-    response_str = json.dumps(recommendation_response.result)
-    return Response(
-        result={
-            "cluster_recommendation": json.loads(response_str),
-            "cluster_definition": json.loads(cluster_spec_str),
-        }
-    )
-
-
-def get_updated_cluster_defintion(
-    project_id: str, cluster_spec_str: str
-) -> Response[Union[AWSProjectConfiguration, AzureProjectConfiguration]]:
-    """Return Cluster Definition merged with Project Configuration Recommendations.
-
-    :param project_id: project ID
-    :type project_id: str
-    :param cluster_spec_str: Current Cluster Recommendation
-    :type cluster_spec_str: str
-    :return: Updated Cluster Definition with Project Configuration Recommendations
-    :rtype: AWSProjectConfiguration or AzureProjectConfiguration
-    """
-    rec_response = get_latest_project_config_recommendation(project_id)
-    if not rec_response.error:
-        # Convert Response result object to str
-        latest_rec_str = json.dumps(rec_response.result)
-        # Convert json string to json
-        latest_recommendation = json.loads(latest_rec_str)
-        cluster_definition = json.loads(cluster_spec_str)
-        #  num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
-        #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster
-        #  with `num_workers`) for a cluster that was originally autoscaled, we want to make sure to remove this
-        #  prior configuration
-        if "num_workers" in cluster_definition:
-            del cluster_definition["num_workers"]
-
-        if "autoscale" in cluster_definition:
-            del cluster_definition["autoscale"]
-
-        recommendation_cluster = deep_update(cluster_definition, latest_recommendation)
-        return Response(result=recommendation_cluster)
-    else:
-        return rec_response

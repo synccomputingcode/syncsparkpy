@@ -4,7 +4,7 @@ Models used throughout this SDK
 
 from dataclasses import dataclass
 from enum import Enum, unique
-from typing import Callable, Dict, Generic, List, TypeVar, Union
+from typing import Callable, Generic, List, TypeVar, Union
 
 from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field, root_validator, validator
@@ -137,41 +137,3 @@ class Response(GenericModel, Generic[DataType]):
         if err is None and values.get("result") is None:
             raise ValueError("must provide result or error")
         return err
-
-
-class S3ClusterLogConfiguration(BaseModel):
-    destination: str
-    region: str
-    enable_encryption: bool
-    canned_acl: str
-
-
-class DBFSClusterLogConfiguration(BaseModel):
-    destination: str
-
-
-class AWSProjectConfiguration(BaseModel):
-    node_type_id: str
-    driver_node_type: str
-    custom_tags: Dict
-    cluster_log_conf: Union[S3ClusterLogConfiguration, DBFSClusterLogConfiguration]
-    cluster_name: str
-    num_workers: int
-    spark_version: str
-    runtime_engine: str
-    autoscale: Dict
-    spark_conf: Dict
-    aws_attributes: Dict
-    spark_env_vars: Dict
-
-
-class AzureProjectConfiguration(BaseModel):
-    node_type_id: str
-    driver_node_type: str
-    cluster_log_conf: DBFSClusterLogConfiguration
-    custom_tags: Dict
-    num_workers: int
-    spark_conf: Dict
-    spark_version: str
-    runtime_engine: str
-    azure_attributes: Dict

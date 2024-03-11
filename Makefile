@@ -3,7 +3,7 @@ FILES := $(shell git diff --name-only --diff-filter=AM $$(git merge-base origin/
 
 .PHONY: test
 test:
-	pytest -vv
+	pytest
 
 .PHONY: lint
 lint:

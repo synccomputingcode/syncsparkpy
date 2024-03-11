@@ -122,6 +122,13 @@ class SyncClient(RetryableHTTPClient):
             )
         )
 
+    def get_latest_project_recommendation(self, project_id: str) -> dict:
+        return self._send(
+            self._client.build_request(
+                "GET", f"/v1/projects/{project_id}/recommendations?page=0&per_page=1"
+            )
+        )
+
     def get_project_submissions(self, project_id: str, params: dict = None) -> dict:
         return self._send(
             self._client.build_request(

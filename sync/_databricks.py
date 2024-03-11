@@ -10,7 +10,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from time import sleep
-from typing import Any, Collection, Dict, List, Set, Tuple, TypeVar, Union
+from typing import Collection, Dict, List, Set, Tuple, Union
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -21,12 +21,13 @@ from sync.config import CONFIG  # noqa F401
 from sync.models import (
     DatabricksAPIError,
     DatabricksClusterReport,
-    DatabricksError,
     DatabricksComputeType,
+    DatabricksError,
     DatabricksPlanType,
-    Response
+    Response,
 )
 from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file
+from sync.utils.json import deep_update
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ def create_submission_with_cluster_info(
         cluster_activity_events=cluster_activity_events,
         tasks=tasks,
         plan_type=plan_type,
-        compute_type=compute_type
+        compute_type=compute_type,
     )
     eventlog = _get_event_log_from_cluster(cluster, tasks).result
 
@@ -308,12 +309,12 @@ def _get_cluster_report(
 
 
 def _create_cluster_report(
-        cluster: dict,
-        cluster_info: dict,
-        cluster_activity_events: dict,
-        tasks: List[dict],
-        plan_type: DatabricksPlanType,
-        compute_type: DatabricksComputeType
+    cluster: dict,
+    cluster_info: dict,
+    cluster_activity_events: dict,
+    tasks: List[dict],
+    plan_type: DatabricksPlanType,
+    compute_type: DatabricksComputeType,
 ) -> DatabricksClusterReport:
     raise NotImplementedError()
 
@@ -659,7 +660,7 @@ def get_recommendation_cluster(
         if "autoscale" in cluster:
             del cluster["autoscale"]
 
-        recommendation_cluster = _deep_update(cluster, recommendation["configuration"])
+        recommendation_cluster = deep_update(cluster, recommendation["configuration"])
 
         return Response(result=recommendation_cluster)
     return recommendation_response
@@ -727,7 +728,7 @@ def get_project_cluster(cluster: dict, project_id: str, region_name: str = None)
     project_settings_response = get_project_cluster_settings(project_id, region_name)
     project_cluster_settings = project_settings_response.result
     if project_cluster_settings:
-        project_cluster = _deep_update(cluster, project_cluster_settings)
+        project_cluster = deep_update(cluster, project_cluster_settings)
 
         return Response(result=project_cluster)
     return project_settings_response
@@ -1638,24 +1639,3 @@ def _update_monitored_timelines(
             retired_inst_timeline_list.append(active_timelines_by_id.pop(id))
 
     return active_timelines_by_id, retired_inst_timeline_list
-
-
-KeyType = TypeVar("KeyType")
-
-
-def _deep_update(
-    mapping: Dict[KeyType, Any], *updating_mappings: Dict[KeyType, Any]
-) -> Dict[KeyType, Any]:
-    updated_mapping = mapping.copy()
-    for updating_mapping in updating_mappings:
-        for k, v in updating_mapping.items():
-            if k in updated_mapping:
-                if isinstance(updated_mapping[k], dict) and isinstance(v, dict):
-                    updated_mapping[k] = _deep_update(updated_mapping[k], v)
-                elif isinstance(updated_mapping[k], list) and isinstance(v, list):
-                    updated_mapping[k] += v
-                else:
-                    updated_mapping[k] = v
-            else:
-                updated_mapping[k] = v
-    return updated_mapping

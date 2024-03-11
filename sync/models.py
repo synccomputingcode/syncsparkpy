@@ -168,9 +168,10 @@ class AWSProjectConfiguration(BaseModel):
 class AzureProjectConfiguration(BaseModel):
     node_type_id: str
     driver_node_type: str
+    cluster_log_conf: DBFSClusterLogConfiguration
     custom_tags: Dict
     num_workers: int
     spark_conf: Dict
     spark_version: str
     runtime_engine: str
-    aws_attributes: Dict
+    azure_attributes: Dict

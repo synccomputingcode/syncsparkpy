@@ -19,6 +19,7 @@ from sync.models import (
     Response,
     SubmissionError,
 )
+from sync.utils.json import deep_update
 
 from . import generate_presigned_url
 
@@ -444,7 +445,7 @@ def get_cluster_definition_and_recommendation(
     response_str = json.dumps(recommendation_response.result)
     return Response(
         result={
-            "cluster_recommendations": json.loads(response_str),
+            "cluster_recommendation": json.loads(response_str),
             "cluster_definition": json.loads(cluster_spec_str),
         }
     )
@@ -453,7 +454,7 @@ def get_cluster_definition_and_recommendation(
 def get_updated_cluster_defintion(
     project_id: str, cluster_spec_str: str
 ) -> Response[Union[AWSProjectConfiguration, AzureProjectConfiguration]]:
-    """Print Cluster Definition merged with Project Configuration Recommendations.
+    """Return Cluster Definition merged with Project Configuration Recommendations.
 
     :param project_id: project ID
     :type project_id: str
@@ -469,15 +470,17 @@ def get_updated_cluster_defintion(
         # Convert json string to json
         latest_recommendation = json.loads(latest_rec_str)
         cluster_definition = json.loads(cluster_spec_str)
-        for key in latest_recommendation.keys():
-            cluster_definition[key] = latest_recommendation[key]
+        #  num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
+        #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster
+        #  with `num_workers`) for a cluster that was originally autoscaled, we want to make sure to remove this
+        #  prior configuration
+        if "num_workers" in cluster_definition:
+            del cluster_definition["num_workers"]
 
-        # instance_source and driver_instance_source are not
-        # included in recommendation and need to be updated as well
-        driver_recommendation = cluster_definition["node_type_id"]
-        cluster_definition["instance_source"] = {"node_type_id": driver_recommendation}
-        cluster_definition["driver_instance_source"] = {"node_type_id": driver_recommendation}
+        if "autoscale" in cluster_definition:
+            del cluster_definition["autoscale"]
+
+        recommendation_cluster = deep_update(cluster_definition, latest_recommendation)
+        return Response(result=recommendation_cluster)
     else:
         return rec_response
-
-    return Response(result=cluster_definition)

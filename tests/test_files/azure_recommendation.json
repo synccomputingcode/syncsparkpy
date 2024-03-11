@@ -23,7 +23,7 @@
           "runtime_engine": "STANDARD",
           "azure_attributes": {
             "availability": "SPOT_WITH_FALLBACK_AZURE",
-            "first_on_demand": 6,
+            "first_on_demand": 7,
             "spot_bid_max_price": 100.0
           }
         },

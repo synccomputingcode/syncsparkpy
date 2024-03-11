@@ -67,7 +67,7 @@ class TestSync(TestCase):
                 "runtime_engine": "STANDARD",
                 "azure_attributes": {
                     "availability": "SPOT_WITH_FALLBACK_AZURE",
-                    "first_on_demand": 6,
+                    "first_on_demand": 7,
                     "spot_bid_max_price": 100.0,
                 },
             }
@@ -91,7 +91,7 @@ class TestSync(TestCase):
 
         expected_result = Response(
             result={
-                "cluster_recommendations": {
+                "cluster_recommendation": {
                     "node_type_id": "i6.xlarge",
                     "driver_node_type_id": "i6.xlarge",
                     "custom_tags": {
@@ -157,7 +157,6 @@ class TestSync(TestCase):
 
         with open("tests/test_files/aws_cluster.json") as cluster_in:
             result = get_cluster_definition_and_recommendation("project_id", cluster_in.read())
-            print(f"Result = {result}")
             assert result == expected_result
 
     @mock.patch("sync.clients.sync.SyncClient.get_latest_project_recommendation")
@@ -172,8 +171,10 @@ class TestSync(TestCase):
                 "spark_version": "13.3.x-scala2.12",
                 "aws_attributes": {
                     "first_on_demand": 1,
+                    "ebs_volume_count": 0,
                     "availability": "SPOT_WITH_FALLBACK",
                     "spot_bid_price_percent": 100,
+                    "zone_id": "us-west-2c",
                 },
                 "custom_tags": {
                     "sync:project-id": "b9bd7136-7699-4603-9040-c6dc4c914e43",
@@ -188,8 +189,8 @@ class TestSync(TestCase):
                 "disk_spec": {"disk_count": 0},
                 "cluster_source": "UI",
                 "enable_local_disk_encryption": False,
-                "instance_source": {"node_type_id": "i6.xlarge"},
-                "driver_instance_source": {"node_type_id": "i6.xlarge"},
+                "instance_source": {"node_type_id": "i3.xlarge"},
+                "driver_instance_source": {"node_type_id": "i3.xlarge"},
                 "spark_conf": {"spark.databricks.isv.product": "sync-gradient"},
                 "state": "TERMINATED",
                 "state_message": "Inactive cluster terminated (inactive for 120 minutes).",
@@ -230,7 +231,7 @@ class TestSync(TestCase):
                 "cluster_name": "my-cluster",
                 "spark_version": "13.3.x-scala2.12",
                 "azure_attributes": {
-                    "first_on_demand": 6,
+                    "first_on_demand": 7,
                     "availability": "SPOT_WITH_FALLBACK_AZURE",
                     "spot_bid_max_price": 100.0,
                 },
@@ -241,8 +242,8 @@ class TestSync(TestCase):
                 "disk_spec": {"disk_count": 0},
                 "cluster_source": "UI",
                 "enable_local_disk_encryption": False,
-                "instance_source": {"node_type_id": "Standard_D4s_v3"},
-                "driver_instance_source": {"node_type_id": "Standard_D4s_v3"},
+                "instance_source": {"node_type_id": "Standard_DS5_v2"},
+                "driver_instance_source": {"node_type_id": "Standard_DS5_v2"},
                 "state": "TERMINATED",
                 "state_message": "Inactive cluster terminated (inactive for 120 minutes).",
                 "start_time": 1618263108824,

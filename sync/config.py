@@ -4,7 +4,7 @@ Utilities providing configuration to the SDK
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Type, Tuple
+from typing import Any, Dict, Tuple, Type
 from urllib.parse import urlparse
 
 import boto3 as boto

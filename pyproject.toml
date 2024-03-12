@@ -13,7 +13,7 @@ build-backend = "hatchling.build"
 name = "syncsparkpy"
 authors = [{ "name" = "Sync Computing" }]
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 classifiers = [
     "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
@@ -30,8 +30,8 @@ dependencies = [
     "pydantic~=2.6.3",
     "pydantic-settings~=2.2.1",
     "pydantic_core~=2.16.3",
-    "httpx~=0.23.0",
-    "click~=8.1.0",
+    "httpx~=0.27.0",
+    "click~=8.1.7",
     "tenacity==8.2.2",
     "azure-identity==1.13.0",
     "azure-mgmt-compute==30.1.0",
@@ -42,14 +42,15 @@ dynamic = ["version", "description"]
 
 [project.optional-dependencies]
 dev = [
-    "black==22.10.0",
-    "flake8==5.0.4",
-    "isort==5.10.1",
-    "pytest==7.2.0",
+    "black==24.2.0",
+    "flake8==7.0.0",
+    "isort==5.13.3",
+    "pytest==8.0.0",
+    "pytest-mock-3.12.0",
     "pytest-env==0.8.1",
     "pytest-asyncio==0.21.0",
     "Sphinx==4.3.0",
-    "respx==0.20.1",
+    "respx==0.20.2",
     "deepdiff==6.3.0",
 ]
 
@@ -64,7 +65,7 @@ Home = "https://github.com/synccomputingcode/syncsparkpy"
 
 [tool.black]
 line-length = 100
-target-version = ['py37']
+target-version = ['py311']
 
 [tool.isort]
 profile = "black"

@@ -4,7 +4,7 @@ Models used throughout this SDK
 
 from dataclasses import dataclass
 from enum import Enum, unique
-from typing import Callable, Generic, List, TypeVar, Union
+from typing import Callable, Generic, List, Literal, TypeVar, Optional
 
 from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -25,7 +25,7 @@ class AccessStatusCode(str, Enum):
 class AccessReportLine:
     name: str
     status: AccessStatusCode
-    message: Union[str, None]
+    message: Optional[str] = None
 
 
 class AccessReport(List[AccessReportLine]):
@@ -66,15 +66,15 @@ class Error(BaseModel):
 
 
 class ProjectError(Error):
-    code: str = Field("Project Error", const=True)
+    code: Literal["Project Error"] = Field("Project Error")
 
 
 class RecommendationError(Error):
-    code: str = Field("Recommendation Error", const=True)
+    code: Literal["Recommendation Error"] = Field("Recommendation Error")
 
 
 class SubmissionError(Error):
-    code: str = Field("Submission Error", const=True)
+    code: Literal["Submission Error"] = Field("Submission Error")
 
 
 @unique
@@ -97,12 +97,12 @@ class DatabricksClusterReport(BaseModel):
     cluster: dict
     cluster_events: dict
     tasks: List[dict]
-    instances: Union[List[dict], None]
-    instance_timelines: Union[List[dict], None]
+    instances: Optional[List[dict]] = None
+    instance_timelines: Optional[List[dict]] = None
 
 
 class AWSDatabricksClusterReport(DatabricksClusterReport):
-    volumes: Union[List[dict], None]
+    volumes: Optional[List[dict]] = None
 
 
 class AzureDatabricksClusterReport(DatabricksClusterReport):
@@ -110,7 +110,7 @@ class AzureDatabricksClusterReport(DatabricksClusterReport):
 
 
 class DatabricksError(Error):
-    code: str = Field("Databricks Error", const=True)
+    code: str = Field("Databricks Error")
 
 
 class DatabricksAPIError(Error):
@@ -128,11 +128,13 @@ DataType = TypeVar("DataType")
 
 
 class Response(BaseModel, Generic[DataType]):
-    result: Union[DataType, None]
-    error: Union[Error, None]
+    result: Optional[DataType] = None
+    error: Optional[Error] = None
 
     @classmethod
-    @field_validator("error")
+    @field_validator(
+        "error",
+    )
     def check_consistency(cls, err, values):
         if err is not None and values["result"] is not None:
             raise ValueError("must not provide both result and error")

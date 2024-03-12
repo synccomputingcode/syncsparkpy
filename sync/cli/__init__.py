@@ -7,7 +7,7 @@ import logging
 import click
 
 from sync.api.projects import get_products
-from sync.cli import awsdatabricks, azuredatabricks, projects, workspaces
+from sync.cli import awsdatabricks, azuredatabricks, cli_settings, projects, workspaces
 from sync.cli.util import OPTIONAL_DEFAULT
 from sync.clients.sync import get_default_client
 from sync.config import API_KEY, CONFIG, DB_CONFIG, APIKey, Configuration, DatabricksConf, init
@@ -29,6 +29,7 @@ main.add_command(projects.projects)
 main.add_command(awsdatabricks.aws_databricks)
 main.add_command(azuredatabricks.azure_databricks)
 main.add_command(workspaces.workspaces)
+main.add_command(cli_settings.settings)
 
 
 @main.command
@@ -46,11 +47,11 @@ def configure(
 ):
     """Configure Sync Library"""
     api_key_id = api_key_id or click.prompt(
-        "Sync API key ID", default=API_KEY.id if API_KEY else None
+        "Sync API key ID", default=API_KEY.api_key_id if API_KEY else None
     )
     api_key_secret = api_key_secret or click.prompt(
         "Sync API key secret",
-        default=API_KEY.secret if API_KEY else None,
+        default=API_KEY.api_key_secret if API_KEY else None,
         hide_input=True,
         show_default=False,
     )

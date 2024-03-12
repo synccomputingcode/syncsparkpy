@@ -55,10 +55,12 @@ def create_workspace_config(
         hide_input=True,
         show_default=False,
     )
-    sync_api_key_id = click.prompt("Sync API key ID", default=API_KEY.id if API_KEY else None)
+    sync_api_key_id = click.prompt(
+        "Sync API key ID", default=API_KEY.api_key_id if API_KEY else None
+    )
     sync_api_key_secret = click.prompt(
         "Sync API key secret",
-        default=API_KEY.secret if API_KEY else None,
+        default=API_KEY.api_key_secret if API_KEY else None,
         hide_input=True,
         show_default=False,
     )
@@ -159,9 +161,9 @@ def update_workspace_config(
             databricks_host=databricks_host if databricks_host != OPTIONAL_DEFAULT else None,
             databricks_token=databricks_token if databricks_token != OPTIONAL_DEFAULT else None,
             sync_api_key_id=sync_api_key_id if sync_api_key_id != OPTIONAL_DEFAULT else None,
-            sync_api_key_secret=sync_api_key_secret
-            if sync_api_key_secret != OPTIONAL_DEFAULT
-            else None,
+            sync_api_key_secret=(
+                sync_api_key_secret if sync_api_key_secret != OPTIONAL_DEFAULT else None
+            ),
             instance_profile_arn=instance_profile_arn,
             webhook_id=databricks_webhook_id,
             databricks_plan_type=databricks_plan_type,

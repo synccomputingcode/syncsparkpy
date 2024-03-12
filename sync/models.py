@@ -4,7 +4,7 @@ Models used throughout this SDK
 
 from dataclasses import dataclass
 from enum import Enum, unique
-from typing import Callable, Generic, List, Literal, TypeVar, Optional
+from typing import Callable, Generic, List, Literal, Optional, TypeVar
 
 from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field, field_validator, model_validator

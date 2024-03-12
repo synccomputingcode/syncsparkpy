@@ -4,11 +4,12 @@ Utilities providing configuration to the SDK
 
 import json
 from pathlib import Path
-from typing import Any, Callable, Dict
+from typing import Any, Dict
 from urllib.parse import urlparse
 
 import boto3 as boto
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import AliasChoices, ConfigDict, Field, field_validator
+from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 CREDENTIALS_FILE = "credentials"
@@ -16,22 +17,63 @@ CONFIG_FILE = "config"
 DATABRICKS_CONFIG_FILE = "databrickscfg"
 
 
-def json_config_settings_source(path: str) -> Callable[[BaseSettings], Dict[str, Any]]:
-    def source(settings: BaseSettings) -> Dict[str, Any]:
-        config_path = _get_config_dir().joinpath(path)
+class ConfigError(Exception):
+    """Exception raised for errors in the config file."""
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(self.message)
+
+
+class JSONConfigSettingsSource(PydanticBaseSettingsSource):
+    def __init__(self, path: str, settings_cls: type[BaseSettings]):
+        super().__init__(settings_cls)
+        self.path = path
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
+        config_path = _get_config_dir().joinpath(self.path)
         if config_path.exists():
             with open(config_path) as fobj:
-                return json.load(fobj)
-        return {}
+                content = fobj.read()
+                if not content:
+                    raise ConfigError(f"Config file '{self.path}' is empty.")
+                data = json.loads(content)
+                if field_name not in data:
+                    raise ConfigError(f"Missing '{field_name}' in config file '{self.path}'.")
+                field_value = data.get(field_name, None)
+                return field_value, field_name, True
+        return field.default, field_name, False
 
-    return source
+    def prepare_field_value(
+        self, field_name: str, field: FieldInfo, value: Any, value_is_complex: bool
+    ) -> Any:
+        return value
+
+    def __call__(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {}
+
+        for field_name, field in self.settings_cls.model_fields.items():
+            field_value, field_key, value_is_complex = self.get_field_value(field, field_name)
+            field_value = self.prepare_field_value(field_name, field, field_value, value_is_complex)
+            if field_value is not None:
+                d[field_key] = field_value
+        return d
 
 
 class APIKey(BaseSettings):
-    id: str = Field(..., alias="api_key_id", validation_alias="SYNC_API_KEY_ID")
-    secret: str = Field(..., alias="api_key_secret", validation_alias="SYNC_API_KEY_SECRET")
-
     model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
+    api_key_id: str = Field(
+        ...,
+        alias="api_key_id",
+        validation_alias=AliasChoices("SYNC_API_KEY_ID", "id"),  # , "api_key_id"),
+        serialization_alias="api_key_id",
+    )
+    api_key_secret: str = Field(
+        ...,
+        alias="api_key_secret",
+        validation_alias=AliasChoices("SYNC_API_KEY_SECRET", "secret"),  # , "api_key_secret"),
+        serialization_alias="api_key_secret",
+    )
 
     @classmethod
     def settings_customise_sources(
@@ -41,18 +83,21 @@ class APIKey(BaseSettings):
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[
-        PydanticBaseSettingsSource,
-        PydanticBaseSettingsSource,
-        Callable[[BaseSettings], dict[str, Any]],
-    ]:
-        return init_settings, env_settings, json_config_settings_source(CREDENTIALS_FILE)
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            env_settings,
+            JSONConfigSettingsSource(CREDENTIALS_FILE, settings_cls),
+        )
 
 
 class Configuration(BaseSettings):
+    model_config = ConfigDict(
+        frozen=True,
+        populate_by_name=True,
+        extra="ignore",
+    )
     api_url: str = Field("https://api.synccomputing.com", validation_alias="SYNC_API_URL")
-
-    model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
 
     @classmethod
     def settings_customise_sources(
@@ -62,22 +107,18 @@ class Configuration(BaseSettings):
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[
-        PydanticBaseSettingsSource,
-        PydanticBaseSettingsSource,
-        Callable[[BaseSettings], dict[str, Any]],
-    ]:
-        return init_settings, env_settings, json_config_settings_source(CONFIG_FILE)
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return init_settings, env_settings, JSONConfigSettingsSource(CONFIG_FILE, settings_cls)
 
 
 class DatabricksConf(BaseSettings):
+    model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
+
     host: str = Field(..., validation_alias="DATABRICKS_HOST")
     token: str = Field(..., validation_alias="DATABRICKS_TOKEN")
     aws_region_name: str = Field(
         boto.client("s3").meta.region_name, validation_alias="DATABRICKS_AWS_REGION"
     )
-
-    model_config = ConfigDict(extra="ignore", frozen=True, populate_by_name=True)
 
     @classmethod
     @field_validator("host")
@@ -95,12 +136,12 @@ class DatabricksConf(BaseSettings):
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[
-        PydanticBaseSettingsSource,
-        PydanticBaseSettingsSource,
-        Callable[[BaseSettings], dict[str, Any]],
-    ]:
-        return init_settings, env_settings, json_config_settings_source(DATABRICKS_CONFIG_FILE)
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            env_settings,
+            JSONConfigSettingsSource(DATABRICKS_CONFIG_FILE, settings_cls),
+        )
 
 
 def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = None):
@@ -118,20 +159,20 @@ def init(api_key: APIKey, config: Configuration, db_config: DatabricksConf = Non
 
     credentials_path = config_dir.joinpath(CREDENTIALS_FILE)
     with open(credentials_path, "w") as credentials_out:
-        credentials_out.write(api_key.json(by_alias=True, indent=2))
+        credentials_out.write(api_key.model_dump_json(exclude_none=True, indent=2))
     global _api_key
     _api_key = api_key
 
     config_path = config_dir.joinpath(CONFIG_FILE)
     with open(config_path, "w") as config_out:
-        config_out.write(config.json(exclude_none=True, indent=2))
+        config_out.write(config.model_dump_json(exclude_none=True, indent=2))
     global _config
     _config = config
 
     if db_config:
         db_config_path = config_dir.joinpath(DATABRICKS_CONFIG_FILE)
         with open(db_config_path, "w") as db_config_out:
-            db_config_out.write(db_config.json(exclude_none=True, indent=2))
+            db_config_out.write(db_config.model_dump_json(exclude_none=True, indent=2))
         global _db_config
         _db_config = db_config
 

@@ -44,9 +44,9 @@ dynamic = ["version", "description"]
 dev = [
     "black==24.2.0",
     "flake8==7.0.0",
-    "isort==5.13.3",
+    "isort==5.13.2",
     "pytest==8.0.0",
-    "pytest-mock-3.12.0",
+    "pytest-mock==3.12.0",
     "pytest-env==0.8.1",
     "pytest-asyncio==0.21.0",
     "Sphinx==4.3.0",

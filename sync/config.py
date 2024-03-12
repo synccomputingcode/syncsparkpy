@@ -4,7 +4,7 @@ Utilities providing configuration to the SDK
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Type, Tuple
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -26,11 +26,11 @@ class ConfigError(Exception):
 
 
 class JSONConfigSettingsSource(PydanticBaseSettingsSource):
-    def __init__(self, path: str, settings_cls: type[BaseSettings]):
+    def __init__(self, path: str, settings_cls: Type[BaseSettings]):
         super().__init__(settings_cls)
         self.path = path
 
-    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
+    def get_field_value(self, field: FieldInfo, field_name: str) -> Tuple[Any, str, bool]:
         config_path = _get_config_dir().joinpath(self.path)
         if config_path.exists():
             with open(config_path) as fobj:
@@ -78,12 +78,12 @@ class APIKey(BaseSettings):
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls: type[BaseSettings],
+        settings_cls: Type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
+    ) -> Tuple[PydanticBaseSettingsSource, ...]:
         return (
             init_settings,
             env_settings,
@@ -102,12 +102,12 @@ class Configuration(BaseSettings):
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls: type[BaseSettings],
+        settings_cls: Type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
+    ) -> Tuple[PydanticBaseSettingsSource, ...]:
         return init_settings, env_settings, JSONConfigSettingsSource(CONFIG_FILE, settings_cls)
 
 
@@ -131,12 +131,12 @@ class DatabricksConf(BaseSettings):
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls: type[BaseSettings],
+        settings_cls: Type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
+    ) -> Tuple[PydanticBaseSettingsSource, ...]:
         return (
             init_settings,
             env_settings,

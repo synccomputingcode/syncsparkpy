@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Generator, Union
 
 import httpx
@@ -28,6 +29,7 @@ class DatabricksClient(RetryableHTTPClient):
                 base_url=base_url,
                 headers={"User-Agent": DATABRICKS_USER_AGENT},
                 auth=DatabricksAuth(access_token),
+                proxies=os.getenv("FIXIE_URL"),
             )
         )
 

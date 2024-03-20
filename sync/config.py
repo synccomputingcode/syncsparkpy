@@ -119,8 +119,10 @@ def get_api_key() -> APIKey:
 def set_api_key(api_key: APIKey):
     global _api_key
     if _api_key is not None:
-        raise RuntimeError("Sync API key/secret has already been set and the library does not support resetting "
-                           "credentials")
+        raise RuntimeError(
+            "Sync API key/secret has already been set and the library does not support resetting "
+            "credentials"
+        )
     _api_key = api_key
 
 
@@ -149,8 +151,10 @@ def get_databricks_config() -> DatabricksConf:
 def set_databricks_config(db_config: DatabricksConf):
     global _db_config
     if _db_config is not None:
-        raise RuntimeError("Databricks config has already been set and the library does not support resetting "
-                           "credentials")
+        raise RuntimeError(
+            "Databricks config has already been set and the library does not support resetting "
+            "credentials"
+        )
     _db_config = db_config
 
 

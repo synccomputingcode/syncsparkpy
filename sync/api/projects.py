@@ -131,7 +131,7 @@ def update_project(
     auto_apply_recs: bool = None,
     prediction_params: dict = None,
     job_id: str = None,
-    optimize_instance_size=None,
+    optimize_instance_size: bool = None,
 ) -> Response[dict]:
     """Updates a project's mutable properties
 
@@ -155,6 +155,8 @@ def update_project(
     :type prediction_preference: dict, optional
     :param job_id: Databricks job ID, defaults to None
     :type job_id: str, optional
+    :param optimize_instance_size: flag to turn on/off instance size recommendations, defaults to None
+    :type optimize_instance_size: bool, optional
     :return: updated project
     :rtype: Response[dict]
     """

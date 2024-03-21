@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import sys
+from pathlib import Path
 from time import sleep
 from typing import Dict, List, Optional, Type, TypeVar
 from urllib.parse import urlparse
@@ -229,12 +230,12 @@ def _get_cluster_report(
 
 
 def _create_cluster_report(
-        cluster: dict,
-        cluster_info: dict,
-        cluster_activity_events: dict,
-        tasks: List[dict],
-        plan_type: DatabricksPlanType,
-        compute_type: DatabricksComputeType
+    cluster: dict,
+    cluster_info: dict,
+    cluster_activity_events: dict,
+    tasks: List[dict],
+    plan_type: DatabricksPlanType,
+    compute_type: DatabricksComputeType,
 ) -> AzureDatabricksClusterReport:
     return AzureDatabricksClusterReport(
         plan_type=plan_type,
@@ -243,7 +244,7 @@ def _create_cluster_report(
         cluster_events=cluster_activity_events,
         tasks=tasks,
         instances=cluster_info.get("instances"),
-        instance_timelines=cluster_info.get("timelines")
+        instance_timelines=cluster_info.get("timelines"),
     )
 
 
@@ -321,27 +322,44 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
     return Response(result=cluster_instances)
 
 
-def monitor_cluster(cluster_id: str, polling_period: int = 20) -> None:
+def monitor_cluster(
+    cluster_id: str,
+    polling_period: int = 20,
+    cluster_report_destination_override: dict = None,
+    kill_on_termination: bool = False,
+) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
     while not spark_context_id:
         # This is largely just a convenience for when this command is run by someone locally
         logger.info("Waiting for cluster startup...")
-        sleep(30)
+        sleep(15)
         cluster = get_default_client().get_cluster(cluster_id)
         spark_context_id = cluster.get("spark_context_id")
 
     (log_url, filesystem, bucket, base_prefix) = _cluster_log_destination(cluster)
+    if cluster_report_destination_override:
+        filesystem = cluster_report_destination_override.get("filesystem", filesystem)
+        base_prefix = cluster_report_destination_override.get("base_prefix", base_prefix)
+
     if log_url:
         _monitor_cluster(
-            (log_url, filesystem, bucket, base_prefix), cluster_id, spark_context_id, polling_period
+            (log_url, filesystem, bucket, base_prefix),
+            cluster_id,
+            spark_context_id,
+            polling_period,
+            kill_on_termination,
         )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
 
 
 def _monitor_cluster(
-    cluster_log_destination, cluster_id: str, spark_context_id: int, polling_period: int
+    cluster_log_destination,
+    cluster_id: str,
+    spark_context_id: int,
+    polling_period: int,
+    kill_on_termination: bool = False,
 ) -> None:
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
     # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
@@ -352,13 +370,7 @@ def _monitor_cluster(
     azure_logger = logging.getLogger("azure.core.pipeline.policies.http_logging_policy")
     azure_logger.setLevel(logging.WARNING)
 
-    if filesystem == "dbfs":
-        path = format_dbfs_filepath(file_key)
-        dbx_client = get_default_client()
-
-        def write_file(body: bytes):
-            logger.info("Saving state to DBFS")
-            write_dbfs_file(path, body, dbx_client)
+    write_file = _define_write_file(file_key, filesystem)
 
     resource_group_name = _get_databricks_resource_group_name()
     if not resource_group_name:
@@ -369,7 +381,9 @@ def _monitor_cluster(
     all_vms_by_id = {}
     active_timelines_by_id = {}
     retired_timelines = []
-    while True:
+
+    while_condition = True
+    while while_condition:
         try:
             running_vms_by_id = _get_running_vms_by_id(compute, resource_group_name, cluster_id)
 
@@ -395,9 +409,40 @@ def _monitor_cluster(
                 )
             )
 
+            if kill_on_termination:
+                cluster_state = get_default_client().get_cluster(cluster_id).get("state")
+                if cluster_state == "TERMINATED":
+                    while_condition = False
         except Exception as e:
             logger.error(f"Exception encountered while polling cluster: {e}")
         sleep(polling_period)
+
+
+def _define_write_file(file_key, filesystem):
+    if filesystem == "file":
+        file_path = Path(file_key)
+
+        def ensure_path_exists(report_path: Path):
+            logger.info(f"Ensuring path exists for {report_path}")
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def write_file(body: bytes):
+            logger.info("Saving state to local file")
+            ensure_path_exists(file_path)
+            with open(file_path, "wb") as f:
+                f.write(body)
+
+    elif filesystem == "dbfs":
+        path = format_dbfs_filepath(file_key)
+        dbx_client = get_default_client()
+
+        def write_file(body: bytes):
+            logger.info("Saving state to DBFS")
+            write_dbfs_file(path, body, dbx_client)
+
+    else:
+        raise ValueError(f"Unsupported filesystem: {filesystem}")
+    return write_file
 
 
 def _get_databricks_resource_group_name() -> str:

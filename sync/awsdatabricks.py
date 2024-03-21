@@ -1,7 +1,8 @@
 import json
 import logging
+from pathlib import Path
 from time import sleep
-from typing import List, Tuple
+from typing import Generator, List, Tuple
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -11,22 +12,19 @@ from botocore.exceptions import ClientError
 import sync._databricks
 from sync._databricks import (
     _cluster_log_destination,
-    _get_all_cluster_events,
+    get_all_cluster_events,
     _get_cluster_instances_from_dbfs,
     _update_monitored_timelines,
     _wait_for_cluster_termination,
-    apply_prediction,
     apply_project_recommendation,
     create_and_record_run,
     create_and_wait_for_run,
     create_cluster,
-    create_prediction_for_run,
     create_run,
     create_submission_for_run,
+    create_submission_with_cluster_info,
     get_cluster,
     get_cluster_report,
-    get_prediction_cluster,
-    get_prediction_job,
     get_project_cluster,
     get_project_cluster_settings,
     get_project_job,
@@ -35,10 +33,8 @@ from sync._databricks import (
     record_run,
     run_and_record_job,
     run_and_record_job_object,
-    run_and_record_prediction_job,
     run_and_record_project_job,
     run_job_object,
-    run_prediction,
     terminate_cluster,
     wait_for_and_record_run,
     wait_for_final_run_status,
@@ -53,6 +49,8 @@ from sync.models import (
     AccessStatusCode,
     AWSDatabricksClusterReport,
     DatabricksError,
+    DatabricksPlanType,
+    DatabricksComputeType,
     Response,
 )
 from sync.utils.dbfs import format_dbfs_filepath, write_dbfs_file
@@ -60,25 +58,22 @@ from sync.utils.json import DefaultDateTimeEncoder
 
 __all__ = [
     "get_access_report",
-    "run_prediction",
     "run_and_record_job",
-    "create_prediction_for_run",
     "create_submission_for_run",
+    "create_submission_with_cluster_info",
     "get_cluster_report",
+    "get_all_cluster_events",
     "monitor_cluster",
     "create_cluster",
     "get_cluster",
     "handle_successful_job_run",
     "record_run",
-    "get_prediction_job",
-    "get_prediction_cluster",
     "get_project_job",
     "get_project_cluster",
     "get_project_cluster_settings",
     "get_recommendation_job",
     "run_job_object",
     "create_run",
-    "run_and_record_prediction_job",
     "run_and_record_project_job",
     "run_and_record_job_object",
     "create_and_record_run",
@@ -87,7 +82,6 @@ __all__ = [
     "wait_for_final_run_status",
     "wait_for_run_and_cluster",
     "terminate_cluster",
-    "apply_prediction",
     "apply_project_recommendation",
 ]
 
@@ -228,7 +222,7 @@ def _get_cluster_report(
     else:
         timelines = timeline_response.result
 
-    cluster_events = _get_all_cluster_events(cluster_id)
+    cluster_events = get_all_cluster_events(cluster_id)
     return Response(
         result=AWSDatabricksClusterReport(
             plan_type=plan_type,
@@ -243,12 +237,33 @@ def _get_cluster_report(
     )
 
 
+def _create_cluster_report(
+    cluster: dict,
+    cluster_info: dict,
+    cluster_activity_events: dict,
+    tasks: List[dict],
+    plan_type: DatabricksPlanType,
+    compute_type: DatabricksComputeType,
+) -> AWSDatabricksClusterReport:
+    return AWSDatabricksClusterReport(
+        plan_type=plan_type,
+        compute_type=compute_type,
+        cluster=cluster,
+        cluster_events=cluster_activity_events,
+        tasks=tasks,
+        instances=cluster_info.get("instances"),
+        volumes=cluster_info.get("volumes"),
+        instance_timelines=cluster_info.get("instance_timelines"),
+    )
+
+
 if getattr(sync._databricks, "__claim", __name__) != __name__:
     raise RuntimeError(
         "Databricks modules for different cloud providers cannot be used in the same context"
     )
 
 sync._databricks._get_cluster_report = _get_cluster_report
+sync._databricks._create_cluster_report = _create_cluster_report
 setattr(sync._databricks, "__claim", __name__)
 
 
@@ -335,28 +350,45 @@ def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
         logger.warning(f"Failed to retrieve cluster info from S3 with key, '{file_key}': {err}")
 
 
-def monitor_cluster(cluster_id: str, polling_period: int = 20) -> None:
+def monitor_cluster(
+    cluster_id: str,
+    polling_period: int = 20,
+    cluster_report_destination_override: dict = None,
+    kill_on_termination: bool = False,
+) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
 
     while not spark_context_id:
         # This is largely just a convenience for when this command is run by someone locally
         logger.info("Waiting for cluster startup...")
-        sleep(30)
+        sleep(15)
         cluster = get_default_client().get_cluster(cluster_id)
         spark_context_id = cluster.get("spark_context_id")
 
     (log_url, filesystem, bucket, base_prefix) = _cluster_log_destination(cluster)
-    if log_url:
+    if cluster_report_destination_override:
+        filesystem = cluster_report_destination_override.get("filesystem", filesystem)
+        base_prefix = cluster_report_destination_override.get("base_prefix", base_prefix)
+
+    if log_url or cluster_report_destination_override:
         _monitor_cluster(
-            (log_url, filesystem, bucket, base_prefix), cluster_id, spark_context_id, polling_period
+            (log_url, filesystem, bucket, base_prefix),
+            cluster_id,
+            spark_context_id,
+            polling_period,
+            kill_on_termination,
         )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
 
 
 def _monitor_cluster(
-    cluster_log_destination, cluster_id: str, spark_context_id: int, polling_period: int
+    cluster_log_destination,
+    cluster_id: str,
+    spark_context_id: int,
+    polling_period: int,
+    kill_on_termination: bool = False,
 ) -> None:
 
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
@@ -368,33 +400,22 @@ def _monitor_cluster(
     aws_region_name = DB_CONFIG.aws_region_name
     ec2 = boto.client("ec2", region_name=aws_region_name)
 
-    if filesystem == "s3":
-        s3 = boto.client("s3")
-
-        def write_file(body: bytes):
-            logger.info("Saving state to S3")
-            s3.put_object(Bucket=bucket, Key=file_key, Body=body)
-
-    elif filesystem == "dbfs":
-        path = format_dbfs_filepath(file_key)
-        dbx_client = get_default_client()
-
-        def write_file(body: bytes):
-            logger.info("Saving state to DBFS")
-            write_dbfs_file(path, body, dbx_client)
+    write_file = _define_write_file(file_key, filesystem, bucket)
 
     all_inst_by_id = {}
     active_timelines_by_id = {}
     retired_timelines = []
     recorded_volumes_by_id = {}
-    while True:
+
+    while_condition = True
+    while while_condition:
         try:
             current_insts = _get_ec2_instances(cluster_id, ec2)
             recorded_volumes_by_id.update(
                 {v["VolumeId"]: v for v in _get_ebs_volumes_for_instances(current_insts, ec2)}
             )
 
-            # Record new (or overrwite) existing instances.
+            # Record new (or overwrite) existing instances.
             # Separately record the ids of those that are in the "running" state.
             running_inst_ids = set({})
             for inst in current_insts:
@@ -422,10 +443,49 @@ def _monitor_cluster(
                     "utf-8",
                 )
             )
+
+            if kill_on_termination:
+                cluster_state = get_default_client().get_cluster(cluster_id).get("state")
+                if cluster_state == "TERMINATED":
+                    while_condition = False
         except Exception as e:
             logger.error(f"Exception encountered while polling cluster: {e}")
 
         sleep(polling_period)
+
+
+def _define_write_file(file_key, filesystem, bucket):
+    if filesystem == "file":
+        file_path = Path(file_key)
+
+        def ensure_path_exists(report_path: Path):
+            logger.info(f"Ensuring path exists for {report_path}")
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def write_file(body: bytes):
+            logger.info("Saving state to local file")
+            ensure_path_exists(file_path)
+            with open(file_path, "wb") as f:
+                f.write(body)
+
+    elif filesystem == "s3":
+        s3 = boto.client("s3")
+
+        def write_file(body: bytes):
+            logger.info("Saving state to S3")
+            s3.put_object(Bucket=bucket, Key=file_key, Body=body)
+
+    elif filesystem == "dbfs":
+        path = format_dbfs_filepath(file_key)
+        dbx_client = get_default_client()
+
+        def write_file(body: bytes):
+            logger.info("Saving state to DBFS")
+            write_dbfs_file(path, body, dbx_client)
+
+    else:
+        raise ValueError(f"Unsupported filesystem: {filesystem}")
+    return write_file
 
 
 def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[dict]:
@@ -457,28 +517,39 @@ def _get_ebs_volumes_for_instances(
 ) -> List[dict]:
     """Get all ebs volumes associated with a list of instance reservations"""
 
+    def get_chunk(instance_ids: list[str], chunk_size: int) -> Generator[list[str], None, None]:
+        """
+        Splits the instance_ids list into chunks of size determined by chunk_size.
+        This function exists to respect thresholds required by the call to
+        ec2_client.describe_volumes below.
+        """
+        for idx in range(0, len(instance_ids), chunk_size):
+            yield instance_ids[idx : idx + chunk_size]
+
     instance_ids = []
     if instances:
         for instance in instances:
             instance_ids.append(instance.get("InstanceId"))
 
     volumes = []
+    MAX_CHUNK_SIZE = 199
+
     if instance_ids:
-        filters = [
-            {"Name": "tag:Vendor", "Values": ["Databricks"]},
-            {"Name": "attachment.instance-id", "Values": instance_ids},
-        ]
+        for chunk in get_chunk(instance_ids, MAX_CHUNK_SIZE):
+            filters = [
+                {"Name": "tag:Vendor", "Values": ["Databricks"]},
+                {"Name": "attachment.instance-id", "Values": chunk},
+            ]
 
-        response = ec2_client.describe_volumes(Filters=filters)
-        volumes = response.get("Volumes", [])
-        next_token = response.get("NextToken")
-
-        while next_token:
-            response = ec2_client.describe_volumes(Filters=filters, NextToken=next_token)
-            volumes += response.get("Volumes", [])
+            response = ec2_client.describe_volumes(Filters=filters)
+            volumes = response.get("Volumes", [])
             next_token = response.get("NextToken")
+
+            while next_token:
+                response = ec2_client.describe_volumes(Filters=filters, NextToken=next_token)
+                volumes += response.get("Volumes", [])
+                next_token = response.get("NextToken")
 
     num_vol = len(volumes)
     logger.info(f"Identified {num_vol} ebs volumes in cluster")
-
     return volumes

@@ -2,17 +2,13 @@ import click
 
 from sync.cli._databricks import (
     access_report,
-    apply_prediction,
     apply_recommendation,
-    create_prediction,
     create_recommendation,
     create_submission,
     get_cluster_report,
     get_recommendation,
     get_submission,
     monitor_cluster,
-    run_job,
-    run_prediction,
 )
 from sync.models import Platform
 
@@ -25,14 +21,10 @@ def azure_databricks(ctx: click.Context):
 
 
 azure_databricks.add_command(access_report)
-azure_databricks.add_command(run_prediction)
-azure_databricks.add_command(run_job)
-azure_databricks.add_command(create_prediction)
 azure_databricks.add_command(create_submission)
 azure_databricks.add_command(create_recommendation)
 azure_databricks.add_command(get_recommendation)
 azure_databricks.add_command(get_submission)
 azure_databricks.add_command(apply_recommendation)
 azure_databricks.add_command(get_cluster_report)
-azure_databricks.add_command(apply_prediction)
 azure_databricks.add_command(monitor_cluster)

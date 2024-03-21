@@ -1,51 +1,38 @@
 """Project functions
 """
 import io
+import json
 import logging
 from time import sleep
-from typing import List
+from typing import List, Union
 from urllib.parse import urlparse
 
 import httpx
 
-from sync.api.predictions import generate_presigned_url, get_predictions
 from sync.clients.sync import get_default_client
 from sync.models import (
+    AWSProjectConfiguration,
+    AzureProjectConfiguration,
     Platform,
-    Preference,
     ProjectError,
     RecommendationError,
     Response,
     SubmissionError,
 )
+from sync.utils.json import deep_update
+
+from . import generate_presigned_url
 
 logger = logging.getLogger(__name__)
 
 
-def get_prediction(project_id: str, preference: Preference = None) -> Response[dict]:
-    """Get the latest prediction of a project
-
-    :param project_id: project ID
-    :type project_id: str
-    :param preference: preferred prediction solution, defaults to project setting
-    :type preference: Preference, optional
-    :return: prediction object
-    :rtype: Response[dict]
+def get_products() -> Response[List[str]]:
+    """Get supported platforms
+    :return: list of platform names
+    :rtype: Response[list[str]]
     """
-    project_response = get_project(project_id)
-    project = project_response.result
-    if project:
-        predictions_response = get_predictions(
-            project_id=project_id, preference=preference or project.get("preference")
-        )
-        if predictions_response.error:
-            return predictions_response
-
-        predictions = predictions_response.result
-        if predictions:
-            return Response(result=predictions[0])
-        return Response(error=ProjectError(message="No predictions in the project"))
-    return project_response
+    response = get_default_client().get_products()
+    return Response(**response)
 
 
 def create_project(
@@ -56,7 +43,6 @@ def create_project(
     cluster_path: str = None,
     workspace_id: str = None,
     cluster_log_url: str = None,
-    prediction_preference: Preference = Preference.ECONOMY,
     auto_apply_recs: bool = False,
     prediction_params: dict = None,
     app_id: str = None,
@@ -78,8 +64,6 @@ def create_project(
     :type workspace_id: str, optional
     :param cluster_log_url: S3 or DBFS URL under which to store project configurations and logs, defaults to None
     :type cluster_log_url: str, optional
-    :param prediction_preference: preferred prediction solution, defaults to `Preference.ECONOMY`
-    :type prediction_preference: Preference, optional
     :param auto_apply_recs: automatically apply project recommendations, defaults to False
     :type auto_apply_recs: bool, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/create_project_v1_projects_post>`__
@@ -99,7 +83,6 @@ def create_project(
                 "cluster_path": cluster_path,
                 "workspace_id": workspace_id,
                 "cluster_log_url": cluster_log_url,
-                "prediction_preference": prediction_preference,
                 "auto_apply_recs": auto_apply_recs,
                 "prediction_params": prediction_params,
                 "app_id": app_id,
@@ -127,7 +110,6 @@ def update_project(
     workspace_id: str = None,
     cluster_log_url: str = None,
     app_id: str = None,
-    prediction_preference: Preference = None,
     auto_apply_recs: bool = None,
     prediction_params: dict = None,
     job_id: str = None,
@@ -147,12 +129,10 @@ def update_project(
     :type cluster_log_url: str, optional
     :param app_id: external identifier, defaults to None
     :type app_id: str, optional
-    :param prediction_preference: default preference for predictions, defaults to None
-    :type prediction_preference: Preference, optional
     :param auto_apply_recs: automatically apply project recommendations, defaults to None
     :type auto_apply_recs: bool, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/update_project_v1_projects__project_id__put>`__
-    :type prediction_preference: dict, optional
+    :type prediction_params: dict, optional
     :param job_id: Databricks job ID, defaults to None
     :type job_id: str, optional
     :param optimize_instance_size: flag to turn on/off instance size recommendations, defaults to None
@@ -167,8 +147,6 @@ def update_project(
         project_update["cluster_log_url"] = cluster_log_url
     if app_id:
         project_update["app_id"] = app_id
-    if prediction_preference:
-        project_update["prediction_preference"] = prediction_preference
     if auto_apply_recs is not None:
         project_update["auto_apply_recs"] = auto_apply_recs
     if prediction_params:
@@ -247,7 +225,7 @@ def create_project_submission(
 ) -> Response[str]:
     """Create a submission
 
-    :param platform: platform, e.g. "aws-emr"
+    :param platform: platform, e.g. "aws-databricks"
     :type platform: Platform
     :param cluster_report: cluster report
     :type cluster_report: dict
@@ -326,7 +304,7 @@ def create_project_submission_with_eventlog_bytes(
 ) -> Response[str]:
     """Creates a submission given event log bytes instead of a URL
 
-    :param platform: platform, e.g. "aws-emr"
+    :param platform: platform, e.g. "aws-databricks"
     :type platform: Platform
     :param cluster_report: cluster report
     :type cluster_report: dict
@@ -436,3 +414,81 @@ def get_project_submission(project_id: str, submission_id: str) -> Response[dict
         return Response(**response)
 
     return Response(result=response["result"])
+
+
+def get_latest_project_config_recommendation(
+    project_id: str,
+) -> Response[Union[AWSProjectConfiguration, AzureProjectConfiguration]]:
+    """Get Latest Project Configuration Recommendation.
+
+    :param project_id: project ID
+    :type project_id: str
+    :return: Project Configuration Recommendation object
+    :rtype: AWSProjectConfiguration or AzureProjectConfiguration
+    """
+    latest_recommendation = get_default_client().get_latest_project_recommendation(project_id)
+    if latest_recommendation.get("result"):
+        return Response(
+            result=latest_recommendation["result"][0]["recommendation"]["configuration"]
+        )
+
+
+def get_cluster_definition_and_recommendation(
+    project_id: str, cluster_spec_str: str
+) -> Response[dict]:
+    """Print Current Cluster Definition and Project Configuration Recommendatio.
+    Throws error if no cluster recommendation found for project
+
+    :param project_id: project ID
+    :type project_id: str
+    :param cluster_spec_str: Current Cluster Recommendation
+    :type cluster_spec_str: str
+    :return: Current Cluster Definition and Project Configuration Recommendation object
+    :rtype: dict
+    """
+    recommendation_response = get_latest_project_config_recommendation(project_id)
+    if not recommendation_response:
+        logger.info(f"No cluster recommendation found for {project_id}")
+        return Response(error=RecommendationError(message="Recommendation failed"))
+    response_str = json.dumps(recommendation_response.result)
+    return Response(
+        result={
+            "cluster_recommendation": json.loads(response_str),
+            "cluster_definition": json.loads(cluster_spec_str),
+        }
+    )
+
+
+def get_updated_cluster_defintion(
+    project_id: str, cluster_spec_str: str
+) -> Response[Union[AWSProjectConfiguration, AzureProjectConfiguration]]:
+    """Return Cluster Definition merged with Project Configuration Recommendations.
+
+    :param project_id: project ID
+    :type project_id: str
+    :param cluster_spec_str: Current Cluster Recommendation
+    :type cluster_spec_str: str
+    :return: Updated Cluster Definition with Project Configuration Recommendations
+    :rtype: AWSProjectConfiguration or AzureProjectConfiguration
+    """
+    rec_response = get_latest_project_config_recommendation(project_id)
+    if not rec_response.error:
+        # Convert Response result object to str
+        latest_rec_str = json.dumps(rec_response.result)
+        # Convert json string to json
+        latest_recommendation = json.loads(latest_rec_str)
+        cluster_definition = json.loads(cluster_spec_str)
+        #  num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
+        #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster
+        #  with `num_workers`) for a cluster that was originally autoscaled, we want to make sure to remove this
+        #  prior configuration
+        if "num_workers" in cluster_definition:
+            del cluster_definition["num_workers"]
+
+        if "autoscale" in cluster_definition:
+            del cluster_definition["autoscale"]
+
+        recommendation_cluster = deep_update(cluster_definition, latest_recommendation)
+        return Response(result=recommendation_cluster)
+    else:
+        return rec_response

@@ -5,3 +5,6 @@ __pycache__
 venv/*
 .idea/*
 .python-version
+.DS_Store
+.venv
+tmp

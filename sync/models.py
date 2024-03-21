@@ -4,21 +4,14 @@ Models used throughout this SDK
 
 from dataclasses import dataclass
 from enum import Enum, unique
-from typing import Callable, Generic, List, TypeVar, Union
+from typing import Callable, Dict, Generic, List, TypeVar, Union
 
 from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field, root_validator, validator
 from pydantic.generics import GenericModel
 
 
-class Preference(str, Enum):
-    PERFORMANCE = "performance"
-    BALANCED = "balanced"
-    ECONOMY = "economy"
-
-
 class Platform(str, Enum):
-    AWS_EMR = "aws-emr"
     AWS_DATABRICKS = "aws-databricks"
     AZURE_DATABRICKS = "azure-databricks"
 
@@ -72,10 +65,6 @@ class Error(BaseModel):
         return f"{self.code}: {self.message}"
 
 
-class PredictionError(Error):
-    code: str = Field("Prediction Error", const=True)
-
-
 class ProjectError(Error):
     code: str = Field("Project Error", const=True)
 
@@ -86,10 +75,6 @@ class RecommendationError(Error):
 
 class SubmissionError(Error):
     code: str = Field("Submission Error", const=True)
-
-
-class EMRError(Error):
-    code: str = Field("EMR Error", const=True)
 
 
 @unique
@@ -152,3 +137,41 @@ class Response(GenericModel, Generic[DataType]):
         if err is None and values.get("result") is None:
             raise ValueError("must provide result or error")
         return err
+
+
+class S3ClusterLogConfiguration(BaseModel):
+    destination: str
+    region: str
+    enable_encryption: bool
+    canned_acl: str
+
+
+class DBFSClusterLogConfiguration(BaseModel):
+    destination: str
+
+
+class AWSProjectConfiguration(BaseModel):
+    node_type_id: str
+    driver_node_type: str
+    custom_tags: Dict
+    cluster_log_conf: Union[S3ClusterLogConfiguration, DBFSClusterLogConfiguration]
+    cluster_name: str
+    num_workers: int
+    spark_version: str
+    runtime_engine: str
+    autoscale: Dict
+    spark_conf: Dict
+    aws_attributes: Dict
+    spark_env_vars: Dict
+
+
+class AzureProjectConfiguration(BaseModel):
+    node_type_id: str
+    driver_node_type: str
+    cluster_log_conf: DBFSClusterLogConfiguration
+    custom_tags: Dict
+    num_workers: int
+    spark_conf: Dict
+    spark_version: str
+    runtime_engine: str
+    azure_attributes: Dict

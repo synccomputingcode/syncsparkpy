@@ -10,99 +10,26 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from time import sleep
-from typing import Any, Collection, Dict, List, Set, Tuple, TypeVar, Union
+from typing import Collection, Dict, List, Set, Tuple, Union
 from urllib.parse import urlparse
 
 import boto3 as boto
 
-from sync.api.predictions import (
-    create_prediction_with_eventlog_bytes,
-    get_prediction,
-    get_predictions,
-    wait_for_final_prediction_status,
-)
-from sync.api.projects import (
-    create_project_recommendation,
-    create_project_submission_with_eventlog_bytes,
-    get_project,
-    get_project_recommendation,
-    wait_for_recommendation,
-)
+from sync.api import projects
 from sync.clients.databricks import get_default_client
-from sync.config import CONFIG
+from sync.config import CONFIG  # noqa F401
 from sync.models import (
     DatabricksAPIError,
     DatabricksClusterReport,
+    DatabricksComputeType,
     DatabricksError,
-    PredictionError,
+    DatabricksPlanType,
     Response,
 )
 from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file
+from sync.utils.json import deep_update
 
 logger = logging.getLogger(__name__)
-
-
-def create_prediction(
-    plan_type: str,
-    compute_type: str,
-    cluster: dict,
-    cluster_events: dict,
-    eventlog: bytes,
-    instances: dict = None,
-    instance_timelines: dict = None,
-    volumes: dict = None,
-    tasks: List[dict] = None,
-    project_id: str = None,
-) -> Response[str]:
-    """Create a Databricks prediction
-
-    :param plan_type: either "Standard", "Premium" or "Enterprise"
-    :type plan_type: str
-    :param compute_type: e.g. "Jobs Compute"
-    :type compute_type: str
-    :param cluster: The Databricks cluster definition as defined by -
-        https://docs.databricks.com/dev-tools/api/latest/clusters.html#get
-    :type cluster: dict
-    :param cluster_events: All events, including paginated events, for the cluster as defined by -
-        https://docs.databricks.com/dev-tools/api/latest/clusters.html#events
-        If the cluster is a long-running cluster, this should only include events relevant to the time window that a
-        run occurred in.
-    :type cluster_events: dict
-    :param eventlog: encoded event log zip
-    :type eventlog: bytes
-    :param instances: All EC2 Instances that were a part of the cluster. Expects a data format as is returned by
-        `boto3's EC2.describe_instances API <https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2/client/describe_instances.html>`_
-        Instances should be narrowed to just those instances relevant to the Databricks Run. This can be done by passing
-        a `tag:ClusterId` filter to the describe_instances call like -
-        ``Filters=[{"Name": "tag:ClusterId", "Values": ["my-dbx-clusterid"]}]``
-        If there are multiple pages of instances, all pages should be accumulated into 1 dictionary and passed to this
-        function
-    :type instances: dict, optional
-    :param volumes: The EBS volumes that were attached to this cluster
-    :type volumes: dict, optional
-    :param tasks: The Databricks Tasks associated with the cluster
-    :type tasks: List[dict]
-    :param project_id: Sync project ID, defaults to None
-    :type project_id: str, optional
-    :return: prediction ID
-    :rtype: Response[str]
-    """
-    return create_prediction_with_eventlog_bytes(
-        get_default_client().get_platform(),
-        {
-            "plan_type": plan_type,
-            "compute_type": compute_type,
-            "cluster": cluster,
-            "cluster_events": cluster_events,
-            "instances": instances,
-            "instance_timelines": instance_timelines,
-            "volumes": volumes,
-            "tasks": tasks,
-        },
-        "eventlog.zip",
-        eventlog,
-        project_id,
-    )
 
 
 def create_cluster(config: dict) -> Response[str]:
@@ -137,51 +64,30 @@ def get_cluster(cluster_id: str) -> Response[dict]:
     return Response(result=cluster)
 
 
-def create_prediction_for_run(
+def create_submission_with_cluster_info(
     run_id: str,
-    plan_type: str,
-    compute_type: str,
-    project_id: str = None,
-    allow_incomplete_cluster_report: bool = False,
-    exclude_tasks: Union[Collection[str], None] = None,
+    project_id: str,
+    cluster: Dict,
+    cluster_info: Dict,
+    cluster_activity_events: Dict,
+    plan_type: DatabricksPlanType,
+    compute_type: DatabricksComputeType,
 ) -> Response[str]:
-    """Create a prediction for the specified Databricks run.
+    """Create a Submission for the specified Databricks run given a cluster report"""
 
-    :param run_id: Databricks run ID
-    :type run_id: str
-    :param plan_type: either "Standard", "Premium" or "Enterprise"
-    :type plan_type: str
-    :param compute_type: e.g. "Jobs Compute"
-    :type compute_type: str
-    :param project_id: Sync project ID, defaults to None
-    :type project_id: str, optional
-    :param allow_incomplete_cluster_report: Whether creating a prediction with incomplete cluster report data should be allowable
-    :type allow_incomplete_cluster_report: bool, optional, defaults to False
-    :param exclude_tasks: Keys of tasks (task names) to exclude from the prediction
-    :type exclude_tasks: Collection[str], optional, defaults to None
-    :return: prediction ID
-    :rtype: Response[str]
-    """
     run = get_default_client().get_run(run_id)
 
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    cluster_path = None
-    if project_id:
-        project_response = get_project(project_id)
-        if project_response.error:
-            return project_response
-        cluster_path = project_response.result.get("cluster_path")
+    project_response = projects.get_project(project_id)
+    if project_response.error:
+        return project_response
+    cluster_path = project_response.result.get("cluster_path")
 
-    project_cluster_tasks = _get_project_cluster_tasks(run, project_id, cluster_path, exclude_tasks)
+    project_cluster_tasks = _get_project_cluster_tasks(run, project_id, cluster_path)
 
-    cluster_tasks = None
-    if project_id:
-        cluster_tasks = project_cluster_tasks.get(project_id)
-    elif len(project_cluster_tasks) == 1:
-        cluster_tasks = next(iter(project_cluster_tasks.values()))
-
+    cluster_tasks = project_cluster_tasks.get(project_id)
     if not cluster_tasks:
         return Response(
             error=DatabricksError(
@@ -189,37 +95,24 @@ def create_prediction_for_run(
             )
         )
 
-    cluster_id, tasks = cluster_tasks
+    _, tasks = cluster_tasks
 
-    return _create_prediction(
-        cluster_id, tasks, plan_type, compute_type, project_id, allow_incomplete_cluster_report
+    cluster_report = _create_cluster_report(
+        cluster=cluster,
+        cluster_info=cluster_info,
+        cluster_activity_events=cluster_activity_events,
+        tasks=tasks,
+        plan_type=plan_type,
+        compute_type=compute_type,
     )
+    eventlog = _get_event_log_from_cluster(cluster, tasks).result
 
-
-def _create_prediction(
-    cluster_id: str,
-    tasks: List[dict],
-    plan_type: str,
-    compute_type: str,
-    project_id: str = None,
-    allow_incomplete_cluster_report: bool = False,
-):
-    run_information_response = _get_run_information(
-        cluster_id,
-        tasks,
-        plan_type,
-        compute_type,
-        allow_incomplete_cluster_report=allow_incomplete_cluster_report,
-    )
-
-    if run_information_response.error:
-        return run_information_response
-
-    cluster_report, eventlog = run_information_response.result
-    return create_prediction(
-        **cluster_report.dict(exclude_none=True),
-        eventlog=eventlog,
-        project_id=project_id,
+    return projects.create_project_submission_with_eventlog_bytes(
+        get_default_client().get_platform(),
+        cluster_report.dict(exclude_none=True),
+        "eventlog.zip",
+        eventlog,
+        project_id,
     )
 
 
@@ -253,7 +146,7 @@ def create_submission_for_run(
     if "error_code" in run:
         return Response(error=DatabricksAPIError(**run))
 
-    project_response = get_project(project_id)
+    project_response = projects.get_project(project_id)
     if project_response.error:
         return project_response
     cluster_path = project_response.result.get("cluster_path")
@@ -296,7 +189,7 @@ def _create_submission(
         return run_information_response
 
     cluster_report, eventlog = run_information_response.result
-    return create_project_submission_with_eventlog_bytes(
+    return projects.create_project_submission_with_eventlog_bytes(
         get_default_client().get_platform(),
         cluster_report.dict(exclude_none=True),
         "eventlog.zip",
@@ -327,17 +220,25 @@ def _get_run_information(
     cluster_report = cluster_report_response.result
     if cluster_report:
         cluster = cluster_report.cluster
-        spark_context_id = _get_run_spark_context_id(tasks)
-        end_time = max(task["end_time"] for task in tasks)
-        eventlog_response = _get_eventlog(cluster, spark_context_id.result, end_time)
-
+        eventlog_response = _get_event_log_from_cluster(cluster, tasks)
         eventlog = eventlog_response.result
         if eventlog:
-            # TODO - allow submissions w/out eventlog. Best way to make eventlog optional?..
             return Response(result=(cluster_report, eventlog))
 
-        return eventlog_response
     return cluster_report_response
+
+
+def _get_event_log_from_cluster(cluster: Dict, tasks: List[Dict]) -> Response[bytes]:
+    spark_context_id = _get_run_spark_context_id(tasks)
+    end_time = max(task["end_time"] for task in tasks)
+    eventlog_response = _get_eventlog(cluster, spark_context_id.result, end_time)
+
+    eventlog = eventlog_response.result
+    if eventlog:
+        # TODO - allow submissions w/out eventlog. Best way to make eventlog optional?..
+        return Response(result=eventlog)
+
+    return eventlog_response  # return eventlog response with errors
 
 
 def get_cluster_report(
@@ -372,7 +273,7 @@ def get_cluster_report(
 
     cluster_path = None
     if project_id:
-        project_response = get_project(project_id)
+        project_response = projects.get_project(project_id)
         if project_response.error:
             return project_response
         cluster_path = project_response.result.get("cluster_path")
@@ -404,6 +305,17 @@ def _get_cluster_report(
     compute_type: str,
     allow_incomplete: bool,
 ) -> Response[DatabricksClusterReport]:
+    raise NotImplementedError()
+
+
+def _create_cluster_report(
+    cluster: dict,
+    cluster_info: dict,
+    cluster_activity_events: dict,
+    tasks: List[dict],
+    plan_type: DatabricksPlanType,
+    compute_type: DatabricksComputeType,
+) -> DatabricksClusterReport:
     raise NotImplementedError()
 
 
@@ -457,7 +369,7 @@ def handle_successful_job_run(
         return submission_response
 
     for project_id, submission_id in submission_response.result.items():
-        project_response = get_project(project_id)
+        project_response = projects.get_project(project_id)
 
         if project_response.error:
             logger.error(f"Failed to retrieve project {project_id} - {project_response.error}")
@@ -472,14 +384,6 @@ def handle_successful_job_run(
                 if recommendation_response.error:
                     logger.error(
                         f"Failed to create and apply project {project_id} recommendation to job {job_id} - {recommendation_response.error}"
-                    )
-            elif project["project_model_id"] == "AUTOTUNER":
-                prediction_response = wait_for_and_apply_prediction(
-                    project_id, submission_id, job_id
-                )
-                if prediction_response.error:
-                    logger.error(
-                        f"Failed to apply prediction {submission_id} to job {job_id} - {prediction_response.error}"
                     )
             else:
                 logger.error(
@@ -499,47 +403,19 @@ def create_and_apply_project_recommendation(project_id: str, job_id: str) -> Res
     :return: ID of applied recommendation
     :rtype: Response[str]
     """
-    recommendation_response = create_project_recommendation(project_id)
+    recommendation_response = projects.create_project_recommendation(project_id)
 
     if recommendation_response.error:
         return recommendation_response
 
     recommendation_id = recommendation_response.result
 
-    recommendation_wait_response = wait_for_recommendation(project_id, recommendation_id)
+    recommendation_wait_response = projects.wait_for_recommendation(project_id, recommendation_id)
 
     if recommendation_wait_response.error:
         return recommendation_wait_response
 
     return apply_project_recommendation(job_id, project_id, recommendation_id)
-
-
-def wait_for_and_apply_prediction(
-    project_id: str, prediction_id: str, job_id: str
-) -> Response[str]:
-    """Wait for prediction and apply it to the job
-
-    :param project_id: ID of project for job
-    :type project_id: str
-    :param prediction_id: ID of project for job
-    :type prediction_id: str
-    :param job_id: ID of job to which the recommendation should be applied
-    :type job_id: str
-    :return: ID of applied recommendation
-    :rtype: Response[str]
-    """
-    prediction_status_response = wait_for_final_prediction_status(prediction_id)
-
-    if prediction_status_response.error:
-        return prediction_status_response
-
-    prediction_status = prediction_status_response.result
-    if prediction_status == "SUCCESS":
-        return apply_prediction(job_id, project_id, prediction_id)
-
-    return Response(
-        error=PredictionError(f"Prediction {prediction_id} failed. Status: {prediction_status}")
-    )
 
 
 def record_run(
@@ -577,7 +453,7 @@ def record_run(
 
     cluster_path = None
     if project_id:
-        project_response = get_project(project_id)
+        project_response = projects.get_project(project_id)
         if project_response.error:
             return project_response
         cluster_path = project_response.result.get("cluster_path")
@@ -610,7 +486,7 @@ def _record_project_clusters(
     """Creates project submissions/predictions and returns a map of project IDs to the new submissions/predictions IDs"""
     result_ids = {}
     for cluster_project_id, (cluster_id, tasks) in project_cluster_tasks.items():
-        project_response = get_project(cluster_project_id)
+        project_response = projects.get_project(cluster_project_id)
 
         if project_response.error:
             logger.error(
@@ -622,15 +498,6 @@ def _record_project_clusters(
 
         if project["project_model_id"] in {"GRADIENT_ML", "UNASSIGNED"}:
             submission_response = _create_submission(
-                cluster_id,
-                tasks,
-                plan_type,
-                compute_type,
-                cluster_project_id,
-                allow_incomplete_cluster_report,
-            )
-        elif project["project_model_id"] == "AUTOTUNER":
-            submission_response = _create_prediction(
                 cluster_id,
                 tasks,
                 plan_type,
@@ -653,170 +520,6 @@ def _record_project_clusters(
             )
 
     return result_ids
-
-
-def apply_prediction(
-    job_id: str, project_id: str, prediction_id: str = None, preference: str = None
-):
-    """Updates jobs with prediction configuration
-
-    :param job_id: ID of job to apply prediction to
-    :type job_id: str
-    :param project_id: Sync project ID
-    :type project_id: str
-    :param prediction_id: Sync prediction ID, defaults to latest in project
-    :type prediction_id: str, optional
-    :param preference: Prediction preference, defaults to "recommended" then "economy"
-    :type preference: str, optional
-    :return: ID of applied prediction
-    :rtype: Response[str]
-    """
-    if prediction_id:
-        prediction_response = get_prediction(prediction_id, preference)
-    else:
-        predictions_response = get_predictions(project_id=project_id)
-        if predictions_response.error:
-            return predictions_response
-        prediction_id = predictions_response.result[0]["prediction_id"]
-        prediction_response = get_prediction(prediction_id, preference)
-
-    if prediction_response.error:
-        return prediction_response
-
-    prediction = prediction_response.result
-
-    databricks_client = get_default_client()
-
-    job = databricks_client.get_job(job_id)
-    job_clusters = _get_project_job_clusters(job)
-
-    project_cluster = job_clusters.get(project_id)
-    if not project_cluster:
-        if len(job_clusters) == 1:
-            project_cluster = next(iter(job_clusters.values()))
-        else:
-            return Response(
-                error=DatabricksError(
-                    message=f"Failed to locate cluster in job {job_id} for project {project_id}"
-                )
-            )
-
-    project_cluster_path, _ = project_cluster
-
-    if preference:
-        prediction_cluster = prediction["solutions"][preference]["configuration"]
-    else:
-        prediction_cluster = prediction["solutions"].get(
-            "recommended", prediction["solutions"]["economy"]
-        )["configuration"]
-
-    if "cluster_name" in prediction_cluster:
-        del prediction_cluster["cluster_name"]
-
-    if project_cluster_path[0] == "job_clusters":
-        new_settings = {
-            "job_clusters": [
-                {"job_cluster_key": project_cluster_path[1], "new_cluster": prediction_cluster}
-            ]
-        }
-    else:
-        new_settings = {
-            "tasks": [{"task_key": project_cluster_path[1], "new_cluster": prediction_cluster}]
-        }
-
-    response = databricks_client.update_job(job_id, new_settings)
-
-    if "error_code" in response:
-        return Response(error=DatabricksAPIError(**response))
-
-    return Response(result=prediction_id)
-
-
-def get_prediction_job(
-    job_id: str, prediction_id: str, preference: str = CONFIG.default_prediction_preference.value
-) -> Response[dict]:
-    """Apply the prediction to the specified job.
-
-    The basis job can only have tasks that run on the same cluster. That cluster is updated with the
-    configuration from the prediction and returned in the result job configuration. Use this function
-    to apply a prediction to an existing job or test a prediction with a one-off run.
-
-    :param job_id: basis job ID
-    :type job_id: str
-    :param prediction_id: prediction ID
-    :type prediction_id: str
-    :param preference: preferred prediction solution, defaults to local configuration
-    :type preference: str, optional
-    :return: job object with prediction applied to it
-    :rtype: Response[dict]
-    """
-    job = get_default_client().get_job(job_id)
-    if "error_code" in job:
-        return Response(error=DatabricksAPIError(**job))
-
-    job_settings = job["settings"]
-    tasks = job_settings.get("tasks", [])
-    if tasks:
-        cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
-        cluster = cluster_response.result
-        if cluster:
-            prediction_cluster_response = get_prediction_cluster(cluster, prediction_id, preference)
-            prediction_cluster = prediction_cluster_response.result
-            if prediction_cluster:
-                cluster_key = tasks[0].get("job_cluster_key")
-                if cluster_key:
-                    job_settings["job_clusters"] = [
-                        j
-                        for j in job_settings["job_clusters"]
-                        if j.get("job_cluster_key") != cluster_key
-                    ] + [{"job_cluster_key": cluster_key, "new_cluster": prediction_cluster}]
-                else:
-                    # For `new_cluster` definitions, Databricks will automatically assign the newly created cluster a name,
-                    # and will reject any run submissions where the `cluster_name` is pre-populated
-                    if "cluster_name" in prediction_cluster:
-                        del prediction_cluster["cluster_name"]
-                    tasks[0]["new_cluster"] = prediction_cluster
-                return Response(result=job)
-            return prediction_cluster_response
-        return cluster_response
-    return Response(error=DatabricksError(message="No task found in job"))
-
-
-def get_prediction_cluster(
-    cluster: dict, prediction_id: str, preference: str = CONFIG.default_prediction_preference.value
-) -> Response[dict]:
-    """Apply the prediction to the provided cluster.
-
-    The cluster is updated with configuration from the prediction and returned in the result.
-
-    :param cluster: Databricks cluster object
-    :type cluster: dict
-    :param prediction_id: prediction ID
-    :type prediction_id: str
-    :param preference: preferred prediction solution, defaults to local configuration
-    :type preference: str, optional
-    :return: job object with prediction applied to it
-    :rtype: Response[dict]
-    """
-    prediction_response = get_prediction(prediction_id)
-    prediction = prediction_response.result
-    if prediction:
-        # num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
-        #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster
-        #  with `num_workers`) for a cluster that was originally autoscaled, we want to make sure to remove this
-        #  prior configuration
-        if "num_workers" in cluster:
-            del cluster["num_workers"]
-
-        if "autoscale" in cluster:
-            del cluster["autoscale"]
-
-        prediction_cluster = _deep_update(
-            cluster, prediction["solutions"][preference]["configuration"]
-        )
-
-        return Response(result=prediction_cluster)
-    return prediction_response
 
 
 def apply_project_recommendation(
@@ -944,7 +647,7 @@ def get_recommendation_cluster(
     :return: cluster object with prediction applied to it
     :rtype: Response[dict]
     """
-    recommendation_response = get_project_recommendation(project_id, recommendation_id)
+    recommendation_response = projects.get_project_recommendation(project_id, recommendation_id)
     recommendation = recommendation_response.result.get("recommendation")
     if recommendation:
         # num_workers/autoscale are mutually exclusive settings, and we are relying on our Prediction
@@ -957,7 +660,7 @@ def get_recommendation_cluster(
         if "autoscale" in cluster:
             del cluster["autoscale"]
 
-        recommendation_cluster = _deep_update(cluster, recommendation["configuration"])
+        recommendation_cluster = deep_update(cluster, recommendation["configuration"])
 
         return Response(result=recommendation_cluster)
     return recommendation_response
@@ -1025,7 +728,7 @@ def get_project_cluster(cluster: dict, project_id: str, region_name: str = None)
     project_settings_response = get_project_cluster_settings(project_id, region_name)
     project_cluster_settings = project_settings_response.result
     if project_cluster_settings:
-        project_cluster = _deep_update(cluster, project_cluster_settings)
+        project_cluster = deep_update(cluster, project_cluster_settings)
 
         return Response(result=project_cluster)
     return project_settings_response
@@ -1044,7 +747,7 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
     :return: project cluster settings - a subset of a Databricks cluster object
     :rtype: Response[dict]
     """
-    project_response = get_project(project_id)
+    project_response = projects.get_project(project_id)
     project = project_response.result
     if project:
         result = {
@@ -1139,28 +842,6 @@ def run_job_object(job: dict) -> Response[Tuple[str, str]]:
     return cluster_response
 
 
-def run_prediction(job_id: str, prediction_id: str, preference: str) -> Response[str]:
-    """Create a one-off Databricks run based on the prediction applied to the job.
-
-    :param job_id: job ID
-    :type job_id: str
-    :param prediction_id: prediction ID
-    :type prediction_id: str
-    :param preference: preferred prediction solution
-    :type preference: str
-    :return: run ID
-    :rtype: Response[str]
-    """
-    prediction_job_response = get_prediction_job(job_id, prediction_id, preference)
-    prediction_job = prediction_job_response.result
-    if prediction_job:
-        run_response = run_job_object(prediction_job)
-        if run_response.result:
-            return Response(result=run_response.result[0])
-        return run_response
-    return prediction_job_response
-
-
 def create_run(run: dict) -> Response[str]:
     """Creates a run based off the incoming Databricks run configuration
 
@@ -1174,41 +855,6 @@ def create_run(run: dict) -> Response[str]:
         return Response(error=DatabricksAPIError(**run_result))
 
     return Response(result=run_result["run_id"])
-
-
-def run_and_record_prediction_job(
-    job_id: str,
-    prediction_id: str,
-    plan_type: str,
-    compute_type: str,
-    project_id: str = None,
-    preference: str = CONFIG.default_prediction_preference.value,
-) -> Response[str]:
-    """Run a prediction applied to the specified job and record the result.
-
-    This function waits for the run to complete before creating a new prediction based on that run.
-    If a project is specified the new prediction is added to it.
-
-    :param job_id: basis job ID
-    :type job_id: str
-    :param prediction_id: project ID
-    :type prediction_id: str
-    :param plan_type: either "Standard", "Premium" or "Enterprise"
-    :type plan_type: str
-    :param compute_type: e.g. "Jobs Compute"
-    :type compute_type: str
-    :param project_id: Sync project ID, defaults to None
-    :type project_id: str, optional
-    :param preference: preferred prediction solution, defaults to local configuration
-    :type preference: str, optional
-    :return: prediction ID
-    :rtype: Response[str]
-    """
-    prediction_job_response = get_prediction_job(job_id, prediction_id, preference)
-    prediction_job = prediction_job_response.result
-    if prediction_job:
-        return run_and_record_job_object(prediction_job, plan_type, compute_type, project_id)
-    return prediction_job_response
 
 
 def run_and_record_project_job(
@@ -1926,7 +1572,7 @@ def _get_eventlog(
         return Response(error=DatabricksError(message=f"Unknown log destination: {filesystem}"))
 
 
-def _get_all_cluster_events(cluster_id: str):
+def get_all_cluster_events(cluster_id: str):
     """Fetches all ClusterEvents for a given Databricks cluster, optionally within a time window.
     Pages will be followed and returned as 1 object
     """
@@ -1993,24 +1639,3 @@ def _update_monitored_timelines(
             retired_inst_timeline_list.append(active_timelines_by_id.pop(id))
 
     return active_timelines_by_id, retired_inst_timeline_list
-
-
-KeyType = TypeVar("KeyType")
-
-
-def _deep_update(
-    mapping: Dict[KeyType, Any], *updating_mappings: Dict[KeyType, Any]
-) -> Dict[KeyType, Any]:
-    updated_mapping = mapping.copy()
-    for updating_mapping in updating_mappings:
-        for k, v in updating_mapping.items():
-            if k in updated_mapping:
-                if isinstance(updated_mapping[k], dict) and isinstance(v, dict):
-                    updated_mapping[k] = _deep_update(updated_mapping[k], v)
-                elif isinstance(updated_mapping[k], list) and isinstance(v, list):
-                    updated_mapping[k] += v
-                else:
-                    updated_mapping[k] = v
-            else:
-                updated_mapping[k] = v
-    return updated_mapping

@@ -15,22 +15,19 @@ from azure.mgmt.resource import ResourceManagementClient
 import sync._databricks
 from sync._databricks import (
     _cluster_log_destination,
-    _get_all_cluster_events,
+    get_all_cluster_events,
     _get_cluster_instances_from_dbfs,
     _update_monitored_timelines,
     _wait_for_cluster_termination,
-    apply_prediction,
     apply_project_recommendation,
     create_and_record_run,
     create_and_wait_for_run,
     create_cluster,
-    create_prediction_for_run,
     create_run,
     create_submission_for_run,
+    create_submission_with_cluster_info,
     get_cluster,
     get_cluster_report,
-    get_prediction_cluster,
-    get_prediction_job,
     get_project_cluster,
     get_project_cluster_settings,
     get_project_job,
@@ -39,10 +36,8 @@ from sync._databricks import (
     record_run,
     run_and_record_job,
     run_and_record_job_object,
-    run_and_record_prediction_job,
     run_and_record_project_job,
     run_job_object,
-    run_prediction,
     terminate_cluster,
     wait_for_and_record_run,
     wait_for_final_run_status,
@@ -56,6 +51,8 @@ from sync.models import (
     AccessStatusCode,
     AzureDatabricksClusterReport,
     DatabricksError,
+    DatabricksPlanType,
+    DatabricksComputeType,
     Response,
 )
 from sync.utils.dbfs import format_dbfs_filepath, write_dbfs_file
@@ -63,18 +60,16 @@ from sync.utils.json import DefaultDateTimeEncoder
 
 __all__ = [
     "get_access_report",
-    "run_prediction",
     "run_and_record_job",
     "monitor_cluster",
     "create_cluster",
     "get_cluster",
-    "create_prediction_for_run",
     "create_submission_for_run",
+    "create_submission_with_cluster_info",
     "get_cluster_report",
+    "get_all_cluster_events",
     "handle_successful_job_run",
     "record_run",
-    "get_prediction_job",
-    "get_prediction_cluster",
     "get_project_cluster",
     "get_project_job",
     "get_recommendation_job",
@@ -82,7 +77,6 @@ __all__ = [
     "get_project_cluster_settings",
     "run_job_object",
     "create_run",
-    "run_and_record_prediction_job",
     "run_and_record_project_job",
     "run_and_record_job_object",
     "create_and_record_run",
@@ -91,7 +85,6 @@ __all__ = [
     "wait_for_final_run_status",
     "wait_for_run_and_cluster",
     "terminate_cluster",
-    "apply_prediction",
     "apply_project_recommendation",
 ]
 
@@ -221,7 +214,7 @@ def _get_cluster_report(
         else:
             return instances
 
-    cluster_events = _get_all_cluster_events(cluster_id)
+    cluster_events = get_all_cluster_events(cluster_id)
     return Response(
         result=AzureDatabricksClusterReport(
             plan_type=plan_type,
@@ -235,6 +228,25 @@ def _get_cluster_report(
     )
 
 
+def _create_cluster_report(
+        cluster: dict,
+        cluster_info: dict,
+        cluster_activity_events: dict,
+        tasks: List[dict],
+        plan_type: DatabricksPlanType,
+        compute_type: DatabricksComputeType
+) -> AzureDatabricksClusterReport:
+    return AzureDatabricksClusterReport(
+        plan_type=plan_type,
+        compute_type=compute_type,
+        cluster=cluster,
+        cluster_events=cluster_activity_events,
+        tasks=tasks,
+        instances=cluster_info.get("instances"),
+        instance_timelines=cluster_info.get("timelines")
+    )
+
+
 if getattr(sync._databricks, "__claim", __name__) != __name__:
     # Unless building documentation you can't load both databricks modules in the same program
     if not sys.argv[0].endswith("sphinx-build"):
@@ -243,6 +255,7 @@ if getattr(sync._databricks, "__claim", __name__) != __name__:
         )
 
 sync._databricks._get_cluster_report = _get_cluster_report
+sync._databricks._create_cluster_report = _create_cluster_report
 setattr(sync._databricks, "__claim", __name__)
 
 

@@ -4,13 +4,11 @@ Utilities providing configuration to the SDK
 
 import json
 from pathlib import Path
-from typing import Any, Callable, Dict, Union
+from typing import Any, Callable, Dict
 from urllib.parse import urlparse
 
 import boto3 as boto
-from pydantic import BaseSettings, Field, validator, Extra
-
-from .models import Preference
+from pydantic import BaseSettings, Extra, Field, validator
 
 CREDENTIALS_FILE = "credentials"
 CONFIG_FILE = "config"
@@ -39,7 +37,6 @@ class APIKey(BaseSettings):
 
 
 class Configuration(BaseSettings):
-    default_prediction_preference: Union[Preference, None] = Preference.ECONOMY
     api_url: str = Field("https://api.synccomputing.com", env="SYNC_API_URL")
 
     class Config:
@@ -119,6 +116,14 @@ def get_api_key() -> APIKey:
     return _api_key
 
 
+def set_api_key(api_key: APIKey):
+    global _api_key
+    if _api_key is not None:
+        raise RuntimeError("Sync API key/secret has already been set and the library does not support resetting "
+                           "credentials")
+    _api_key = api_key
+
+
 def get_config() -> Configuration:
     """Gets configuration
 
@@ -139,6 +144,14 @@ def get_databricks_config() -> DatabricksConf:
         except ValueError:
             pass
     return _db_config
+
+
+def set_databricks_config(db_config: DatabricksConf):
+    global _db_config
+    if _db_config is not None:
+        raise RuntimeError("Databricks config has already been set and the library does not support resetting "
+                           "credentials")
+    _db_config = db_config
 
 
 CONFIG: Configuration

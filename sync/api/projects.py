@@ -112,7 +112,8 @@ def update_project(
     app_id: str = None,
     auto_apply_recs: bool = None,
     prediction_params: dict = None,
-    optimize_instance_size=None,
+    job_id: str = None,
+    optimize_instance_size: bool = None,
 ) -> Response[dict]:
     """Updates a project's mutable properties
 
@@ -131,6 +132,11 @@ def update_project(
     :param auto_apply_recs: automatically apply project recommendations, defaults to None
     :type auto_apply_recs: bool, optional
     :param prediction_params: dictionary of prediction parameters, defaults to None. Valid options are documented `here <https://developers.synccomputing.com/reference/update_project_v1_projects__project_id__put>`__
+    :type prediction_params: dict, optional
+    :param job_id: Databricks job ID, defaults to None
+    :type job_id: str, optional
+    :param optimize_instance_size: flag to turn on/off instance size recommendations, defaults to None
+    :type optimize_instance_size: bool, optional
     :return: updated project
     :rtype: Response[dict]
     """
@@ -145,6 +151,8 @@ def update_project(
         project_update["auto_apply_recs"] = auto_apply_recs
     if prediction_params:
         project_update["prediction_params"] = prediction_params
+    if job_id:
+        project_update["job_id"] = job_id
     if cluster_path:
         project_update["cluster_path"] = cluster_path
     if workspace_id:

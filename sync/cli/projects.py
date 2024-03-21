@@ -120,6 +120,8 @@ def update(
     cluster_path: str = None,
     workspace_id: str = None,
     auto_apply_recs: bool = None,
+    job_id: str = None,
+    optimize_instance_size: bool = None,
 ):
     """Update a project"""
     response = update_project(
@@ -130,6 +132,8 @@ def update(
         cluster_path=cluster_path,
         workspace_id=workspace_id,
         auto_apply_recs=auto_apply_recs,
+        job_id=job_id,
+        optimize_instance_size=optimize_instance_size,
     )
     if response.result:
         click.echo("Project updated")

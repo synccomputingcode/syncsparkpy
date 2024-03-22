@@ -4,12 +4,12 @@ import os
 import sys
 from pathlib import Path
 from time import sleep
-from typing import Dict, List, Optional, Type, TypeVar
+from typing import Dict, List, Optional, Type, TypeVar, Union
 from urllib.parse import urlparse
 
 from azure.common.credentials import get_cli_profile
 from azure.core.exceptions import ClientAuthenticationError
-from azure.identity import DefaultAzureCredential
+from azure.identity import DefaultAzureCredential, ClientSecretCredential
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.resource import ResourceManagementClient
 
@@ -125,7 +125,7 @@ def get_access_report(log_url: str = None) -> AccessReport:
         )
 
     try:
-        DefaultAzureCredential().get_token("https://management.azure.com/.default")
+        get_azure_credential().get_token("https://management.azure.com/.default")
         report.append(
             AccessReportLine(
                 name="Azure Authentication",
@@ -463,6 +463,27 @@ _azure_subscription_id = None
 AzureClient = TypeVar("AzureClient")
 
 
+def get_azure_credential() -> Union[ClientSecretCredential, DefaultAzureCredential]:
+    global _azure_credential
+    if _azure_credential is None:
+        _azure_credential = DefaultAzureCredential()
+    return _azure_credential
+
+
+def set_azure_client_credentials(
+    azure_subscription_id: str, azure_credential: ClientSecretCredential
+):
+    global _azure_subscription_id
+    if _azure_subscription_id is not None:
+        raise RuntimeError("Azure client credentials already set, cannot reset subscription id")
+    _azure_subscription_id = azure_subscription_id
+
+    global _azure_credential
+    if _azure_credential is not None:
+        raise RuntimeError("Azure client credentials already set, cannot reset credentials")
+    _azure_credential = azure_credential
+
+
 def _get_azure_client(azure_client_class: Type[AzureClient]) -> AzureClient:
     global _azure_subscription_id
     if not _azure_subscription_id:
@@ -470,13 +491,19 @@ def _get_azure_client(azure_client_class: Type[AzureClient]) -> AzureClient:
 
     global _azure_credential
     if not _azure_credential:
-        _azure_credential = DefaultAzureCredential()
+        _azure_credential = get_azure_credential()
 
     return azure_client_class(_azure_credential, _azure_subscription_id)
 
 
 def _get_azure_subscription_id():
-    return os.getenv("AZURE_SUBSCRIPTION_ID") or get_cli_profile().get_login_credentials()[1]
+    global _azure_subscription_id
+    subscription_id = (
+        _azure_subscription_id
+        or os.getenv("AZURE_SUBSCRIPTION_ID")
+        or get_cli_profile().get_login_credentials()[1]
+    )
+    return subscription_id
 
 
 def _get_running_vms_by_id(

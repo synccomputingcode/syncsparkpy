@@ -1,14 +1,15 @@
+import sys
+import os
+import sync
+
 # Configuration file for the Sphinx documentation builder.
 #
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
-import sys
-import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-import sync
 
 rst_epilog = """
 .. |version| replace:: {project_version}

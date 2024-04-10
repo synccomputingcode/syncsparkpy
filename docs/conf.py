@@ -5,11 +5,17 @@
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+from sync import __version__
+
+rst_epilog = """
+.. version replace:: {project_version}
+""".format(
+    project_version=__version__,
+)
 
 project = "Sync Library"
 copyright = "2022, Sync Computing"
 author = "Sync Computing"
-release = "0.0.1"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -18,7 +24,6 @@ extensions = ["sphinx.ext.autodoc", "sphinx.ext.todo"]
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
-
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output

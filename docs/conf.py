@@ -2,15 +2,18 @@
 #
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
-
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
-from sync import __version__
+import sys
+import os
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import sync
 
 rst_epilog = """
-.. version replace:: {project_version}
+.. |version| replace:: {project_version}
 """.format(
-    project_version=__version__,
+    project_version=sync.__version__,
 )
 
 project = "Sync Library"

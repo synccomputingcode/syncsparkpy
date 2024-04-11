@@ -7,6 +7,7 @@ from sync.api.projects import (
     delete_project,
     get_project,
     get_projects,
+    get_submissions,
     reset_project,
     update_project,
 )
@@ -165,3 +166,48 @@ def delete(project: dict):
         click.echo(response.result)
     else:
         click.echo(str(response.error), err=True)
+
+
+@projects.command
+@click.argument("project", callback=validate_project)
+@click.option(
+    "--success-only",
+    is_flag=True,
+    default=False,
+    help="Only show the most recent successful submission",
+)
+def get_latest_submission_config(project: dict, success_only: bool = False):
+    """
+    Get the latest submission configuration for a project.
+    """
+
+    try:
+        submissions = get_submissions(project["id"]).result
+        print(get_submissions(project["id"]).result)
+    except AttributeError as e:
+        click.echo(f"Failed to retrieve submissions. {e}", err=True)
+        return
+
+    if not submissions:
+        click.echo("No submissions found.", err=True)
+        return
+
+    if success_only:
+        latest_successful_submission = next(
+            (submission for submission in submissions if submission["state"] == "SUCCESS"), None
+        )
+
+        if not latest_successful_submission:
+            click.echo("No successful submissions found.", err=True)
+            return
+
+        submission_to_show = latest_successful_submission
+    else:
+        submission_to_show = submissions[0]
+    click.echo(
+        json.dumps(
+            submission_to_show.get("configuration", {}),
+            indent=2,
+            cls=DateTimeEncoderNaiveUTCDropMicroseconds,
+        )
+    )

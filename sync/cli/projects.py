@@ -183,7 +183,6 @@ def get_latest_submission_config(project: dict, success_only: bool = False):
 
     try:
         submissions = get_submissions(project["id"]).result
-        print(get_submissions(project["id"]).result)
     except AttributeError as e:
         click.echo(f"Failed to retrieve submissions. {e}", err=True)
         return

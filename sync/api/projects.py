@@ -1,5 +1,6 @@
 """Project functions
 """
+
 import io
 import json
 import logging
@@ -416,6 +417,19 @@ def get_project_submission(project_id: str, submission_id: str) -> Response[dict
     return Response(result=response["result"])
 
 
+def get_submissions(project_id: str) -> Response[dict]:
+    """Get submissions for a project id
+
+    :param project_id: project ID
+    :type project_id: str
+    :return: List of Submission Configuration objects
+    :rtype: dict
+    """
+    recent_submissions = get_default_client().get_project_submissions(project_id)
+    if recent_submissions.get("result") and len(recent_submissions["result"]) > 0:
+        return Response(result=recent_submissions["result"])
+
+
 def get_latest_project_config_recommendation(
     project_id: str,
 ) -> Response[Union[AWSProjectConfiguration, AzureProjectConfiguration]]:
@@ -427,7 +441,7 @@ def get_latest_project_config_recommendation(
     :rtype: AWSProjectConfiguration or AzureProjectConfiguration
     """
     latest_recommendation = get_default_client().get_latest_project_recommendation(project_id)
-    if latest_recommendation.get("result"):
+    if latest_recommendation.get("result") and len(latest_recommendation["result"]) > 0:
         return Response(
             result=latest_recommendation["result"][0]["recommendation"]["configuration"]
         )
@@ -436,7 +450,7 @@ def get_latest_project_config_recommendation(
 def get_cluster_definition_and_recommendation(
     project_id: str, cluster_spec_str: str
 ) -> Response[dict]:
-    """Print Current Cluster Definition and Project Configuration Recommendatio.
+    """Print Current Cluster Definition and Project Configuration Recommendation.
     Throws error if no cluster recommendation found for project
 
     :param project_id: project ID

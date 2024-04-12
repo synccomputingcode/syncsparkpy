@@ -1,4 +1,6 @@
-from sync.api.projects import get_submissions
+from uuid import UUID
+
+from sync.api.projects import get_project_by_app_id, get_submissions
 
 
 class SubmissionRetrievalError(Exception):
@@ -13,22 +15,56 @@ class NoSuccessfulSubmissionsFoundError(SubmissionRetrievalError):
     """No successful submissions were found."""
 
 
-def get_latest_submission_config(project_id: str, success_only: bool = False) -> dict:
+class InvalidUUIDError(ValueError):
+    """Raised when the provided UUID is invalid."""
+
+
+class ProjectResolutionError(Exception):
+    """Raised when there is an error resolving the project ID."""
+
+
+def validate_uuid(value: str) -> str:
+    try:
+        UUID(value)
+        return value
+    except ValueError:
+        raise InvalidUUIDError(f"Invalid UUID: {value}")
+
+
+def resolve_project_id(value: str) -> str:
+    try:
+        return validate_uuid(value)
+    except InvalidUUIDError:
+        try:
+            project_response = get_project_by_app_id(value)
+            if project_response.error:
+                raise ProjectResolutionError(
+                    f"Error resolving project ID: {project_response.error}"
+                )
+            return project_response.result.get("id")
+        except Exception as e:
+            raise ProjectResolutionError(
+                f"An error occurred while resolving the project ID: {str(e)}"
+            )
+
+
+def get_latest_submission_config(app_id: str, success_only: bool = False) -> dict:
     """
     Get the latest submission configuration for a project.
 
-    :param project_id: Sync project ID
-    :type project_id: str
+    :param app_id: Sync project ID or application name
+    :type app_id: str
     :param success_only: Only show the most recent successful submission, if omitted shows the most
         recent submission regardless of state
     :type success_only: bool, optional
     """
 
     try:
+        project_id = resolve_project_id(app_id)
         submissions = get_submissions(project_id).result
     except Exception as e:
         raise SubmissionRetrievalError(
-            f"Failed to retrieve submissions for project '{project_id}'. {e}"
+            f"Failed to retrieve submissions for project '{app_id}'. {e}"
         ) from e
 
     if not submissions:

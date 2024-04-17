@@ -103,9 +103,7 @@ def create_workspace_config(
         compute_provider, databricks_host
     )
 
-    aws_region = (
-        aws_region if aws_region is None and compute_provider == ComputeProvider.AWS else None
-    )
+    aws_region = _prompt_aws_region(aws_region, compute_provider)
 
     hosting_type = _prompt_hosting_type(hosting_type)
     collection_type = _determine_collection_type(hosting_type)
@@ -154,6 +152,17 @@ def create_workspace_config(
         click.echo(json.dumps(config, indent=2, cls=DateTimeEncoderNaiveUTCDropMicroseconds))
     else:
         click.echo(str(response.error), err=True)
+
+
+def _prompt_aws_region(aws_region, compute_provider):
+    if compute_provider == ComputeProvider.AWS:
+        aws_region = aws_region or click.prompt(
+            "AWS Region",
+            type=click.Choice(AwsRegionEnum),
+            default=AwsRegionEnum.US_EAST_1,
+            show_default=True,
+        )
+    return aws_region
 
 
 def _prompt_aws_arn_info(aws_external_id, aws_iam_role_arn):

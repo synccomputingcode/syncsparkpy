@@ -157,8 +157,9 @@ def create_workspace_config(
 def _prompt_aws_region(aws_region, compute_provider):
     if compute_provider == ComputeProvider.AWS:
         aws_region = aws_region or click.prompt(
-            "AWS Region",
+            "AWS Region (e.g. us-east-1)",
             type=click.Choice(AwsRegionEnum),
+            show_choices=False,
             default=AwsRegionEnum.US_EAST_1,
             show_default=True,
         )

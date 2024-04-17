@@ -216,7 +216,9 @@ def _handle_azure_provider(
     azure_subscription_id = azure_subscription_id or click.prompt("Azure Subscription ID")
     azure_client_id = azure_client_id or click.prompt("Azure Client ID")
     azure_tenant_id = azure_tenant_id or click.prompt("Azure Tenant ID")
-    azure_client_secret = azure_client_secret or click.prompt("Azure Client Secret")
+    azure_client_secret = azure_client_secret or click.prompt(
+        "Azure Client Secret", hide_input=True
+    )
     return azure_client_id, azure_client_secret, azure_subscription_id, azure_tenant_id
 
 

@@ -252,23 +252,23 @@ class AwsHostedIAMInstructions(BaseModel):
     @property
     def step_2_value(self) -> str:
         return f"""
-        {{
-            "Version": "2012-10-17",
-            "Statement": [
-                {{
-                    "Effect": "Allow",
-                    "Principal": {{
-                        "AWS": "arn:aws:iam::533267411813:role/sync-computing-collector"
-                    }},
-                    "Action": "sts:AssumeRole",
-                    "Condition": {{
-                        "StringEquals": {{
-                            "sts:ExternalId": "{self.external_id}"
-                        }}
+    {{
+        "Version": "2012-10-17",
+        "Statement": [
+            {{
+                "Effect": "Allow",
+                "Principal": {{
+                    "AWS": "arn:aws:iam::533267411813:role/sync-computing-collector"
+                }},
+                "Action": "sts:AssumeRole",
+                "Condition": {{
+                    "StringEquals": {{
+                        "sts:ExternalId": "{self.external_id}"
                     }}
                 }}
-            ]
-        }}"""
+            }}
+        ]
+    }}"""
 
 
 class ComputeProviderHostedValues(BaseModel):

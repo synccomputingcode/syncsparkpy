@@ -96,7 +96,7 @@ class DatabricksClusterReport(BaseModel):
     compute_type: DatabricksComputeType
     cluster: dict
     cluster_events: dict
-    tasks: List[dict]
+    tasks: List[dict] | None = None
     instances: Union[List[dict], None]
     instance_timelines: Union[List[dict], None]
 

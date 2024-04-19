@@ -23,6 +23,7 @@ from sync._databricks import (
     create_run,
     create_submission_for_run,
     create_submission_with_cluster_info,
+    create_submission_for_dlt_pipeline_cluster,
     get_cluster,
     get_cluster_report,
     get_project_cluster,
@@ -61,6 +62,7 @@ __all__ = [
     "run_and_record_job",
     "create_submission_for_run",
     "create_submission_with_cluster_info",
+    "create_submission_for_dlt_pipeline_cluster",
     "get_cluster_report",
     "get_all_cluster_events",
     "monitor_cluster",
@@ -83,6 +85,7 @@ __all__ = [
     "wait_for_run_and_cluster",
     "terminate_cluster",
     "apply_project_recommendation",
+    "save_cluster_report",
 ]
 
 

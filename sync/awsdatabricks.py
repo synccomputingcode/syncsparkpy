@@ -350,6 +350,56 @@ def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
         logger.warning(f"Failed to retrieve cluster info from S3 with key, '{file_key}': {err}")
 
 
+def save_cluster_report(
+    cluster_id: str,
+    all_timelines: list[dict],
+    cluster_report_destination_override: dict[str, str],
+) -> bool:
+    cluster = get_default_client().get_cluster(cluster_id)
+    spark_context_id = cluster.get("spark_context_id")
+
+    if not spark_context_id:
+        return False
+
+    (log_url, filesystem, bucket, base_prefix) = _cluster_log_destination(cluster)
+    if cluster_report_destination_override:
+        filesystem = cluster_report_destination_override.get("filesystem", filesystem)
+        base_prefix = cluster_report_destination_override.get("base_prefix", base_prefix)
+
+    if not log_url and not cluster_report_destination_override:
+        logger.warning("Unable to save cluster report due to missing cluster log destination - exiting")
+        return False
+
+    # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
+    #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
+    #  we make sure to re-strip our final Prefix
+    file_key = f"{base_prefix}/sync_data/{spark_context_id}/aws_cluster_info.json".strip("/")
+
+    aws_region_name = DB_CONFIG.aws_region_name
+    ec2 = boto.client("ec2", region_name=aws_region_name)
+
+    current_insts = _get_ec2_instances(cluster_id, ec2)
+    ebs_volumes = _get_ebs_volumes_for_instances(current_insts, ec2)
+
+    write_file = _define_write_file(file_key, filesystem, bucket)
+
+    write_file(
+        bytes(
+            json.dumps(
+                {
+                    "instances": current_insts,
+                    "instance_timelines": all_timelines,
+                    "volumes": ebs_volumes,
+                },
+                cls=DefaultDateTimeEncoder,
+            ),
+            "utf-8",
+        )
+    )
+
+    return True
+
+
 def monitor_cluster(
     cluster_id: str,
     polling_period: int = 20,

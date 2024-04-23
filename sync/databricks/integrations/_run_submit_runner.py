@@ -37,7 +37,7 @@ def apply_sync_gradient_cluster_recommendation(
         else:
             logger.warning(f"Unable to generate recommendation. Falling back to original cluster - "
                            f"app_id: {gradient_app_id}, project_id: {project_id}, "
-                           f"auto_apply: {auto_apply}, cluster: {run_submit_task["new_cluster"]}")
+                           f"auto_apply: {auto_apply}, cluster: {run_submit_task['new_cluster']}")
             updated_cluster = run_submit_task["new_cluster"]
     else:
         updated_cluster = run_submit_task["new_cluster"]
@@ -46,7 +46,7 @@ def apply_sync_gradient_cluster_recommendation(
     if resp.result:
         configured_cluster = resp.result
         run_submit_task["new_cluster"] = configured_cluster
-        run_submit_task = apply_webhook_notification(workspace_id, run_submit_task)
+        run_submit_task = apply_webhook_notification(workspace_config, run_submit_task)
     else:
         logger.error("Unable to apply gradient configuration to databricks run submit call. "
                      "Submitting original run submit call.")

@@ -3,7 +3,8 @@ from sync.databricks.integrations._run_submit_runner import apply_sync_gradient_
 
 logger = logging.getLogger(__name__)
 
-def airflow_gradient_pre_execute_hook(context):
+
+def airflow_gradient_pre_execute_hook(context: dict):
     try:
         logger.info("Running airflow gradient pre-execute hook!")
         logger.debug(f"Airflow operator context - context:{context}")

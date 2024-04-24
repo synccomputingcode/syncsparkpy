@@ -13,6 +13,7 @@ compute_provider_platform_dict = {
     "azure": Platform.AZURE_DATABRICKS
 }
 
+
 def apply_sync_gradient_cluster_recommendation(
     run_submit_task: dict,
     gradient_app_id: str,
@@ -37,7 +38,7 @@ def apply_sync_gradient_cluster_recommendation(
         else:
             logger.warning(f"Unable to generate recommendation. Falling back to original cluster - "
                            f"app_id: {gradient_app_id}, project_id: {project_id}, "
-                           f"auto_apply: {auto_apply}, cluster: {run_submit_task["new_cluster"]}")
+                           f"auto_apply: {auto_apply}, cluster: {run_submit_task['new_cluster']}")
             updated_cluster = run_submit_task["new_cluster"]
     else:
         updated_cluster = run_submit_task["new_cluster"]
@@ -46,14 +47,15 @@ def apply_sync_gradient_cluster_recommendation(
     if resp.result:
         configured_cluster = resp.result
         run_submit_task["new_cluster"] = configured_cluster
-        run_submit_task = apply_webhook_notification(workspace_id, run_submit_task)
+        run_submit_task = apply_webhook_notification(workspace_config, run_submit_task)
     else:
         logger.error("Unable to apply gradient configuration to databricks run submit call. "
                      "Submitting original run submit call.")
 
     return run_submit_task
 
-def create_or_fetch_project(app_id: str, cluster_log_url: str, compute_provider: str):
+
+def create_or_fetch_project(app_id: str, cluster_log_url: str, compute_provider: str) -> str:
     resp = projects.get_project_by_app_id(app_id)
     if resp.result is None:
         logger.info(f"Project with app_id does not exist. Creating project - app_id:{app_id}, "
@@ -70,7 +72,7 @@ def create_or_fetch_project(app_id: str, cluster_log_url: str, compute_provider:
     return resp.result['id']
 
 
-def get_gradient_recommendation(project_id):
+def get_gradient_recommendation(project_id: str) -> dict:
     """
     Generates/retrieves the recommendation and returns the cluster configuration
 
@@ -85,11 +87,11 @@ def get_gradient_recommendation(project_id):
         return None
 
     response = projects.wait_for_recommendation(project_id, recommendation_id)
-    print(response)
+
     return response.result['recommendation']['configuration']
 
 
-def apply_webhook_notification(workspace_config, task):
+def apply_webhook_notification(workspace_config: dict, task: dict) -> dict:
     webhook_id = workspace_config["webhook_id"]
     if workspace_config.get("collection_type") == "hosted":
         task = append_webhook(task, webhook_id, "on_start")
@@ -98,11 +100,12 @@ def apply_webhook_notification(workspace_config, task):
     return task
 
 
-def append_webhook(task: dict, webhook_id: str, event: str):
+def append_webhook(task: dict, webhook_id: str, event: str) -> dict:
     webhook_request = {
         "id": webhook_id
     }
     task["webhook_notifications"] = task.get("webhook_notifications") or {}
     task["webhook_notifications"][event] = task["webhook_notifications"].get(event) or []
     task["webhook_notifications"][event].append(webhook_request)
+
     return task

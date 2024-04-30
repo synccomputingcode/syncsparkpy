@@ -114,6 +114,9 @@ class DatabricksClient(RetryableHTTPClient):
             self._client.build_request("GET", "/api/2.1/jobs/runs/get", params={"run_id": run_id})
         )
 
+    def get_dlt_pipeline(self, pipeline_id: str) -> dict:
+        return self._send(self._client.build_request("GET", f"/api/2.0/pipelines/{pipeline_id}"))
+
     def get_dlt_pipeline_update(self, pipeline_id: str, update_id: str) -> dict:
         return self._send(
             self._client.build_request(

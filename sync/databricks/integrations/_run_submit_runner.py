@@ -20,7 +20,8 @@ def apply_sync_gradient_cluster_recommendation(
         cluster_log_url: str,
         workspace_id: str,
 ) -> dict:
-    if tasks := run_submit_task.get("tasks"):
+    tasks = run_submit_task.get("tasks")
+    if tasks:
         if len(tasks) > 1:
             logger.error(
                 "Unable to apply gradient configuration for run submit " "with multiple tasks."

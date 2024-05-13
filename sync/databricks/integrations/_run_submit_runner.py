@@ -88,8 +88,7 @@ def create_or_fetch_project(app_id: str, cluster_log_url: str, compute_provider:
             name=app_id,
             app_id=app_id,
             cluster_log_url=cluster_log_url,
-            product_code=compute_provider_platform_dict.get(compute_provider)
-                         or Platform.AWS_DATABRICKS,
+            product_code=compute_provider_platform_dict.get(compute_provider) or Platform.AWS_DATABRICKS,
         )
     else:
         logger.info(f"Found project with app_id - app_id:{app_id}")

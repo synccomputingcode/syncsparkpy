@@ -4,6 +4,7 @@ from sync import _databricks as databricks
 from sync.api import projects
 from sync.api import workspace
 from sync.models import Platform
+from sync.utils.json import deep_update
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +15,11 @@ compute_provider_platform_dict = {
 
 
 def apply_sync_gradient_cluster_recommendation(
-        run_submit_task: dict,
-        gradient_app_id: str,
-        auto_apply: bool,
-        cluster_log_url: str,
-        workspace_id: str,
+    run_submit_task: dict,
+    gradient_app_id: str,
+    auto_apply: bool,
+    cluster_log_url: str,
+    workspace_id: str,
 ) -> dict:
     tasks = run_submit_task.get("tasks")
     if tasks:
@@ -43,13 +44,19 @@ def apply_sync_gradient_cluster_recommendation(
             f"Generating recommendation - app_id: {gradient_app_id}, project_id: {project_id}, "
             f"auto_apply: {auto_apply}"
         )
-        rec = get_gradient_recommendation(project_id)
-        if rec:
+        recommended_cluster = get_gradient_recommendation(project_id)
+        if recommended_cluster:
             logger.info(
                 f"Recommendation generated - app_id: {gradient_app_id}, project_id: {project_id}, "
-                f"recommendation: {rec}"
+                f"recommendation: {recommended_cluster}"
             )
-            updated_cluster = rec
+            if "num_workers" in original_cluster:
+                del original_cluster["num_workers"]
+
+            if "autoscale" in original_cluster:
+                del original_cluster["autoscale"]
+
+            updated_cluster = deep_update(original_cluster, recommended_cluster)
         else:
             logger.warning(
                 f"Unable to generate recommendation. Falling back to original cluster - "

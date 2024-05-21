@@ -48,6 +48,7 @@ def create_project(
     prediction_params: dict = None,
     app_id: str = None,
     optimize_instance_size: bool = False,
+    optimize_worker_instance: bool = False,
 ) -> Response[dict]:
     """Creates a Sync project for tracking and optimizing Apache Spark applications
 
@@ -88,6 +89,7 @@ def create_project(
                 "prediction_params": prediction_params,
                 "app_id": app_id,
                 "optimize_instance_size": optimize_instance_size,
+                "optimize_worker_instance": optimize_worker_instance,
             }
         )
     )
@@ -115,6 +117,7 @@ def update_project(
     prediction_params: dict = None,
     job_id: str = None,
     optimize_instance_size: bool = None,
+    optimize_worker_instance: bool = None,
 ) -> Response[dict]:
     """Updates a project's mutable properties
 
@@ -138,6 +141,8 @@ def update_project(
     :type job_id: str, optional
     :param optimize_instance_size: flag to turn on/off instance size recommendations, defaults to None
     :type optimize_instance_size: bool, optional
+    :param optimize_worker_instance: flag to turn on/off worker instance recommendations, defaults to None
+    :type optimize_worker_instance: bool, optional
     :return: updated project
     :rtype: Response[dict]
     """
@@ -160,6 +165,8 @@ def update_project(
         project_update["workspace_id"] = workspace_id
     if optimize_instance_size:
         project_update["optimize_instance_size"] = optimize_instance_size
+    if optimize_worker_instance:
+        project_update["optimize_worker_instance"] = optimize_worker_instance
 
     return Response(
         **get_default_client().update_project(

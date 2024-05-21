@@ -123,6 +123,7 @@ def update(
     auto_apply_recs: bool = None,
     job_id: str = None,
     optimize_instance_size: bool = None,
+    optimize_worker_instance: bool = None,
 ):
     """Update a project"""
     response = update_project(
@@ -135,6 +136,7 @@ def update(
         auto_apply_recs=auto_apply_recs,
         job_id=job_id,
         optimize_instance_size=optimize_instance_size,
+        optimize_worker_instance=optimize_worker_instance,
     )
     if response.result:
         click.echo("Project updated")

@@ -367,9 +367,11 @@ def monitor_cluster(
         spark_context_id = cluster.get("spark_context_id")
 
     (log_url, filesystem, bucket, base_prefix) = _cluster_log_destination(cluster)
+    write_function = None
     if cluster_report_destination_override:
         filesystem = cluster_report_destination_override.get("filesystem", filesystem)
         base_prefix = cluster_report_destination_override.get("base_prefix", base_prefix)
+        write_function = cluster_report_destination_override.get("write_function")
 
     if log_url or cluster_report_destination_override:
         _monitor_cluster(
@@ -378,6 +380,7 @@ def monitor_cluster(
             spark_context_id,
             polling_period,
             kill_on_termination,
+            write_function,
         )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
@@ -389,6 +392,7 @@ def _monitor_cluster(
     spark_context_id: int,
     polling_period: int,
     kill_on_termination: bool = False,
+    write_function=None,
 ) -> None:
 
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
@@ -400,7 +404,7 @@ def _monitor_cluster(
     aws_region_name = DB_CONFIG.aws_region_name
     ec2 = boto.client("ec2", region_name=aws_region_name)
 
-    write_file = _define_write_file(file_key, filesystem, bucket)
+    write_file = _define_write_file(file_key, filesystem, bucket, write_function)
 
     all_inst_by_id = {}
     active_timelines_by_id = {}
@@ -454,8 +458,16 @@ def _monitor_cluster(
         sleep(polling_period)
 
 
-def _define_write_file(file_key, filesystem, bucket):
-    if filesystem == "file":
+def _define_write_file(file_key, filesystem, bucket, write_function):
+    if filesystem == "lambda":
+        if write_function is None:
+            raise ValueError("write_function must be provided when using lambda filesystem")
+
+        def write_file(body: bytes):
+            logger.info("Using custom lambda function to write data")
+            write_function(body)
+
+    elif filesystem == "file":
         file_path = Path(file_key)
 
         def ensure_path_exists(report_path: Path):

@@ -9,14 +9,13 @@ from urllib.parse import urlparse
 
 from azure.common.credentials import get_cli_profile
 from azure.core.exceptions import ClientAuthenticationError
-from azure.identity import DefaultAzureCredential, ClientSecretCredential
+from azure.identity import ClientSecretCredential, DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.resource import ResourceManagementClient
 
 import sync._databricks
 from sync._databricks import (
     _cluster_log_destination,
-    get_all_cluster_events,
     _get_cluster_instances_from_dbfs,
     _update_monitored_timelines,
     _wait_for_cluster_termination,
@@ -27,6 +26,7 @@ from sync._databricks import (
     create_run,
     create_submission_for_run,
     create_submission_with_cluster_info,
+    get_all_cluster_events,
     get_cluster,
     get_cluster_report,
     get_project_cluster,
@@ -51,9 +51,9 @@ from sync.models import (
     AccessReportLine,
     AccessStatusCode,
     AzureDatabricksClusterReport,
+    DatabricksComputeType,
     DatabricksError,
     DatabricksPlanType,
-    DatabricksComputeType,
     Response,
 )
 from sync.utils.dbfs import format_dbfs_filepath, write_dbfs_file

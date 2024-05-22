@@ -460,8 +460,6 @@ def _monitor_cluster(
 
 def _define_write_file(file_key, filesystem, bucket, write_function):
     if filesystem == "lambda":
-        if write_function is None:
-            raise ValueError("write_function must be provided when using lambda filesystem")
 
         def write_file(body: bytes):
             logger.info("Using custom lambda function to write data")

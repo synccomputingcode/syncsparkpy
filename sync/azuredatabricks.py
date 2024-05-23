@@ -9,14 +9,13 @@ from urllib.parse import urlparse
 
 from azure.common.credentials import get_cli_profile
 from azure.core.exceptions import ClientAuthenticationError
-from azure.identity import DefaultAzureCredential, ClientSecretCredential
+from azure.identity import ClientSecretCredential, DefaultAzureCredential
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.resource import ResourceManagementClient
 
 import sync._databricks
 from sync._databricks import (
     _cluster_log_destination,
-    get_all_cluster_events,
     _get_cluster_instances_from_dbfs,
     _update_monitored_timelines,
     _wait_for_cluster_termination,
@@ -27,6 +26,7 @@ from sync._databricks import (
     create_run,
     create_submission_for_run,
     create_submission_with_cluster_info,
+    get_all_cluster_events,
     get_cluster,
     get_cluster_report,
     get_project_cluster,
@@ -51,9 +51,9 @@ from sync.models import (
     AccessReportLine,
     AccessStatusCode,
     AzureDatabricksClusterReport,
+    DatabricksComputeType,
     DatabricksError,
     DatabricksPlanType,
-    DatabricksComputeType,
     Response,
 )
 from sync.utils.dbfs import format_dbfs_filepath, write_dbfs_file
@@ -338,9 +338,11 @@ def monitor_cluster(
         spark_context_id = cluster.get("spark_context_id")
 
     (log_url, filesystem, bucket, base_prefix) = _cluster_log_destination(cluster)
+    write_function = None
     if cluster_report_destination_override:
         filesystem = cluster_report_destination_override.get("filesystem", filesystem)
         base_prefix = cluster_report_destination_override.get("base_prefix", base_prefix)
+        write_function = cluster_report_destination_override.get("write_function")
 
     if log_url:
         _monitor_cluster(
@@ -349,6 +351,7 @@ def monitor_cluster(
             spark_context_id,
             polling_period,
             kill_on_termination,
+            write_function,
         )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
@@ -360,6 +363,7 @@ def _monitor_cluster(
     spark_context_id: int,
     polling_period: int,
     kill_on_termination: bool = False,
+    write_function=None,
 ) -> None:
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
     # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
@@ -370,7 +374,7 @@ def _monitor_cluster(
     azure_logger = logging.getLogger("azure.core.pipeline.policies.http_logging_policy")
     azure_logger.setLevel(logging.WARNING)
 
-    write_file = _define_write_file(file_key, filesystem)
+    write_file = _define_write_file(file_key, filesystem, write_function)
 
     resource_group_name = _get_databricks_resource_group_name()
     if not resource_group_name:
@@ -418,8 +422,14 @@ def _monitor_cluster(
         sleep(polling_period)
 
 
-def _define_write_file(file_key, filesystem):
-    if filesystem == "file":
+def _define_write_file(file_key, filesystem, write_function):
+    if filesystem == "lambda":
+
+        def write_file(body: bytes):
+            logger.info("Using custom lambda function to write data")
+            write_function(body)
+
+    elif filesystem == "file":
         file_path = Path(file_key)
 
         def ensure_path_exists(report_path: Path):

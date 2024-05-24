@@ -63,6 +63,7 @@ __all__ = [
     "get_access_report",
     "run_and_record_job",
     "monitor_cluster",
+    "monitor_once",
     "create_cluster",
     "get_cluster",
     "create_submission_for_run",
@@ -420,6 +421,32 @@ def _monitor_cluster(
         except Exception as e:
             logger.error(f"Exception encountered while polling cluster: {e}")
         sleep(polling_period)
+
+
+def monitor_once(
+    cluster_id: str, all_vms_by_id={}, active_timelines_by_id={}, retired_timelines=[]
+):
+    resource_group_name = _get_databricks_resource_group_name()
+    if not resource_group_name:
+        logger.warning("Failed to find Databricks managed resource group")
+
+    compute = _get_azure_client(ComputeManagementClient)
+
+    running_vms_by_id = _get_running_vms_by_id(compute, resource_group_name, cluster_id)
+
+    for vm in running_vms_by_id.values():
+        all_vms_by_id[vm["name"]] = vm
+
+    active_timelines_by_id, new_retired_timelines = _update_monitored_timelines(
+        set(running_vms_by_id.keys()), active_timelines_by_id
+    )
+    retired_timelines.extend(new_retired_timelines)
+
+    return {
+        "all_vms_by_id": all_vms_by_id,
+        "active_timelines_by_id": active_timelines_by_id,
+        "retired_timelines": retired_timelines,
+    }
 
 
 def _define_write_file(file_key, filesystem, write_function):

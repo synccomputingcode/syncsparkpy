@@ -64,6 +64,7 @@ __all__ = [
     "get_cluster_report",
     "get_all_cluster_events",
     "monitor_cluster",
+    "monitor_once",
     "create_cluster",
     "get_cluster",
     "handle_successful_job_run",
@@ -84,7 +85,6 @@ __all__ = [
     "terminate_cluster",
     "apply_project_recommendation",
 ]
-
 
 logger = logging.getLogger(__name__)
 
@@ -456,6 +456,48 @@ def _monitor_cluster(
             logger.error(f"Exception encountered while polling cluster: {e}")
 
         sleep(polling_period)
+
+
+def monitor_once(
+    cluster_id: str,
+    all_inst_by_id={},
+    active_timelines_by_id={},
+    retired_timelines=[],
+    recorded_volumes_by_id={},
+):
+    aws_region_name = DB_CONFIG.aws_region_name
+    ec2 = boto.client("ec2", region_name=aws_region_name)
+
+    # all_inst_by_id = {}
+    # active_timelines_by_id = {}
+    # retired_timelines = []
+    # recorded_volumes_by_id = {}
+
+    current_insts = _get_ec2_instances(cluster_id, ec2)
+    recorded_volumes_by_id.update(
+        {v["VolumeId"]: v for v in _get_ebs_volumes_for_instances(current_insts, ec2)}
+    )
+
+    # Record new (or overwrite) existing instances.
+    # Separately record the ids of those that are in the "running" state.
+    running_inst_ids = set({})
+    for inst in current_insts:
+        all_inst_by_id[inst["InstanceId"]] = inst
+        if inst["State"]["Name"] == "running":
+            running_inst_ids.add(inst["InstanceId"])
+
+    active_timelines_by_id, new_retired_timelines = _update_monitored_timelines(
+        running_inst_ids, active_timelines_by_id
+    )
+
+    retired_timelines.extend(new_retired_timelines)
+
+    return {
+        "all_inst_by_id": all_inst_by_id,
+        "active_timelines_by_id": active_timelines_by_id,
+        "retired_timelines": retired_timelines,
+        "recorded_volumes_by_id": recorded_volumes_by_id,
+    }
 
 
 def _define_write_file(file_key, filesystem, bucket, write_function):

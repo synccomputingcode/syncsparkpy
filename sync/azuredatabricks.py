@@ -90,7 +90,6 @@ __all__ = [
     "apply_project_recommendation",
 ]
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -288,7 +287,6 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
     if not cluster_instances:
-
         resource_group_name = _get_databricks_resource_group_name()
 
         compute = _get_azure_client(ComputeManagementClient)
@@ -423,9 +421,11 @@ def _monitor_cluster(
         sleep(polling_period)
 
 
-def monitor_once(
-    cluster_id: str, all_vms_by_id={}, active_timelines_by_id={}, retired_timelines=[]
-):
+def monitor_once(cluster_id: str, in_progress_cluster={}):
+    all_vms_by_id = in_progress_cluster.get("all_vms_by_id") or {}
+    active_timelines_by_id = in_progress_cluster.get("active_timelines_by_id") or {}
+    retired_timelines = in_progress_cluster.get("retired_timelines") or []
+
     resource_group_name = _get_databricks_resource_group_name()
     if not resource_group_name:
         logger.warning("Failed to find Databricks managed resource group")
@@ -496,7 +496,6 @@ def _get_databricks_resource_group_name() -> str:
 _azure_credential = None
 _azure_subscription_id = None
 
-
 AzureClient = TypeVar("AzureClient")
 
 
@@ -546,7 +545,6 @@ def _get_azure_subscription_id():
 def _get_running_vms_by_id(
     compute: AzureClient, resource_group_name: Optional[str], cluster_id: str
 ) -> Dict[str, dict]:
-
     if resource_group_name:
         vms = compute.virtual_machines.list(resource_group_name=resource_group_name)
     else:

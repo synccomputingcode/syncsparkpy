@@ -268,7 +268,6 @@ setattr(sync._databricks, "__claim", __name__)
 
 
 def _load_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]]:
-
     cluster_info = None
     cluster_id = None
     cluster_log_dest = _cluster_log_destination(cluster)
@@ -312,7 +311,6 @@ def _load_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict
 
 
 def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict], Response[dict]]:
-
     aws_region_name = DB_CONFIG.aws_region_name
 
     cluster_info, cluster_id = _load_aws_cluster_info(cluster)
@@ -394,7 +392,6 @@ def _monitor_cluster(
     kill_on_termination: bool = False,
     write_function=None,
 ) -> None:
-
     (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
     # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
     #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
@@ -458,20 +455,14 @@ def _monitor_cluster(
         sleep(polling_period)
 
 
-def monitor_once(
-    cluster_id: str,
-    all_inst_by_id={},
-    active_timelines_by_id={},
-    retired_timelines=[],
-    recorded_volumes_by_id={},
-):
+def monitor_once(cluster_id: str, in_progress_cluster={}):
+    all_inst_by_id = in_progress_cluster.get("all_inst_by_id") or {}
+    active_timelines_by_id = in_progress_cluster.get("active_timelines_by_id") or {}
+    retired_timelines = in_progress_cluster.get("retired_timelines") or []
+    recorded_volumes_by_id = in_progress_cluster.get("recorded_volumes_by_id") or {}
+
     aws_region_name = DB_CONFIG.aws_region_name
     ec2 = boto.client("ec2", region_name=aws_region_name)
-
-    # all_inst_by_id = {}
-    # active_timelines_by_id = {}
-    # retired_timelines = []
-    # recorded_volumes_by_id = {}
 
     current_insts = _get_ec2_instances(cluster_id, ec2)
     recorded_volumes_by_id.update(
@@ -541,7 +532,6 @@ def _define_write_file(file_key, filesystem, bucket, write_function):
 
 
 def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[dict]:
-
     filters = [
         {"Name": "tag:Vendor", "Values": ["Databricks"]},
         {"Name": "tag:ClusterId", "Values": [cluster_id]},

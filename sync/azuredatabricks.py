@@ -63,6 +63,7 @@ __all__ = [
     "get_access_report",
     "run_and_record_job",
     "monitor_cluster",
+    "monitor_once",
     "create_cluster",
     "get_cluster",
     "create_submission_for_run",
@@ -88,7 +89,6 @@ __all__ = [
     "terminate_cluster",
     "apply_project_recommendation",
 ]
-
 
 logger = logging.getLogger(__name__)
 
@@ -287,7 +287,6 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
     # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
     #  are associated with this cluster
     if not cluster_instances:
-
         resource_group_name = _get_databricks_resource_group_name()
 
         compute = _get_azure_client(ComputeManagementClient)
@@ -422,6 +421,34 @@ def _monitor_cluster(
         sleep(polling_period)
 
 
+def monitor_once(cluster_id: str, in_progress_cluster={}):
+    all_vms_by_id = in_progress_cluster.get("all_vms_by_id") or {}
+    active_timelines_by_id = in_progress_cluster.get("active_timelines_by_id") or {}
+    retired_timelines = in_progress_cluster.get("retired_timelines") or []
+
+    resource_group_name = _get_databricks_resource_group_name()
+    if not resource_group_name:
+        logger.warning("Failed to find Databricks managed resource group")
+
+    compute = _get_azure_client(ComputeManagementClient)
+
+    running_vms_by_id = _get_running_vms_by_id(compute, resource_group_name, cluster_id)
+
+    for vm in running_vms_by_id.values():
+        all_vms_by_id[vm["name"]] = vm
+
+    active_timelines_by_id, new_retired_timelines = _update_monitored_timelines(
+        set(running_vms_by_id.keys()), active_timelines_by_id
+    )
+    retired_timelines.extend(new_retired_timelines)
+
+    return {
+        "all_vms_by_id": all_vms_by_id,
+        "active_timelines_by_id": active_timelines_by_id,
+        "retired_timelines": retired_timelines,
+    }
+
+
 def _define_write_file(file_key, filesystem, write_function):
     if filesystem == "lambda":
 
@@ -468,7 +495,6 @@ def _get_databricks_resource_group_name() -> str:
 
 _azure_credential = None
 _azure_subscription_id = None
-
 
 AzureClient = TypeVar("AzureClient")
 
@@ -519,7 +545,6 @@ def _get_azure_subscription_id():
 def _get_running_vms_by_id(
     compute: AzureClient, resource_group_name: Optional[str], cluster_id: str
 ) -> Dict[str, dict]:
-
     if resource_group_name:
         vms = compute.virtual_machines.list(resource_group_name=resource_group_name)
     else:

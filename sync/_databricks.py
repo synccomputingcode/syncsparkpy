@@ -18,6 +18,7 @@ import boto3 as boto
 from sync.api import projects
 from sync.clients.databricks import get_default_client
 from sync.config import CONFIG  # noqa F401
+from sync.errors import DatabricksDBFSMissingFiles
 from sync.models import (
     DatabricksAPIError,
     DatabricksClusterReport,
@@ -1459,6 +1460,10 @@ def _get_eventlog_from_dbfs(
 
     prefix = format_dbfs_filepath(f"{base_filepath}/eventlog/")
     root_dir = dbx_client.list_dbfs_directory(prefix)
+
+    if "files" not in root_dir:
+        raise DatabricksDBFSMissingFiles("Unable to locate files in DBFS dir - prefix:%s", prefix)
+
     eventlog_files = [f for f in root_dir["files"] if f["is_dir"]]
     matching_subdirectory = None
 

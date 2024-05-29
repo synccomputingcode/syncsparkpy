@@ -1462,7 +1462,7 @@ def _get_eventlog_from_dbfs(
     root_dir = dbx_client.list_dbfs_directory(prefix)
 
     if "files" not in root_dir:
-        raise DatabricksDBFSMissingFiles("Unable to locate files in DBFS dir - prefix:%s", prefix)
+        raise DatabricksDBFSMissingFiles(f"Unable to locate files in DBFS dir - prefix: {prefix}")
 
     eventlog_files = [f for f in root_dir["files"] if f["is_dir"]]
     matching_subdirectory = None

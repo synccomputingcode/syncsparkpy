@@ -1489,7 +1489,7 @@ def _get_eventlog_from_dbfs(
         eventlog_dir = dbx_client.list_dbfs_directory(matching_subdirectory["path"])
 
         poll_num_attempts = 0
-        poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
+        poll_max_attempts = 40  # 10 minutes / 15 seconds = 40 attempts
 
         total_file_size = 0
         file_size_changed, total_file_size = _check_total_file_size_changed(0, eventlog_dir)

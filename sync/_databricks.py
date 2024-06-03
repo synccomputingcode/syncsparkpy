@@ -105,7 +105,7 @@ def create_submission_with_cluster_info(
         plan_type=plan_type,
         compute_type=compute_type,
     )
-    eventlog = _get_event_log_from_cluster_tasks(cluster, tasks).result
+    eventlog = _get_event_log_from_cluster(cluster, tasks).result
 
     return projects.create_project_submission_with_eventlog_bytes(
         get_default_client().get_platform(),
@@ -168,37 +168,6 @@ def create_submission_for_run(
     )
 
 
-def create_submission_for_dlt_pipeline_cluster(
-    project_id: str,
-    cluster: Dict,
-    cluster_info: Dict,
-    cluster_activity_events: Dict,
-    plan_type: DatabricksPlanType,
-    compute_type: DatabricksComputeType,
-    dlt_pipeline_end_time_millis: int,
-) -> Response[str]:
-    """Create a Submission for the specified Databricks DLT pipeline update given a cluster report"""
-
-    cluster_report = _create_cluster_report(
-        cluster=cluster,
-        cluster_info=cluster_info,
-        cluster_activity_events=cluster_activity_events,
-        tasks=None,
-        plan_type=plan_type,
-        compute_type=compute_type,
-    )
-    spark_context_id = cluster.get("spark_context_id")
-    eventlog = _get_eventlog(cluster, spark_context_id, dlt_pipeline_end_time_millis).result
-
-    return projects.create_project_submission_with_eventlog_bytes(
-        get_default_client().get_platform(),
-        cluster_report.dict(exclude_none=True),
-        "eventlog.zip",
-        eventlog,
-        project_id,
-    )
-
-
 def _create_submission(
     cluster_id: str,
     tasks: List[dict],
@@ -251,7 +220,7 @@ def _get_run_information(
     cluster_report = cluster_report_response.result
     if cluster_report:
         cluster = cluster_report.cluster
-        eventlog_response = _get_event_log_from_cluster_tasks(cluster, tasks)
+        eventlog_response = _get_event_log_from_cluster(cluster, tasks)
         eventlog = eventlog_response.result
         if eventlog:
             return Response(result=(cluster_report, eventlog))
@@ -259,7 +228,7 @@ def _get_run_information(
     return cluster_report_response
 
 
-def _get_event_log_from_cluster_tasks(cluster: Dict, tasks: List[Dict]) -> Response[bytes]:
+def _get_event_log_from_cluster(cluster: Dict, tasks: List[Dict]) -> Response[bytes]:
     spark_context_id = _get_run_spark_context_id(tasks)
     end_time = max(task["end_time"] for task in tasks)
     eventlog_response = _get_eventlog(cluster, spark_context_id.result, end_time)

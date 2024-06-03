@@ -353,8 +353,9 @@ def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
 
 def save_cluster_report(
     cluster_id: str,
-    all_timelines: list[dict],
-    cluster_report_destination_override: dict[str, str],
+    instance_timelines: list[dict],
+    cluster_log_destination: tuple[str, ...] | None = None,
+    cluster_report_destination_override: dict[str, str] | None = None,
 ) -> bool:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
@@ -362,13 +363,17 @@ def save_cluster_report(
     if not spark_context_id:
         return False
 
-    (log_url, filesystem, bucket, base_prefix) = _cluster_log_destination(cluster)
+    cluster_log_destination = cluster_log_destination or _cluster_log_destination(cluster)
+    (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
+
     if cluster_report_destination_override:
         filesystem = cluster_report_destination_override.get("filesystem", filesystem)
         base_prefix = cluster_report_destination_override.get("base_prefix", base_prefix)
 
     if not log_url and not cluster_report_destination_override:
-        logger.warning("Unable to save cluster report due to missing cluster log destination - exiting")
+        logger.warning(
+            "Unable to save cluster report due to missing cluster log destination - exiting"
+        )
         return False
 
     # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
@@ -389,7 +394,7 @@ def save_cluster_report(
             json.dumps(
                 {
                     "instances": current_insts,
-                    "instance_timelines": all_timelines,
+                    "instance_timelines": instance_timelines,
                     "volumes": ebs_volumes,
                 },
                 cls=DefaultDateTimeEncoder,
@@ -426,7 +431,6 @@ def monitor_cluster(
         _monitor_cluster(
             (log_url, filesystem, bucket, base_prefix),
             cluster_id,
-            spark_context_id,
             polling_period,
             kill_on_termination,
         )
@@ -437,40 +441,25 @@ def monitor_cluster(
 def _monitor_cluster(
     cluster_log_destination,
     cluster_id: str,
-    spark_context_id: int,
     polling_period: int,
     kill_on_termination: bool = False,
 ) -> None:
-
-    (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
-    # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
-    #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
-    #  we make sure to re-strip our final Prefix
-    file_key = f"{base_prefix}/sync_data/{spark_context_id}/aws_cluster_info.json".strip("/")
-
     aws_region_name = DB_CONFIG.aws_region_name
     ec2 = boto.client("ec2", region_name=aws_region_name)
 
-    write_file = _define_write_file(file_key, filesystem, bucket)
-
-    all_inst_by_id = {}
     active_timelines_by_id = {}
     retired_timelines = []
-    recorded_volumes_by_id = {}
 
     while_condition = True
+
     while while_condition:
         try:
             current_insts = _get_ec2_instances(cluster_id, ec2)
-            recorded_volumes_by_id.update(
-                {v["VolumeId"]: v for v in _get_ebs_volumes_for_instances(current_insts, ec2)}
-            )
 
             # Record new (or overwrite) existing instances.
             # Separately record the ids of those that are in the "running" state.
             running_inst_ids = set({})
             for inst in current_insts:
-                all_inst_by_id[inst["InstanceId"]] = inst
                 if inst["State"]["Name"] == "running":
                     running_inst_ids.add(inst["InstanceId"])
 
@@ -481,24 +470,16 @@ def _monitor_cluster(
             retired_timelines.extend(new_retired_timelines)
             all_timelines = retired_timelines + list(active_timelines_by_id.values())
 
-            write_file(
-                bytes(
-                    json.dumps(
-                        {
-                            "instances": list(all_inst_by_id.values()),
-                            "instance_timelines": all_timelines,
-                            "volumes": list(recorded_volumes_by_id.values()),
-                        },
-                        cls=DefaultDateTimeEncoder,
-                    ),
-                    "utf-8",
-                )
+            save_cluster_report(
+                cluster_id, all_timelines, cluster_log_destination=cluster_log_destination
             )
 
             if kill_on_termination:
                 cluster_state = get_default_client().get_cluster(cluster_id).get("state")
+
                 if cluster_state == "TERMINATED":
                     while_condition = False
+
         except Exception as e:
             logger.error(f"Exception encountered while polling cluster: {e}")
 

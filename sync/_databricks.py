@@ -312,7 +312,7 @@ def _create_cluster_report(
     cluster: dict,
     cluster_info: dict,
     cluster_activity_events: dict,
-    tasks: List[dict] | None,
+    tasks: List[dict],
     plan_type: DatabricksPlanType,
     compute_type: DatabricksComputeType,
 ) -> DatabricksClusterReport:

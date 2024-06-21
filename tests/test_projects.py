@@ -48,18 +48,18 @@ mock_failed_submission = {
 
 @pytest.fixture
 def mock_mixed_submissions():
-    yield {"result": [mock_failed_submission, mock_success_submission]}
+    yield {"items": [mock_failed_submission, mock_success_submission]}
 
 
 @pytest.fixture
 def mock_no_success_submissions():
-    yield {"result": [mock_failed_submission]}
+    yield {"items": [mock_failed_submission]}
 
 
 @pytest.fixture
 def mock_get_submissions_empty():
     """Mocks get_submissions function to return an empty list."""
-    yield {"result": []}
+    yield {"items": []}
 
 
 @patch("sync.clients.sync.SyncClient._send")

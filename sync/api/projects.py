@@ -426,8 +426,8 @@ def get_submissions(project_id: str) -> Response[dict]:
     :rtype: dict
     """
     recent_submissions = get_default_client().get_project_submissions(project_id)
-    if recent_submissions.get("result") and len(recent_submissions["result"]) > 0:
-        return Response(result=recent_submissions["result"])
+    if recent_submissions.get("items") and len(recent_submissions["items"]) > 0:
+        return Response(result=recent_submissions["items"])
 
 
 def get_latest_project_config_recommendation(

@@ -12,7 +12,6 @@ from botocore.exceptions import ClientError
 import sync._databricks
 from sync._databricks import (
     _cluster_log_destination,
-    get_all_cluster_events,
     _get_cluster_instances_from_dbfs,
     _update_monitored_timelines,
     _wait_for_cluster_termination,
@@ -23,6 +22,7 @@ from sync._databricks import (
     create_run,
     create_submission_for_run,
     create_submission_with_cluster_info,
+    get_all_cluster_events,
     get_cluster,
     get_cluster_report,
     get_project_cluster,
@@ -48,9 +48,9 @@ from sync.models import (
     AccessReportLine,
     AccessStatusCode,
     AWSDatabricksClusterReport,
+    DatabricksComputeType,
     DatabricksError,
     DatabricksPlanType,
-    DatabricksComputeType,
     Response,
 )
 from sync.utils.dbfs import format_dbfs_filepath, write_dbfs_file
@@ -64,6 +64,7 @@ __all__ = [
     "get_cluster_report",
     "get_all_cluster_events",
     "monitor_cluster",
+    "monitor_once",
     "create_cluster",
     "get_cluster",
     "handle_successful_job_run",
@@ -85,7 +86,6 @@ __all__ = [
     "apply_project_recommendation",
     "save_cluster_report",
 ]
-
 
 logger = logging.getLogger(__name__)
 
@@ -269,7 +269,6 @@ setattr(sync._databricks, "__claim", __name__)
 
 
 def _load_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]]:
-
     cluster_info = None
     cluster_id = None
     cluster_log_dest = _cluster_log_destination(cluster)
@@ -313,7 +312,6 @@ def _load_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict
 
 
 def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict], Response[dict]]:
-
     aws_region_name = DB_CONFIG.aws_region_name
 
     cluster_info, cluster_id = _load_aws_cluster_info(cluster)
@@ -356,6 +354,7 @@ def save_cluster_report(
     instance_timelines: list[dict],
     cluster_log_destination: tuple[str, ...] | None = None,
     cluster_report_destination_override: dict[str, str] | None = None,
+    write_function=None
 ) -> bool:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
@@ -387,7 +386,7 @@ def save_cluster_report(
     current_insts = _get_ec2_instances(cluster_id, ec2)
     ebs_volumes = _get_ebs_volumes_for_instances(current_insts, ec2)
 
-    write_file = _define_write_file(file_key, filesystem, bucket)
+    write_file = _define_write_file(file_key, filesystem, bucket, write_function)
 
     write_file(
         bytes(
@@ -423,9 +422,11 @@ def monitor_cluster(
         spark_context_id = cluster.get("spark_context_id")
 
     (log_url, filesystem, bucket, base_prefix) = _cluster_log_destination(cluster)
+    write_function = None
     if cluster_report_destination_override:
         filesystem = cluster_report_destination_override.get("filesystem", filesystem)
         base_prefix = cluster_report_destination_override.get("base_prefix", base_prefix)
+        write_function = cluster_report_destination_override.get("write_function")
 
     if log_url or cluster_report_destination_override:
         _monitor_cluster(
@@ -433,6 +434,7 @@ def monitor_cluster(
             cluster_id,
             polling_period,
             kill_on_termination,
+            write_function,
         )
     else:
         logger.warning("Unable to monitor cluster due to missing cluster log destination - exiting")
@@ -443,6 +445,7 @@ def _monitor_cluster(
     cluster_id: str,
     polling_period: int,
     kill_on_termination: bool = False,
+    write_function=None,
 ) -> None:
     aws_region_name = DB_CONFIG.aws_region_name
     ec2 = boto.client("ec2", region_name=aws_region_name)
@@ -471,7 +474,7 @@ def _monitor_cluster(
             all_timelines = retired_timelines + list(active_timelines_by_id.values())
 
             save_cluster_report(
-                cluster_id, all_timelines, cluster_log_destination=cluster_log_destination
+                cluster_id, all_timelines, cluster_log_destination=cluster_log_destination, write_function=write_function
             )
 
             if kill_on_termination:
@@ -486,8 +489,50 @@ def _monitor_cluster(
         sleep(polling_period)
 
 
-def _define_write_file(file_key, filesystem, bucket):
-    if filesystem == "file":
+def monitor_once(cluster_id: str, in_progress_cluster={}):
+    all_inst_by_id = in_progress_cluster.get("all_inst_by_id") or {}
+    active_timelines_by_id = in_progress_cluster.get("active_timelines_by_id") or {}
+    retired_timelines = in_progress_cluster.get("retired_timelines") or []
+    recorded_volumes_by_id = in_progress_cluster.get("recorded_volumes_by_id") or {}
+
+    aws_region_name = DB_CONFIG.aws_region_name
+    ec2 = boto.client("ec2", region_name=aws_region_name)
+
+    current_insts = _get_ec2_instances(cluster_id, ec2)
+    recorded_volumes_by_id.update(
+        {v["VolumeId"]: v for v in _get_ebs_volumes_for_instances(current_insts, ec2)}
+    )
+
+    # Record new (or overwrite) existing instances.
+    # Separately record the ids of those that are in the "running" state.
+    running_inst_ids = set({})
+    for inst in current_insts:
+        all_inst_by_id[inst["InstanceId"]] = inst
+        if inst["State"]["Name"] == "running":
+            running_inst_ids.add(inst["InstanceId"])
+
+    active_timelines_by_id, new_retired_timelines = _update_monitored_timelines(
+        running_inst_ids, active_timelines_by_id
+    )
+
+    retired_timelines.extend(new_retired_timelines)
+
+    return {
+        "all_inst_by_id": all_inst_by_id,
+        "active_timelines_by_id": active_timelines_by_id,
+        "retired_timelines": retired_timelines,
+        "recorded_volumes_by_id": recorded_volumes_by_id,
+    }
+
+
+def _define_write_file(file_key, filesystem, bucket, write_function):
+    if filesystem == "lambda":
+
+        def write_file(body: bytes):
+            logger.info("Using custom lambda function to write data")
+            write_function(body)
+
+    elif filesystem == "file":
         file_path = Path(file_key)
 
         def ensure_path_exists(report_path: Path):
@@ -521,7 +566,6 @@ def _define_write_file(file_key, filesystem, bucket):
 
 
 def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[dict]:
-
     filters = [
         {"Name": "tag:Vendor", "Values": ["Databricks"]},
         {"Name": "tag:ClusterId", "Values": [cluster_id]},

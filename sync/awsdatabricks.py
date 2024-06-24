@@ -2,7 +2,7 @@ import json
 import logging
 from pathlib import Path
 from time import sleep
-from typing import Generator, List, Tuple
+from typing import Dict, Generator, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -351,10 +351,10 @@ def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
 
 def save_cluster_report(
     cluster_id: str,
-    instance_timelines: list[dict],
-    cluster_log_destination: tuple[str, ...] | None = None,
-    cluster_report_destination_override: dict[str, str] | None = None,
-    write_function=None
+    instance_timelines: List[dict],
+    cluster_log_destination: Optional[Tuple[str, ...]] = None,
+    cluster_report_destination_override: Optional[Dict[str, str]] = None,
+    write_function=None,
 ) -> bool:
     cluster = get_default_client().get_cluster(cluster_id)
     spark_context_id = cluster.get("spark_context_id")
@@ -474,7 +474,10 @@ def _monitor_cluster(
             all_timelines = retired_timelines + list(active_timelines_by_id.values())
 
             save_cluster_report(
-                cluster_id, all_timelines, cluster_log_destination=cluster_log_destination, write_function=write_function
+                cluster_id,
+                all_timelines,
+                cluster_log_destination=cluster_log_destination,
+                write_function=write_function,
             )
 
             if kill_on_termination:

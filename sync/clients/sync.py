@@ -132,7 +132,7 @@ class SyncClient(RetryableHTTPClient):
     def get_project_submissions(self, project_id: str, params: dict = None) -> dict:
         return self._send(
             self._client.build_request(
-                "GET", f"/v1/projects/{project_id}/submissions-v2", params=params
+                "GET", f"/v1/projects/{project_id}/paged/submissions", params=params
             )
         )
 

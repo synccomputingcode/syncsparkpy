@@ -41,7 +41,6 @@ class TestMonitorCluster(unittest.TestCase):
         mock_monitor_cluster.assert_called_with(
             expected_log_destination_override,
             "0101-214342-tpi6qdp2",
-            1443449481634833945,
             1,
             True,
             None,
@@ -53,7 +52,6 @@ class TestMonitorCluster(unittest.TestCase):
         mock_monitor_cluster.assert_called_with(
             expected_log_destination_override,
             "0101-214342-tpi6qdp2",
-            1443449481634833945,
             1,
             True,
             None,
@@ -77,7 +75,6 @@ class TestMonitorCluster(unittest.TestCase):
         mock_monitor_cluster.assert_called_with(
             mock_cluster_log_destination.return_value,
             "0101-214342-tpi6qdp2",
-            1443449481634833945,
             1,
             False,
             None,

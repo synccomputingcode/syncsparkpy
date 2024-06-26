@@ -668,6 +668,21 @@ def get_recommendation_cluster(
     return recommendation_response
 
 
+def get_job(job_id: str) -> Response[dict]:
+    """Get Databricks job.
+
+    :param job_id: job ID
+    :type job_id: str
+    :return: job object
+    :rtype: Response[dict]
+    """
+    job = get_default_client().get_job(job_id)
+    if "error_code" in job:
+        return Response(error=DatabricksAPIError(**job))
+
+    return Response(result=job)
+
+
 def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Response[dict]:
     """Apply project configuration to a job.
 

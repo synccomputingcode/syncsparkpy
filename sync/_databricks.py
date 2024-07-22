@@ -125,6 +125,7 @@ def create_submission_for_run(
     project_id: str,
     allow_incomplete_cluster_report: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
+    overwrite_rec_id = None,
 ) -> Response[str]:
     """Create a Submission for the specified Databricks run.
 
@@ -166,7 +167,7 @@ def create_submission_for_run(
     cluster_id, tasks = cluster_tasks
 
     return _create_submission(
-        cluster_id, tasks, plan_type, compute_type, project_id, allow_incomplete_cluster_report
+        cluster_id, tasks, plan_type, compute_type, project_id, allow_incomplete_cluster_report, overwrite_rec_id
     )
 
 
@@ -177,6 +178,7 @@ def _create_submission(
     compute_type: str,
     project_id: str,
     allow_incomplete_cluster_report: bool = False,
+    overwrite_rec_id = None
 ) -> Response[str]:
     run_information_response = _get_run_information(
         cluster_id,
@@ -191,6 +193,11 @@ def _create_submission(
         return run_information_response
 
     cluster_report, eventlog = run_information_response.result
+    if cluster_report.cluster.get('custom_tags', None):
+        if overwrite_rec_id:
+            cluster_report.cluster['custom_tags']['sync:recommendation-id'] = overwrite_rec_id
+    
+    #cluster_report.cluster = None
     return projects.create_project_submission_with_eventlog_bytes(
         get_default_client().get_platform(),
         cluster_report.dict(exclude_none=True),

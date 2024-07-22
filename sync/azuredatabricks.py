@@ -292,11 +292,6 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
         compute = _get_azure_client(ComputeManagementClient)
         if resource_group_name:
             vms = compute.virtual_machines.list(resource_group_name=resource_group_name)
-
-            for vm in vms:
-                compute.virtual_machines.instance_view(
-                    resource_group_name=resource_group_name,
-                )
         else:
             logger.warning("Failed to find Databricks managed resource group")
             vms = compute.virtual_machines.list_all()
@@ -310,7 +305,7 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
             ]
         }
 
-    if not cluster_instances:
+    if not cluster_instances.get('instances', None):
         no_instances_message = (
             f"Unable to find any active or recently terminated instances for cluster `{cluster_id}`. "
             + "Please refer to the following documentation for options on how to address this - "

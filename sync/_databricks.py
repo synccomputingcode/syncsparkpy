@@ -1578,6 +1578,99 @@ def _get_eventlog(
         return Response(error=DatabricksError(message=f"Unknown log destination: {filesystem}"))
 
 
+def _check_event_log_exists(
+    cluster_description: dict,
+    run_spark_context_id: str,
+    run_end_time_millis: int,
+):
+    (log_url, filesystem, bucket, base_cluster_filepath_prefix) = _cluster_log_destination(
+        cluster_description
+    )
+    if not filesystem:
+        return Response(error=DatabricksError(message="No eventlog location found for cluster."))
+    if filesystem == "s3":
+        return Response(
+            result=_event_log_check_s3(
+                cluster_id=cluster_description["cluster_id"],
+                bucket=bucket,
+                base_filepath=base_cluster_filepath_prefix,
+                run_end_time_millis=run_end_time_millis,
+            )
+        )
+    if filesystem == "dbfs":
+        return Response(
+            result=_event_log_check_dbfs(
+                cluster_id=cluster_description["cluster_id"],
+                spark_context_id=run_spark_context_id,
+                base_filepath=base_cluster_filepath_prefix,
+                run_end_time_millis=run_end_time_millis,
+            )
+        )
+
+
+def _event_log_check_s3(
+    cluster_id,
+    bucket,
+    base_filepath,
+    run_end_time_millis,
+):
+    s3 = boto.client("s3")
+
+    # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
+    #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
+    #  we make sure to re-strip our final Prefix
+    # TODO - using the spark_context_id might be good here, as we do in the DBFS logic
+    prefix = f"{base_filepath}/eventlog/{cluster_id}".strip("/")
+
+    logger.info(f"Looking for eventlogs at location: {prefix}")
+
+    contents = s3.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents")
+    run_end_time_seconds = run_end_time_millis / 1000
+    final_rollover_log = _s3_contents_have_all_rollover_logs(contents, run_end_time_seconds)
+    if not final_rollover_log:
+        return False
+
+
+def _event_log_check_dbfs(
+    cluster_id,
+    spark_context_id,
+    base_filepath,
+    run_end_time_millis,
+) -> bool:
+    dbx_client = get_default_client()
+
+    prefix = format_dbfs_filepath(f"{base_filepath}/eventlog/")
+    root_dir = dbx_client.list_dbfs_directory(prefix)
+
+    if "files" not in root_dir:
+        raise DatabricksDBFSMissingFiles(f"Unable to locate files in DBFS dir - prefix: {prefix}")
+
+    eventlog_files = [f for f in root_dir["files"] if f["is_dir"]]
+    matching_subdirectory = None
+
+    # For shared clusters, we may find multiple subdirectories under the same root path, in the format -
+    #     {cluster_id}_{driver_ip_address}
+    # Since DBFS gives us no good filtering mechanism for this, and there isn't always an easy way to get
+    #  the driver's IP address for a Run, we can list the subdirectories and look for one containing a path
+    #  that ends with this cluster's `spark_context_id`
+    while eventlog_files and not matching_subdirectory:
+        eventlog_file_metadata = eventlog_files.pop()
+        path = eventlog_file_metadata["path"]
+
+        subdir = dbx_client.list_dbfs_directory(path)
+
+        subdir_files = subdir["files"]
+        matching_subdirectory = next(
+            (subfile for subfile in subdir_files if spark_context_id in subfile["path"]),
+            None,
+        )
+
+    if matching_subdirectory:
+        eventlog_dir = dbx_client.list_dbfs_directory(matching_subdirectory["path"])
+        final_logs = _dbfs_directory_has_all_rollover_logs(eventlog_dir, run_end_time_millis)
+        return final_logs
+
+
 def get_all_cluster_events(cluster_id: str):
     """Fetches all ClusterEvents for a given Databricks cluster, optionally within a time window.
     Pages will be followed and returned as 1 object

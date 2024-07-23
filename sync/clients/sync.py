@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Generator, Tuple
+from typing import Generator, Optional, Tuple
 
 import httpx
 from platformdirs import user_cache_dir
@@ -27,7 +27,7 @@ class SyncAuth(httpx.Auth):
             self._access_token = None
             self._access_token_expires_at_utc = None
 
-    def _get_cached_token(self) -> Tuple[str, datetime] | None:
+    def _get_cached_token(self) -> Optional[Tuple[str, datetime]]:
         # Cache is optional, we can fail to read it and not worry
         token_file = self._cache_file / "access_token"
         if token_file.exists():

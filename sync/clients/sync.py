@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Generator, Tuple
 
@@ -64,9 +64,9 @@ class SyncAuth(httpx.Auth):
         if not self._access_token:
             return False
         if self._access_token_expires_at_utc:
-            return datetime.now(tz=UTC) < self._access_token_expires_at_utc - timedelta(
-                seconds=20
-            )
+            return datetime.now(
+                tz=timezone.utc
+            ) < self._access_token_expires_at_utc - timedelta(seconds=20)
         return False
 
     def auth_flow(

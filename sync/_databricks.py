@@ -749,7 +749,7 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
     :return: project cluster settings - a subset of a Databricks cluster object
     :rtype: Response[dict]
     """
-    project_response = projects.get_project(project_id)
+    project_response = projects.get_project(project_id, params={"include": "sync_tenant_id"})
     project = project_response.result
     if project:
         result = {
@@ -757,6 +757,10 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
                 "sync:project-id": project_id,
             }
         }
+
+        sync_tenant_id = project.get("sync_tenant_id")
+        if sync_tenant_id:
+            result["custom_tags"]["sync:tenant-id"] = sync_tenant_id
 
         cluster_log_url = urlparse(project.get("cluster_log_url"))
         if cluster_log_url.scheme == "s3":

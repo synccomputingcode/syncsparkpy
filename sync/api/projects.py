@@ -93,7 +93,7 @@ def create_project(
     )
 
 
-def get_project(project_id: str) -> Response[dict]:
+def get_project(project_id: str, params: dict = None) -> Response[dict]:
     """Retrieves a project
 
     :param project_id: project ID
@@ -101,7 +101,7 @@ def get_project(project_id: str) -> Response[dict]:
     :return: project object
     :rtype: Response[dict]
     """
-    return Response(**get_default_client().get_project(project_id))
+    return Response(**get_default_client().get_project(project_id, params=params))
 
 
 def update_project(

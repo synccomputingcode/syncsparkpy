@@ -284,34 +284,17 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
             json.loads(cluster_instances_file_response) if cluster_instances_file_response else None
         )
 
-    # If this cluster does not have the "Sync agent" configured, attempt a best-effort snapshot of the instances that
-    #  are associated with this cluster
-    if not cluster_instances:
-        resource_group_name = _get_databricks_resource_group_name()
+        if not cluster_instances:
+            no_instances_message = (
+                f"Unable to find cluster information from Sync's cluster monitor for cluster `{cluster_id}`. "
+            )
+            return Response(error=DatabricksError(message=no_instances_message))
 
-        compute = _get_azure_client(ComputeManagementClient)
-        if resource_group_name:
-            vms = compute.virtual_machines.list(resource_group_name=resource_group_name)
-        else:
-            logger.warning("Failed to find Databricks managed resource group")
-            vms = compute.virtual_machines.list_all()
-
-        cluster_instances = {
-            "instances": [
-                vm.as_dict()
-                for vm in vms
-                if vm.tags.get("Vendor") == "Databricks"
-                and vm.tags.get("ClusterId") == cluster["cluster_id"]
-            ]
-        }
-
-    if not cluster_instances.get('instances', None):
-        no_instances_message = (
-            f"Unable to find any active or recently terminated instances for cluster `{cluster_id}`. "
-            + "Please refer to the following documentation for options on how to address this - "
-            + "https://docs.synccomputing.com/sync-gradient/integrating-with-gradient/databricks-workflows"
+    else:
+        no_cluster_logs_message = (
+            f"No cluster log configuration has been set for cluster `{cluster_id}`. "
         )
-        return Response(error=DatabricksError(message=no_instances_message))
+        return Response(error=DatabricksError(message=no_cluster_logs_message))
 
     return Response(result=cluster_instances)
 

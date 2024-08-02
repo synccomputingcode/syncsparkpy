@@ -668,7 +668,7 @@ def get_recommendation_cluster(
     return recommendation_response
 
 
-def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Response[dict]:
+def get_project_job(job_id: str, project_id: str) -> Response[dict]:
     """Apply project configuration to a job.
 
     The job can only have tasks that run on the same job cluster. That cluster is updated with tags
@@ -679,8 +679,6 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
     :type job_id: str
     :param project_id: Sync project ID
     :type project_id: str
-    :param region_name: region name, defaults to AWS configuration
-    :type region_name: str, optional
     :return: project job object
     :rtype: Response[dict]
     """
@@ -694,7 +692,7 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
         cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
         cluster = cluster_response.result
         if cluster:
-            project_cluster_response = get_project_cluster(cluster, project_id, region_name)
+            project_cluster_response = get_project_cluster(cluster, project_id)
             project_cluster = project_cluster_response.result
             if project_cluster:
                 cluster_key = tasks[0].get("job_cluster_key")
@@ -713,7 +711,7 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
     return Response(error=DatabricksError(message="No task found in job"))
 
 
-def get_project_cluster(cluster: dict, project_id: str, region_name: str = None) -> Response[dict]:
+def get_project_cluster(cluster: dict, project_id: str) -> Response[dict]:
     """Apply project configuration to a cluster.
 
     The cluster is updated with tags and a log configuration to facilitate project continuity.
@@ -722,12 +720,10 @@ def get_project_cluster(cluster: dict, project_id: str, region_name: str = None)
     :type cluster: dict
     :param project_id: Sync project ID
     :type project_id: str
-    :param region_name: region name, defaults to AWS configuration
-    :type region_name: str, optional
     :return: project job object
     :rtype: Response[dict]
     """
-    project_settings_response = get_project_cluster_settings(project_id, region_name)
+    project_settings_response = get_project_cluster_settings(project_id)
     project_cluster_settings = project_settings_response.result
     if project_cluster_settings:
         project_cluster = deep_update(cluster, project_cluster_settings)
@@ -736,7 +732,7 @@ def get_project_cluster(cluster: dict, project_id: str, region_name: str = None)
     return project_settings_response
 
 
-def get_project_cluster_settings(project_id: str, region_name: str = None) -> Response[dict]:
+def get_project_cluster_settings(project_id: str) -> Response[dict]:
     """Gets cluster configuration for a project.
 
     This configuration is intended to be used to update the cluster of a Databricks job so that
@@ -744,52 +740,12 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
 
     :param project_id: Sync project ID
     :type project_id: str
-    :param region_name: region name, defaults to AWS configuration
-    :type region_name: str, optional
     :return: project cluster settings - a subset of a Databricks cluster object
     :rtype: Response[dict]
     """
-    project_response = projects.get_project(project_id, params={"include": "sync_tenant_id"})
-    project = project_response.result
-    if project:
-        result = {
-            "custom_tags": {
-                "sync:project-id": project_id,
-            }
-        }
-
-        sync_tenant_id = project.get("sync_tenant_id")
-        if sync_tenant_id:
-            result["custom_tags"]["sync:tenant-id"] = sync_tenant_id
-
-        cluster_log_url = urlparse(project.get("cluster_log_url"))
-        if cluster_log_url.scheme == "s3":
-            result.update(
-                {
-                    "cluster_log_conf": {
-                        "s3": {
-                            "destination": f"{cluster_log_url.geturl()}/{project_id}",
-                            "enable_encryption": True,
-                            "region": region_name or boto.client("s3").meta.region_name,
-                            "canned_acl": "bucket-owner-full-control",
-                        }
-                    }
-                }
-            )
-
-        elif cluster_log_url.scheme == "dbfs":
-            result.update(
-                {
-                    "cluster_log_conf": {
-                        "dbfs": {
-                            "destination": f"{cluster_log_url.geturl()}/{project_id}",
-                        }
-                    }
-                }
-            )
-
-        return Response(result=result)
-    return project_response
+    cluster_template_response = projects.get_project_cluster_template(project_id)
+    cluster_template = cluster_template_response.result
+    return Response(result=cluster_template)
 
 
 def run_job_object(job: dict) -> Response[Tuple[str, str]]:
@@ -864,7 +820,7 @@ def create_run(run: dict) -> Response[str]:
 
 
 def run_and_record_project_job(
-    job_id: str, project_id: str, plan_type: str, compute_type: str, region_name: str = None
+    job_id: str, project_id: str, plan_type: str, compute_type: str
 ) -> Response[str]:
     """Runs the specified job and adds the result to the project.
 
@@ -878,12 +834,10 @@ def run_and_record_project_job(
     :type plan_type: str
     :param compute_type: e.g. "Jobs Compute"
     :type compute_type: str
-    :param region_name: region name, defaults to AWS configuration
-    :type region_name: str, optional
     :return: prediction ID
     :rtype: Response[str]
     """
-    project_job_response = get_project_job(job_id, project_id, region_name)
+    project_job_response = get_project_job(job_id, project_id)
     project_job = project_job_response.result
     if project_job:
         return run_and_record_job_object(project_job, plan_type, compute_type, project_id)

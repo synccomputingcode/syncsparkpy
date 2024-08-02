@@ -149,6 +149,11 @@ class SyncClient(RetryableHTTPClient):
             self._client.build_request("GET", f"/v1/projects/{project_id}", params=params)
         )
 
+    def get_project_cluster_template(self, project_id: str) -> dict:
+        return self._send(
+            self._client.build_request("GET", f"/v1/projects/{project_id}/cluster/template")
+        )
+
     def get_projects(self, params: dict = None) -> dict:
         return self._send(
             self._client.build_request("GET", "/v1/projects", params=params)

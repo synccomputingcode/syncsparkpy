@@ -104,6 +104,17 @@ def get_project(project_id: str, params: dict = None) -> Response[dict]:
     return Response(**get_default_client().get_project(project_id, params=params))
 
 
+def get_project_cluster_template(project_id: str) -> Response[dict]:
+    """Retrieve a project cluster template.
+
+    :param project_id: project ID
+    :type project_id: str
+    :return: project object
+    :rtype: Response[dict]
+    """
+    return Response(**get_default_client().get_project_cluster_template(project_id))
+
+
 def update_project(
     project_id: str,
     description: str = None,

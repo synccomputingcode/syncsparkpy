@@ -131,6 +131,10 @@ class DatabricksError(Error):
     code: str = Field("Databricks Error", const=True)
 
 
+class MissingOrIncompleteEventlogError(Error):
+    dbfs_eventlog_file_size: int
+
+
 class DatabricksAPIError(Error):
     @root_validator(pre=True)
     def validate_error(cls, values):

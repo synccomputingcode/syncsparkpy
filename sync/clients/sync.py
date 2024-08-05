@@ -95,7 +95,9 @@ class SyncAuth(httpx.Auth):
         if response.status_code == httpx.codes.OK:
             auth = response.json()
             self._access_token = auth["result"]["access_token"]
-            self._access_token_expires_at_utc = auth["result"]["expires_at_utc"]
+            self._access_token_expires_at_utc = datetime.fromisoformat(
+                auth["result"]["expires_at_utc"]
+            )
             self._set_cached_token(
                 self._access_token, self._access_token_expires_at_utc
             )
@@ -146,12 +148,18 @@ class SyncClient(RetryableHTTPClient):
 
     def get_project(self, project_id: str, params: dict = None) -> dict:
         return self._send(
-            self._client.build_request("GET", f"/v1/projects/{project_id}", params=params)
+            self._client.build_request(
+                "GET", f"/v1/projects/{project_id}", params=params
+            )
         )
 
-    def get_project_cluster_template(self, project_id: str, params: dict = None) -> dict:
+    def get_project_cluster_template(
+        self, project_id: str, params: dict = None
+    ) -> dict:
         return self._send(
-            self._client.build_request("GET", f"/v1/projects/{project_id}/cluster/template", params=params)
+            self._client.build_request(
+                "GET", f"/v1/projects/{project_id}/cluster/template", params=params
+            )
         )
 
     def get_projects(self, params: dict = None) -> dict:

@@ -75,6 +75,8 @@ def create_submission_with_cluster_info(
     cluster_activity_events: Dict,
     plan_type: DatabricksPlanType,
     compute_type: DatabricksComputeType,
+    skip_eventlog: bool = False,
+    dbfs_eventlog_file_size: int = 0,
 ) -> Response:
     """Create a Submission for the specified Databricks run given a cluster report"""
 
@@ -108,11 +110,17 @@ def create_submission_with_cluster_info(
         plan_type=plan_type,
         compute_type=compute_type,
     )
-    eventlog_response = _maybe_get_event_log_from_cluster(cluster, tasks)
-    if eventlog_response.error and isinstance(eventlog_response.error, MissingOrIncompleteEventlogError):
-        return eventlog_response
+    eventlog = None
+    if not skip_eventlog:
+        eventlog_response = _maybe_get_event_log_from_cluster(
+            cluster, tasks, dbfs_eventlog_file_size
+        )
+        if eventlog_response.error and isinstance(
+            eventlog_response.error, MissingOrIncompleteEventlogError
+        ):
+            return eventlog_response
 
-    eventlog = eventlog_response.result
+        eventlog = eventlog_response.result
 
     return projects.create_project_submission_with_eventlog_bytes(
         get_default_client().get_platform(),
@@ -248,10 +256,17 @@ def _get_event_log_from_cluster(cluster: Dict, tasks: List[Dict]) -> Response[by
     return eventlog_response  # return eventlog response with errors
 
 
-def _maybe_get_event_log_from_cluster(cluster: Dict, tasks: List[Dict]) -> Response:
+def _maybe_get_event_log_from_cluster(
+    cluster: Dict, tasks: List[Dict], dbfs_eventlog_file_size: int | None
+) -> Response:
     spark_context_id = _get_run_spark_context_id(tasks)
     end_time = max(task["end_time"] for task in tasks)
-    eventlog_response = _fetch_eventlog(cluster, spark_context_id.result, end_time)
+    eventlog_response = _fetch_eventlog(
+        cluster_description=cluster,
+        run_spark_context_id=spark_context_id.result,
+        run_end_time_millis=end_time,
+        dbfs_eventlog_file_size=dbfs_eventlog_file_size,
+    )
 
     return eventlog_response
 
@@ -1402,7 +1417,9 @@ def _poll_for_eventlog_from_s3(
 
     while not eventlog_response and poll_num_attempts < poll_max_attempts:
         eventlog_response = _get_eventlog_from_s3(bucket, prefix, run_end_time_seconds)
-        if eventlog_response.error and isinstance(eventlog_response.error, MissingOrIncompleteEventlogError):
+        if eventlog_response.error and isinstance(
+            eventlog_response.error, MissingOrIncompleteEventlogError
+        ):
             poll_num_attempts += 1
             logger.info(
                 f"No or incomplete event log data detected - attempting again in {poll_duration_seconds} seconds"
@@ -1480,7 +1497,7 @@ def _get_eventlog_from_dbfs(
     spark_context_id: str,
     base_filepath: str,
     run_end_time_millis: int,
-    last_total_file_size: int = 0,
+    last_total_file_size: int,
 ):
     dbx_client = get_default_client()
 
@@ -1558,6 +1575,7 @@ def _fetch_eventlog(
     #  directories based on the `spark_context_id` of the Run.
     run_spark_context_id: str,
     run_end_time_millis: int,
+    dbfs_eventlog_file_size: int | None,
 ):
     (log_url, filesystem, bucket, base_cluster_filepath_prefix) = _cluster_log_destination(
         cluster_description
@@ -1580,6 +1598,7 @@ def _fetch_eventlog(
             spark_context_id=run_spark_context_id,
             base_filepath=base_cluster_filepath_prefix,
             run_end_time_millis=run_end_time_millis,
+            last_total_file_size=dbfs_eventlog_file_size,
         )
     else:
         return Response(error=DatabricksError(message=f"Unknown log destination: {filesystem}"))

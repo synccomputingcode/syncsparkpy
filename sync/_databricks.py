@@ -257,7 +257,7 @@ def _get_event_log_from_cluster(cluster: Dict, tasks: List[Dict]) -> Response[by
 
 
 def _maybe_get_event_log_from_cluster(
-    cluster: Dict, tasks: List[Dict], dbfs_eventlog_file_size: int | None
+    cluster: Dict, tasks: List[Dict], dbfs_eventlog_file_size: Union[int, None]
 ) -> Response:
     spark_context_id = _get_run_spark_context_id(tasks)
     end_time = max(task["end_time"] for task in tasks)
@@ -1575,7 +1575,7 @@ def _fetch_eventlog(
     #  directories based on the `spark_context_id` of the Run.
     run_spark_context_id: str,
     run_end_time_millis: int,
-    dbfs_eventlog_file_size: int | None,
+    dbfs_eventlog_file_size: Union[int, None],
 ):
     (log_url, filesystem, bucket, base_cluster_filepath_prefix) = _cluster_log_destination(
         cluster_description

@@ -95,7 +95,7 @@ class SyncAuth(httpx.Auth):
         if response.status_code == httpx.codes.OK:
             auth = response.json()
             self._access_token = auth["result"]["access_token"]
-            self._access_token_expires_at_utc = auth["result"]["expires_at_utc"]
+            self._access_token_expires_at_utc = datetime.fromisoformat(auth["result"]["expires_at_utc"])
             self._set_cached_token(
                 self._access_token, self._access_token_expires_at_utc
             )

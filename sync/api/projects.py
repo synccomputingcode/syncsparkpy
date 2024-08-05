@@ -93,7 +93,7 @@ def create_project(
     )
 
 
-def get_project(project_id: str) -> Response[dict]:
+def get_project(project_id: str, params: dict = None) -> Response[dict]:
     """Retrieves a project
 
     :param project_id: project ID
@@ -101,7 +101,21 @@ def get_project(project_id: str) -> Response[dict]:
     :return: project object
     :rtype: Response[dict]
     """
-    return Response(**get_default_client().get_project(project_id))
+    return Response(**get_default_client().get_project(project_id, params=params))
+
+
+def get_project_cluster_template(project_id: str, region_name: str = None) -> Response[dict]:
+    """Retrieve a project cluster template.
+
+    :param project_id: project ID
+    :type project_id: str
+    :param region_name: region name, defaults to AWS configuration
+    :type region_name: str, optional
+    :return: project object
+    :rtype: Response[dict]
+    """
+    params = {"aws_region": region_name} if region_name else None
+    return Response(**get_default_client().get_project_cluster_template(project_id, params=params))
 
 
 def update_project(

@@ -694,7 +694,7 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
         cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
         cluster = cluster_response.result
         if cluster:
-            project_cluster_response = get_project_cluster(cluster, project_id, region_name)
+            project_cluster_response = get_project_cluster(cluster, project_id, region_name=region_name)
             project_cluster = project_cluster_response.result
             if project_cluster:
                 cluster_key = tasks[0].get("job_cluster_key")
@@ -727,7 +727,7 @@ def get_project_cluster(cluster: dict, project_id: str, region_name: str = None)
     :return: project job object
     :rtype: Response[dict]
     """
-    project_settings_response = get_project_cluster_settings(project_id, region_name)
+    project_settings_response = get_project_cluster_settings(project_id, region_name=region_name)
     project_cluster_settings = project_settings_response.result
     if project_cluster_settings:
         project_cluster = deep_update(cluster, project_cluster_settings)
@@ -749,43 +749,9 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
     :return: project cluster settings - a subset of a Databricks cluster object
     :rtype: Response[dict]
     """
-    project_response = projects.get_project(project_id)
-    project = project_response.result
-    if project:
-        result = {
-            "custom_tags": {
-                "sync:project-id": project_id,
-            }
-        }
-
-        cluster_log_url = urlparse(project.get("cluster_log_url"))
-        if cluster_log_url.scheme == "s3":
-            result.update(
-                {
-                    "cluster_log_conf": {
-                        "s3": {
-                            "destination": f"{cluster_log_url.geturl()}/{project_id}",
-                            "enable_encryption": True,
-                            "region": region_name or boto.client("s3").meta.region_name,
-                            "canned_acl": "bucket-owner-full-control",
-                        }
-                    }
-                }
-            )
-
-        elif cluster_log_url.scheme == "dbfs":
-            result.update(
-                {
-                    "cluster_log_conf": {
-                        "dbfs": {
-                            "destination": f"{cluster_log_url.geturl()}/{project_id}",
-                        }
-                    }
-                }
-            )
-
-        return Response(result=result)
-    return project_response
+    cluster_template_response = projects.get_project_cluster_template(project_id, region_name=region_name)
+    cluster_template = cluster_template_response.result
+    return Response(result=cluster_template)
 
 
 def run_job_object(job: dict) -> Response[Tuple[str, str]]:
@@ -879,7 +845,7 @@ def run_and_record_project_job(
     :return: prediction ID
     :rtype: Response[str]
     """
-    project_job_response = get_project_job(job_id, project_id, region_name)
+    project_job_response = get_project_job(job_id, project_id, region_name=region_name)
     project_job = project_job_response.result
     if project_job:
         return run_and_record_job_object(project_job, plan_type, compute_type, project_id)

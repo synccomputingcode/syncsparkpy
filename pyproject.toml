@@ -50,6 +50,7 @@ dev = [
     "Sphinx==4.3.0",
     "respx==0.20.1",
     "deepdiff==6.3.0",
+    "python-dateutil==2.9",
 ]
 
 [tool.hatch.version]

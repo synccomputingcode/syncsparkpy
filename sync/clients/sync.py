@@ -2,8 +2,9 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Generator, Optional, Tuple
+from typing import Generator, Optional, Tuple, Type
 
+import dateutil.parser
 import httpx
 from platformdirs import user_cache_dir
 
@@ -13,78 +14,110 @@ from . import USER_AGENT, RetryableHTTPClient, encode_json
 logger = logging.getLogger(__name__)
 
 
-class SyncAuth(httpx.Auth):
-    requires_response_body = True
+class CachedToken:
+    def __init__(self, token_refresh_before_expiry=timedelta(seconds=30)):
+        self.token_refresh_before_expiry = token_refresh_before_expiry
 
-    def __init__(self, api_url: str, api_key: APIKey):
-        self.auth_url = f"{api_url}/v1/auth/token"
-        self.api_key = api_key
-        self._cache_file = Path(user_cache_dir("syncsparkpy")) / "auth.json"
         cache = self._get_cached_token()
+
         if cache:
             self._access_token, self._access_token_expires_at_utc = cache
         else:
-            self._access_token = None
-            self._access_token_expires_at_utc = None
+            self._access_token: Optional[str] = None
+            self._access_token_expires_at_utc: Optional[datetime] = None
+
+    @property
+    def access_token(self) -> Optional[str]:
+        return self._access_token if self.is_access_token_valid else None
+
+    @property
+    def is_access_token_valid(self) -> bool:
+        if not self._access_token:
+            return False
+
+        if self._access_token_expires_at_utc:
+            return datetime.now(tz=timezone.utc) < (
+                    self._access_token_expires_at_utc - self.token_refresh_before_expiry
+            )
+
+        return False
+
+    def set_cached_token(self, access_token: str, expires_at_utc: datetime) -> None:
+        self._access_token = access_token
+        self._access_token_expires_at_utc = expires_at_utc
+        self._set_cached_token()
+
+    def _set_cached_token(self) -> None:
+        raise NotImplementedError
+
+    def _get_cached_token(self) -> Optional[Tuple[str, datetime]]:
+        raise NotImplementedError
+
+
+class FileCachedToken(CachedToken):
+    def __init__(self):
+        self._cache_file = Path(user_cache_dir("syncsparkpy")) / "auth.json"
+
+        super().__init__()
 
     def _get_cached_token(self) -> Optional[Tuple[str, datetime]]:
         # Cache is optional, we can fail to read it and not worry
-        token_file = self._cache_file / "access_token"
-        if token_file.exists():
+        if self._cache_file.exists():
             try:
-                cached_token = json.loads(token_file.read_text())
-                cached_expiry = datetime.fromisoformat(cached_token["expires_at_utc"])
+                cached_token = json.loads(self._cache_file.read_text())
                 cached_access_token = cached_token["access_token"]
-                return (cached_access_token, cached_expiry)
+                cached_expiry = datetime.fromisoformat(cached_token["expires_at_utc"])
+                return cached_access_token, cached_expiry
             except Exception as e:
                 logger.warning(
-                    f"Failed to read cached access token @ {token_file}", exc_info=e
+                    f"Failed to read cached access token @ {self._cache_file}", exc_info=e
                 )
+
         return None
 
-    def _set_cached_token(self, access_token: str, expires_at_utc: datetime):
+    def _set_cached_token(self) -> None:
         # Cache is optional, we can fail to read it and not worry
-        token_file = self._cache_file / "access_token"
         try:
-            token_file.write_text(
+            self._cache_file.parent.mkdir(parents=True, exist_ok=True)
+            self._cache_file.write_text(
                 json.dumps(
                     {
-                        "access_token": access_token,
-                        "expires_at_utc": expires_at_utc.isoformat(),
+                        "access_token": self._access_token,
+                        "expires_at_utc": self._access_token_expires_at_utc.isoformat(),
                     }
                 )
             )
         except Exception as e:
             logger.warning(
-                f"Failed to write cached access token @ {token_file}", exc_info=e
+                f"Failed to write cached access token @ {self._cache_file}", exc_info=e
             )
 
-    @property
-    def _access_token_valid(self) -> bool:
-        if not self._access_token:
-            return False
-        if self._access_token_expires_at_utc:
-            return datetime.now(
-                tz=timezone.utc
-            ) < self._access_token_expires_at_utc - timedelta(seconds=20)
-        return False
+
+class SyncAuth(httpx.Auth):
+    requires_response_body = True
+
+    def __init__(self, api_url: str, api_key: APIKey, cached_token_cls: Type[CachedToken] = FileCachedToken):
+        self.auth_url = f"{api_url}/v1/auth/token"
+        self.api_key = api_key
+
+        self.cached_token = cached_token_cls()
 
     def auth_flow(
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        if not self._access_token_valid:
+        if not self.cached_token.is_access_token_valid:
             response = yield self.build_auth_request()
             self.update_access_token(response)
 
-        request.headers["Authorization"] = f"Bearer {self._access_token}"
+        request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
         response = yield request
 
         if response.status_code == httpx.codes.UNAUTHORIZED:
             response = yield self.build_auth_request()
             self.update_access_token(response)
 
-            request.headers["Authorization"] = f"Bearer {self._access_token}"
-            response = yield request
+            request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
+            yield request
 
     def build_auth_request(self) -> httpx.Request:
         return httpx.Request(
@@ -94,11 +127,9 @@ class SyncAuth(httpx.Auth):
     def update_access_token(self, response: httpx.Response):
         if response.status_code == httpx.codes.OK:
             auth = response.json()
-            self._access_token = auth["result"]["access_token"]
-            self._access_token_expires_at_utc = auth["result"]["expires_at_utc"]
-            self._set_cached_token(
-                self._access_token, self._access_token_expires_at_utc
-            )
+            access_token = auth["result"]["access_token"]
+            expires_at_utc = dateutil.parser.isoparse(auth["result"]["expires_at_utc"])
+            self.cached_token.set_cached_token(access_token, expires_at_utc)
         elif response.headers.get("Content-Type", "").startswith("application/json"):
             error = response.json().get("error")
             if error:

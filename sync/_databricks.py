@@ -722,9 +722,9 @@ def get_project_cluster(cluster: dict, project_id: str, region_name: str = None)
     :type cluster: dict
     :param project_id: Sync project ID
     :type project_id: str
-    :return: project job object
     :param region_name: region name, defaults to AWS configuration
     :type region_name: str, optional
+    :return: project job object
     :rtype: Response[dict]
     """
     project_settings_response = get_project_cluster_settings(project_id, region_name=region_name)

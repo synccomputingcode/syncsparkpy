@@ -109,7 +109,7 @@ def create_submission_with_cluster_info(
         compute_type=compute_type,
     )
     eventlog_response = _maybe_get_event_log_from_cluster(cluster, tasks)
-    if eventlog_response.error and eventlog_response.error is MissingOrIncompleteEventlogError:
+    if eventlog_response.error and isinstance(eventlog_response.error, MissingOrIncompleteEventlogError):
         return eventlog_response
 
     eventlog = eventlog_response.result
@@ -1402,7 +1402,7 @@ def _poll_for_eventlog_from_s3(
 
     while not eventlog_response and poll_num_attempts < poll_max_attempts:
         eventlog_response = _get_eventlog_from_s3(bucket, prefix, run_end_time_seconds)
-        if eventlog_response.error and eventlog_response.error is MissingOrIncompleteEventlogError:
+        if eventlog_response.error and isinstance(eventlog_response.error, MissingOrIncompleteEventlogError):
             poll_num_attempts += 1
             logger.info(
                 f"No or incomplete event log data detected - attempting again in {poll_duration_seconds} seconds"

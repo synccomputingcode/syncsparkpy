@@ -133,6 +133,8 @@ class DatabricksError(Error):
 
 class MissingOrIncompleteEventlogError(Error):
     dbfs_eventlog_file_size: Union[int, None] = None
+    code: str = Field("Retryable Databricks Error", const=True)
+    message: str = Field("Event log was missing or incomplete. Please retry.", const=True)
 
 
 class DatabricksAPIError(Error):

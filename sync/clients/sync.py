@@ -93,14 +93,29 @@ class FileCachedToken(CachedToken):
             )
 
 
+# Putting these here instead of config.py because circular imports and typing.
+ACCESS_TOKEN_CACHE_CLS: Type[CachedToken]
+_access_token_cache_cls = FileCachedToken  # Default to local file caching.
+
+
+def set_access_token_cache_cls(access_token_cache_cls: Type[CachedToken]) -> None:
+    global _access_token_cache_cls
+    _access_token_cache_cls = access_token_cache_cls
+
+
 class SyncAuth(httpx.Auth):
     requires_response_body = True
 
-    def __init__(self, api_url: str, api_key: APIKey, cached_token_cls: Type[CachedToken] = FileCachedToken):
+    def __init__(
+        self,
+        api_url: str,
+        api_key: APIKey,
+        access_token_cache_cls: Type[CachedToken] = FileCachedToken
+    ):
         self.auth_url = f"{api_url}/v1/auth/token"
         self.api_key = api_key
 
-        self.cached_token = cached_token_cls()
+        self.cached_token = access_token_cache_cls()
 
     def auth_flow(
         self, request: httpx.Request
@@ -141,12 +156,17 @@ class SyncAuth(httpx.Auth):
 
 
 class SyncClient(RetryableHTTPClient):
-    def __init__(self, api_url: str, api_key: APIKey):
+    def __init__(
+        self,
+        api_url: str,
+        api_key: APIKey,
+        access_token_cache_cls: Type[CachedToken] = FileCachedToken
+    ):
         super().__init__(
             client=httpx.Client(
                 base_url=api_url,
                 headers={"User-Agent": USER_AGENT},
-                auth=SyncAuth(api_url, api_key),
+                auth=SyncAuth(api_url, api_key, access_token_cache_cls=access_token_cache_cls),
                 timeout=60.0,
             )
         )
@@ -345,12 +365,17 @@ class SyncClient(RetryableHTTPClient):
 
 
 class ASyncClient(RetryableHTTPClient):
-    def __init__(self, api_url: str, api_key: APIKey):
+    def __init__(
+        self,
+        api_url: str,
+        api_key: APIKey,
+        access_token_cache_cls: Type[CachedToken] = FileCachedToken
+    ):
         super().__init__(
             client=httpx.AsyncClient(
                 base_url=api_url,
                 headers={"User-Agent": USER_AGENT},
-                auth=SyncAuth(api_url, api_key),
+                auth=SyncAuth(api_url, api_key, access_token_cache_cls=access_token_cache_cls),
                 timeout=60.0,
             )
         )
@@ -406,7 +431,11 @@ _sync_client: SyncClient = None
 def get_default_client() -> SyncClient:
     global _sync_client
     if not _sync_client:
-        _sync_client = SyncClient(CONFIG.api_url, API_KEY)
+        _sync_client = SyncClient(
+            CONFIG.api_url,
+            API_KEY,
+            access_token_cache_cls=_access_token_cache_cls
+        )
     return _sync_client
 
 
@@ -416,5 +445,9 @@ _async_sync_client: ASyncClient = None
 def get_default_async_client() -> ASyncClient:
     global _async_sync_client
     if not _async_sync_client:
-        _async_sync_client = ASyncClient(CONFIG.api_url, API_KEY)
+        _async_sync_client = ASyncClient(
+            CONFIG.api_url,
+            API_KEY,
+            access_token_cache_cls=_access_token_cache_cls
+        )
     return _async_sync_client

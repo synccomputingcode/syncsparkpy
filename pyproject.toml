@@ -35,7 +35,8 @@ dependencies = [
     "azure-mgmt-compute==30.1.0",
     "azure-mgmt-resource==23.0.1",
     "azure-cli-core==2.50.0",
-    "platformdirs"
+    "platformdirs",
+    "python-dateutil==2.9",
 ]
 dynamic = ["version", "description"]
 
@@ -50,7 +51,6 @@ dev = [
     "Sphinx==4.3.0",
     "respx==0.20.1",
     "deepdiff==6.3.0",
-    "python-dateutil==2.9",
 ]
 
 [tool.hatch.version]

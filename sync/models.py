@@ -132,7 +132,7 @@ class DatabricksError(Error):
 
 
 class MissingOrIncompleteEventlogError(Error):
-    dbfs_eventlog_file_size: int
+    dbfs_eventlog_file_size: Union[int, None] = None
 
 
 class DatabricksAPIError(Error):

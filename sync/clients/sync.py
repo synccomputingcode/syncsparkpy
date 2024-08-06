@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Generator, Optional, Tuple, Type
+from typing import Generator, Optional, Tuple, Type, Callable, Union
 
 import dateutil.parser
 import httpx
@@ -93,12 +93,12 @@ class FileCachedToken(CachedToken):
             )
 
 
-# Putting these here instead of config.py because circular imports and typing.
-ACCESS_TOKEN_CACHE_CLS: Type[CachedToken]
+# Putting this here instead of config.py because circular imports and typing.
 _access_token_cache_cls = FileCachedToken  # Default to local file caching.
+ACCESS_TOKEN_CACHE_CLS_TYPE = Union[Type[CachedToken], Callable[[], CachedToken]]
 
 
-def set_access_token_cache_cls(access_token_cache_cls: Type[CachedToken]) -> None:
+def set_access_token_cache_cls(access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE) -> None:
     global _access_token_cache_cls
     _access_token_cache_cls = access_token_cache_cls
 
@@ -110,7 +110,7 @@ class SyncAuth(httpx.Auth):
         self,
         api_url: str,
         api_key: APIKey,
-        access_token_cache_cls: Type[CachedToken] = FileCachedToken
+        access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = FileCachedToken
     ):
         self.auth_url = f"{api_url}/v1/auth/token"
         self.api_key = api_key
@@ -160,7 +160,7 @@ class SyncClient(RetryableHTTPClient):
         self,
         api_url: str,
         api_key: APIKey,
-        access_token_cache_cls: Type[CachedToken] = FileCachedToken
+        access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = FileCachedToken
     ):
         super().__init__(
             client=httpx.Client(
@@ -369,7 +369,7 @@ class ASyncClient(RetryableHTTPClient):
         self,
         api_url: str,
         api_key: APIKey,
-        access_token_cache_cls: Type[CachedToken] = FileCachedToken
+        access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = FileCachedToken
     ):
         super().__init__(
             client=httpx.AsyncClient(

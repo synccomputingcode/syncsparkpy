@@ -131,6 +131,12 @@ class DatabricksError(Error):
     code: str = Field("Databricks Error", const=True)
 
 
+class MissingOrIncompleteEventlogError(Error):
+    dbfs_eventlog_file_size: Union[int, None] = None
+    code: str = Field("Retryable Databricks Error", const=True)
+    message: str = Field("Event log was missing or incomplete. Please retry.", const=True)
+
+
 class DatabricksAPIError(Error):
     @root_validator(pre=True)
     def validate_error(cls, values):

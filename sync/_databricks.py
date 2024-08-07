@@ -26,6 +26,7 @@ from sync.models import (
     DatabricksComputeType,
     DatabricksError,
     DatabricksPlanType,
+    MissingOrIncompleteEventlogError,
     Response,
 )
 from sync.utils.dbfs import format_dbfs_filepath, read_dbfs_file
@@ -74,6 +75,8 @@ def create_submission_with_cluster_info(
     cluster_activity_events: Dict,
     plan_type: DatabricksPlanType,
     compute_type: DatabricksComputeType,
+    skip_eventlog: bool = False,
+    dbfs_eventlog_file_size: int = 0,
 ) -> Response[str]:
     """Create a Submission for the specified Databricks run given a cluster report"""
 
@@ -84,7 +87,7 @@ def create_submission_with_cluster_info(
 
     project_response = projects.get_project(project_id)
     if project_response.error:
-        return project_response
+        return Response(error=project_response.error)
     cluster_path = project_response.result.get("cluster_path")
 
     project_cluster_tasks = _get_project_cluster_tasks(run, project_id, cluster_path)
@@ -107,7 +110,17 @@ def create_submission_with_cluster_info(
         plan_type=plan_type,
         compute_type=compute_type,
     )
-    eventlog = _get_event_log_from_cluster(cluster, tasks).result
+    eventlog = None
+    if not skip_eventlog:
+        eventlog_response = _maybe_get_event_log_from_cluster(
+            cluster, tasks, dbfs_eventlog_file_size
+        )
+        if eventlog_response.error and isinstance(
+            eventlog_response.error, MissingOrIncompleteEventlogError
+        ):
+            return Response(error=eventlog_response.error)
+
+        eventlog = eventlog_response.result
 
     return projects.create_project_submission_with_eventlog_bytes(
         get_default_client().get_platform(),
@@ -241,6 +254,21 @@ def _get_event_log_from_cluster(cluster: Dict, tasks: List[Dict]) -> Response[by
         return Response(result=eventlog)
 
     return eventlog_response  # return eventlog response with errors
+
+
+def _maybe_get_event_log_from_cluster(
+    cluster: Dict, tasks: List[Dict], dbfs_eventlog_file_size: Union[int, None]
+) -> Response[bytes]:
+    spark_context_id = _get_run_spark_context_id(tasks)
+    end_time = max(task["end_time"] for task in tasks)
+    eventlog_response = _fetch_eventlog(
+        cluster_description=cluster,
+        run_spark_context_id=spark_context_id.result,
+        run_end_time_millis=end_time,
+        dbfs_eventlog_file_size=dbfs_eventlog_file_size,
+    )
+
+    return eventlog_response
 
 
 def get_cluster_report(
@@ -1363,55 +1391,103 @@ def _event_log_poll_duration_seconds():
     return 15
 
 
-def _get_eventlog_from_s3(
+def _s3_eventlog_prefix(base_filepath: str, cluster_id: str) -> str:
+    # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
+    #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
+    #  we make sure to re-strip our final Prefix
+    # TODO - using the spark_context_id might be good here, as we do in the DBFS logic
+    return f"{base_filepath}/eventlog/{cluster_id}".strip("/")
+
+
+def _poll_for_eventlog_from_s3(
     cluster_id: str,
     bucket: str,
     base_filepath: str,
     run_end_time_millis: int,
     poll_duration_seconds: int,
-):
-    s3 = boto.client("s3")
-
-    # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
-    #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
-    #  we make sure to re-strip our final Prefix
-    # TODO - using the spark_context_id might be good here, as we do in the DBFS logic
-    prefix = f"{base_filepath}/eventlog/{cluster_id}".strip("/")
+) -> Response[bytes]:
+    prefix = _s3_eventlog_prefix(base_filepath, cluster_id)
 
     logger.info(f"Looking for eventlogs at location: {prefix}")
 
-    contents = s3.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents")
+    eventlog_response: Union[Response[bytes] | None] = None
     run_end_time_seconds = run_end_time_millis / 1000
     poll_num_attempts = 0
     poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
-    while (
-        not _s3_contents_have_all_rollover_logs(contents, run_end_time_seconds)
-        and poll_num_attempts < poll_max_attempts
-    ):
-        if poll_num_attempts > 0:
+
+    while not eventlog_response and poll_num_attempts < poll_max_attempts:
+        eventlog_response = _get_eventlog_from_s3(bucket, prefix, run_end_time_seconds)
+        if eventlog_response.error and isinstance(
+            eventlog_response.error, MissingOrIncompleteEventlogError
+        ):
+            poll_num_attempts += 1
             logger.info(
                 f"No or incomplete event log data detected - attempting again in {poll_duration_seconds} seconds"
             )
             sleep(poll_duration_seconds)
 
-        contents = s3.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents")
-        poll_num_attempts += 1
+    if eventlog_response and eventlog_response.result:
+        return eventlog_response
 
-    if contents:
+    return Response(
+        error=DatabricksError(
+            message=f"No eventlog found at location - {bucket}/{base_filepath} - after {poll_num_attempts * poll_duration_seconds} seconds"
+        )
+    )
+
+
+def _get_eventlog_from_s3(bucket, prefix, run_end_time_seconds) -> Response[bytes]:
+    s3_client = boto.client("s3")
+    contents = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents")
+    complete_eventlog = _s3_contents_have_all_rollover_logs(contents, run_end_time_seconds)
+
+    if complete_eventlog:
         eventlog_zip = io.BytesIO()
         eventlog_zip_file = zipfile.ZipFile(eventlog_zip, "a", zipfile.ZIP_DEFLATED)
 
         for content in contents:
-            obj = s3.get_object(Bucket=bucket, Key=content["Key"])
+            obj = s3_client.get_object(Bucket=bucket, Key=content["Key"])
             eventlog_zip_file.writestr(content["Key"].split("/")[-1], obj["Body"].read())
 
         eventlog_zip_file.close()
 
         return Response(result=eventlog_zip.getvalue())
 
+    return Response(error=MissingOrIncompleteEventlogError())
+
+
+def _poll_for_eventlog_from_dbfs(
+    cluster_id: str,
+    spark_context_id: str,
+    base_filepath: str,
+    run_end_time_millis: int,
+    poll_duration_seconds: int,
+) -> Response[bytes]:
+    eventlog_response: Union[Response[bytes] | None] = None
+    poll_num_attempts = 0
+    poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
+    eventlog_file_size = 0
+
+    while not eventlog_response and poll_num_attempts < poll_max_attempts:
+        eventlog_response = _get_eventlog_from_dbfs(
+            cluster_id, spark_context_id, base_filepath, run_end_time_millis, eventlog_file_size
+        )
+        if eventlog_response.error and isinstance(
+            eventlog_response.error, MissingOrIncompleteEventlogError
+        ):
+            eventlog_file_size = eventlog_response.error.dbfs_eventlog_file_size
+            poll_num_attempts += 1
+            logger.info(
+                f"No or incomplete event log data detected - attempting again in {poll_duration_seconds} seconds"
+            )
+            sleep(poll_duration_seconds)
+
+    if eventlog_response and eventlog_response.result:
+        return eventlog_response
+
     return Response(
         error=DatabricksError(
-            message=f"No eventlog found at location - {bucket}/{base_filepath} - after {poll_num_attempts * poll_duration_seconds} seconds"
+            message=f"No eventlog found for cluster-id: {cluster_id} & spark_context_id: {spark_context_id}"
         )
     )
 
@@ -1421,8 +1497,8 @@ def _get_eventlog_from_dbfs(
     spark_context_id: str,
     base_filepath: str,
     run_end_time_millis: int,
-    poll_duration_seconds: int,
-):
+    last_total_file_size: int,
+) -> Response[bytes]:
     dbx_client = get_default_client()
 
     prefix = format_dbfs_filepath(f"{base_filepath}/eventlog/")
@@ -1453,29 +1529,17 @@ def _get_eventlog_from_dbfs(
 
     if matching_subdirectory:
         eventlog_dir = dbx_client.list_dbfs_directory(matching_subdirectory["path"])
-
-        poll_num_attempts = 0
-        poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
-
-        total_file_size = 0
-        file_size_changed, total_file_size = _check_total_file_size_changed(0, eventlog_dir)
-        while (poll_num_attempts < poll_max_attempts) and (
+        file_size_changed, total_file_size = _check_total_file_size_changed(
+            last_total_file_size, eventlog_dir
+        )
+        if (
             not _dbfs_directory_has_all_rollover_logs(eventlog_dir, run_end_time_millis)
             or _dbfs_any_file_has_zero_size(eventlog_dir)
             or file_size_changed
         ):
-            if poll_num_attempts > 0:
-                logger.info(
-                    f"No or incomplete event log data detected - attempting again in {poll_duration_seconds} seconds"
-                )
-                sleep(poll_duration_seconds)
-
-            eventlog_dir = dbx_client.list_dbfs_directory(matching_subdirectory["path"])
-            file_size_changed, total_file_size = _check_total_file_size_changed(
-                total_file_size, eventlog_dir
+            return Response(
+                error=MissingOrIncompleteEventlogError(dbfs_eventlog_file_size=total_file_size)
             )
-
-            poll_num_attempts += 1
 
         eventlog_zip = io.BytesIO()
         eventlog_zip_file = zipfile.ZipFile(eventlog_zip, "a", zipfile.ZIP_DEFLATED)
@@ -1505,6 +1569,41 @@ def _get_eventlog_from_dbfs(
         )
 
 
+def _fetch_eventlog(
+    cluster_description: dict,
+    # Databricks will deliver event logs for separate SparkApplication runs on the same cluster into different
+    #  directories based on the `spark_context_id` of the Run.
+    run_spark_context_id: str,
+    run_end_time_millis: int,
+    dbfs_eventlog_file_size: Union[int, None],
+) -> Response[bytes]:
+    (log_url, filesystem, bucket, base_cluster_filepath_prefix) = _cluster_log_destination(
+        cluster_description
+    )
+    if not filesystem:
+        return Response(error=DatabricksError(message="No eventlog location found for cluster."))
+
+    if filesystem == "s3":
+        prefix = _s3_eventlog_prefix(
+            base_filepath=base_cluster_filepath_prefix, cluster_id=cluster_description["cluster_id"]
+        )
+        return _get_eventlog_from_s3(
+            bucket=bucket,
+            prefix=prefix,
+            run_end_time_seconds=run_end_time_millis / 1000,
+        )
+    elif filesystem == "dbfs":
+        return _get_eventlog_from_dbfs(
+            cluster_id=cluster_description["cluster_id"],
+            spark_context_id=run_spark_context_id,
+            base_filepath=base_cluster_filepath_prefix,
+            run_end_time_millis=run_end_time_millis,
+            last_total_file_size=dbfs_eventlog_file_size,
+        )
+    else:
+        return Response(error=DatabricksError(message=f"Unknown log destination: {filesystem}"))
+
+
 def _get_eventlog(
     cluster_description: dict,
     # Databricks will deliver event logs for separate SparkApplication runs on the same cluster into different
@@ -1525,7 +1624,7 @@ def _get_eventlog(
     poll_duration_seconds = _event_log_poll_duration_seconds()
 
     if filesystem == "s3":
-        return _get_eventlog_from_s3(
+        return _poll_for_eventlog_from_s3(
             cluster_id=cluster_description["cluster_id"],
             bucket=bucket,
             base_filepath=base_cluster_filepath_prefix,
@@ -1533,7 +1632,7 @@ def _get_eventlog(
             poll_duration_seconds=poll_duration_seconds,
         )
     elif filesystem == "dbfs":
-        return _get_eventlog_from_dbfs(
+        return _poll_for_eventlog_from_dbfs(
             cluster_id=cluster_description["cluster_id"],
             spark_context_id=run_spark_context_id,
             base_filepath=base_cluster_filepath_prefix,

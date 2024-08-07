@@ -77,7 +77,7 @@ def create_submission_with_cluster_info(
     compute_type: DatabricksComputeType,
     skip_eventlog: bool = False,
     dbfs_eventlog_file_size: int = 0,
-) -> Response:
+) -> Response[str]:
     """Create a Submission for the specified Databricks run given a cluster report"""
 
     run = get_default_client().get_run(run_id)
@@ -87,7 +87,7 @@ def create_submission_with_cluster_info(
 
     project_response = projects.get_project(project_id)
     if project_response.error:
-        return project_response
+        return Response(error=project_response.error)
     cluster_path = project_response.result.get("cluster_path")
 
     project_cluster_tasks = _get_project_cluster_tasks(run, project_id, cluster_path)
@@ -118,7 +118,7 @@ def create_submission_with_cluster_info(
         if eventlog_response.error and isinstance(
             eventlog_response.error, MissingOrIncompleteEventlogError
         ):
-            return eventlog_response
+            return Response(error=eventlog_response.error)
 
         eventlog = eventlog_response.result
 
@@ -258,7 +258,7 @@ def _get_event_log_from_cluster(cluster: Dict, tasks: List[Dict]) -> Response[by
 
 def _maybe_get_event_log_from_cluster(
     cluster: Dict, tasks: List[Dict], dbfs_eventlog_file_size: Union[int, None]
-) -> Response:
+) -> Response[bytes]:
     spark_context_id = _get_run_spark_context_id(tasks)
     end_time = max(task["end_time"] for task in tasks)
     eventlog_response = _fetch_eventlog(
@@ -1391,7 +1391,7 @@ def _event_log_poll_duration_seconds():
     return 15
 
 
-def _s3_eventlog_prefix(base_filepath: str, cluster_id: str):
+def _s3_eventlog_prefix(base_filepath: str, cluster_id: str) -> str:
     # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
     #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
     #  we make sure to re-strip our final Prefix
@@ -1405,12 +1405,12 @@ def _poll_for_eventlog_from_s3(
     base_filepath: str,
     run_end_time_millis: int,
     poll_duration_seconds: int,
-):
+) -> Response[bytes]:
     prefix = _s3_eventlog_prefix(base_filepath, cluster_id)
 
     logger.info(f"Looking for eventlogs at location: {prefix}")
 
-    eventlog_response = None
+    eventlog_response: Union[Response[bytes] | None] = None
     run_end_time_seconds = run_end_time_millis / 1000
     poll_num_attempts = 0
     poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
@@ -1426,7 +1426,7 @@ def _poll_for_eventlog_from_s3(
             )
             sleep(poll_duration_seconds)
 
-    if eventlog_response.result:
+    if eventlog_response and eventlog_response.result:
         return eventlog_response
 
     return Response(
@@ -1436,7 +1436,7 @@ def _poll_for_eventlog_from_s3(
     )
 
 
-def _get_eventlog_from_s3(bucket, prefix, run_end_time_seconds) -> Response:
+def _get_eventlog_from_s3(bucket, prefix, run_end_time_seconds) -> Response[bytes]:
     s3_client = boto.client("s3")
     contents = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix).get("Contents")
     complete_eventlog = _s3_contents_have_all_rollover_logs(contents, run_end_time_seconds)
@@ -1462,8 +1462,8 @@ def _poll_for_eventlog_from_dbfs(
     base_filepath: str,
     run_end_time_millis: int,
     poll_duration_seconds: int,
-):
-    eventlog_response = None
+) -> Response[bytes]:
+    eventlog_response: Union[Response[bytes] | None] = None
     poll_num_attempts = 0
     poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
     eventlog_file_size = 0
@@ -1482,7 +1482,7 @@ def _poll_for_eventlog_from_dbfs(
             )
             sleep(poll_duration_seconds)
 
-    if eventlog_response.result:
+    if eventlog_response and eventlog_response.result:
         return eventlog_response
 
     return Response(
@@ -1498,7 +1498,7 @@ def _get_eventlog_from_dbfs(
     base_filepath: str,
     run_end_time_millis: int,
     last_total_file_size: int,
-):
+) -> Response[bytes]:
     dbx_client = get_default_client()
 
     prefix = format_dbfs_filepath(f"{base_filepath}/eventlog/")
@@ -1576,7 +1576,7 @@ def _fetch_eventlog(
     run_spark_context_id: str,
     run_end_time_millis: int,
     dbfs_eventlog_file_size: Union[int, None],
-):
+) -> Response[bytes]:
     (log_url, filesystem, bucket, base_cluster_filepath_prefix) = _cluster_log_destination(
         cluster_description
     )

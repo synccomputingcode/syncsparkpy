@@ -290,12 +290,6 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
             )
             return Response(error=DatabricksError(message=no_instances_message))
 
-    else:
-        no_cluster_logs_message = (
-            f"No cluster log configuration has been set for cluster `{cluster_id}`. "
-        )
-        return Response(error=DatabricksError(message=no_cluster_logs_message))
-
     return Response(result=cluster_instances)
 
 

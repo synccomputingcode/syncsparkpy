@@ -36,7 +36,7 @@ dependencies = [
     "azure-mgmt-resource==23.0.1",
     "azure-cli-core==2.50.0",
     "platformdirs",
-    "python-dateutil<3",
+    "python-dateutil>=2.7,<3",
 ]
 dynamic = ["version", "description"]
 

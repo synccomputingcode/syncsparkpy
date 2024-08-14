@@ -1425,6 +1425,7 @@ def _poll_for_eventlog_from_s3(
                 f"No or incomplete event log data detected - attempting again in {poll_duration_seconds} seconds"
             )
             sleep(poll_duration_seconds)
+            eventlog_response = None
 
     if eventlog_response and eventlog_response.result:
         return eventlog_response
@@ -1481,6 +1482,7 @@ def _poll_for_eventlog_from_dbfs(
                 f"No or incomplete event log data detected - attempting again in {poll_duration_seconds} seconds"
             )
             sleep(poll_duration_seconds)
+            eventlog_response = None
 
     if eventlog_response and eventlog_response.result:
         return eventlog_response

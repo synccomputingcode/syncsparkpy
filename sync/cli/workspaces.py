@@ -1,6 +1,7 @@
 import json
 from urllib.parse import urlparse
 from uuid import uuid4
+from typing import Optional
 
 import click
 
@@ -16,6 +17,7 @@ from sync.models import (
     HostingType,
     UpdateWorkspaceConfig,
     WorkspaceCollectionTypeEnum,
+    WorkspaceMonitoringTypeEnum,
 )
 from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
@@ -80,8 +82,18 @@ def workspaces():
     "--azure-client-secret",
     help="Azure Client Secret",
 )
+@click.option(
+    "--monitoring-type",
+    type=click.Choice(WorkspaceMonitoringTypeEnum),
+    default=WorkspaceMonitoringTypeEnum.WEBHOOK,
+    help=(
+        "Choose how you want Gradient to monitor your Databricks clusters. "
+        "Ignored for REMOTE collection type."
+    )
+)
 def create_workspace_config(
     workspace_id: str,
+    monitoring_type: WorkspaceMonitoringTypeEnum,
     instance_profile_arn: str = None,
     databricks_plan_type: str = None,
     databricks_webhook_id: str = None,
@@ -107,6 +119,8 @@ def create_workspace_config(
 
     hosting_type = _prompt_hosting_type(hosting_type)
     collection_type = _determine_collection_type(hosting_type)
+    monitoring_type = _determine_monitoring_type(collection_type, monitoring_type)
+
     aws_external_id = str(uuid4())
 
     if hosting_type == HostingType.SELF_HOSTED and compute_provider == ComputeProvider.AWS:
@@ -132,6 +146,7 @@ def create_workspace_config(
         sync_api_key_id=sync_api_key_id,
         sync_api_key_secret=sync_api_key_secret,
         collection_type=collection_type,
+        monitoring_type=monitoring_type,
         compute_provider=compute_provider,
         instance_profile_arn=instance_profile_arn,
         databricks_plan_type=databricks_plan_type,
@@ -212,12 +227,22 @@ def _prompt_databricks_fields():
     return databricks_host, databricks_token
 
 
-def _determine_collection_type(hosting_type):
+def _determine_collection_type(hosting_type) -> WorkspaceCollectionTypeEnum:
     return (
         WorkspaceCollectionTypeEnum.HOSTED
         if hosting_type == HostingType.SYNC_HOSTED
         else WorkspaceCollectionTypeEnum.REMOTE
     )
+
+
+def _determine_monitoring_type(
+    collection_type: WorkspaceCollectionTypeEnum,
+    monitoring_type: WorkspaceMonitoringTypeEnum
+) -> Optional[WorkspaceMonitoringTypeEnum]:
+    if collection_type == WorkspaceCollectionTypeEnum.REMOTE:
+        return None
+
+    return monitoring_type
 
 
 def _handle_azure_provider(
@@ -319,6 +344,16 @@ def list_workspace_configs():
     "--azure-client-secret",
     help="Azure Client Secret",
 )
+@click.option(
+    "--collection-type",
+    type=click.Choice(WorkspaceCollectionTypeEnum),
+    help="Choose how you want to provide logs to Gradient."
+)
+@click.option(
+    "--monitoring-type",
+    type=click.Choice(WorkspaceMonitoringTypeEnum),
+    help="Choose how you want Gradient to monitor your Databricks clusters."
+)
 def update_workspace_config(
     workspace_id: str,
     instance_profile_arn: str = None,
@@ -331,6 +366,8 @@ def update_workspace_config(
     azure_client_id: str = None,
     azure_tenant_id: str = None,
     azure_client_secret: str = None,
+    collection_type: WorkspaceCollectionTypeEnum = None,
+    monitoring_type: WorkspaceMonitoringTypeEnum = None,
 ):
     current_config_response = workspace.get_workspace_config(workspace_id)
     current_config = current_config_response.result
@@ -367,6 +404,8 @@ def update_workspace_config(
             azure_client_id=azure_client_id,
             azure_tenant_id=azure_tenant_id,
             azure_client_secret=azure_client_secret,
+            collection_type=collection_type.value if collection_type else None,
+            monitoring_type=monitoring_type.value if monitoring_type else None,
         )
 
         update_config_response = workspace.update_workspace_config(update_configuration)

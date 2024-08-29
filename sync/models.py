@@ -29,6 +29,12 @@ class WorkspaceCollectionTypeEnum(str, Enum):
 
 
 @unique
+class WorkspaceMonitoringTypeEnum(str, Enum):
+    WEBHOOK = "webhook"
+    HYPERVISOR = "hypervisor"
+
+
+@unique
 class ComputeProvider(str, Enum):
     AWS = "aws"
     AZURE = "azure"
@@ -301,6 +307,9 @@ class CreateWorkspaceConfig(BaseModel):
     collection_type: WorkspaceCollectionTypeEnum = Field(
         ..., description="Type of hosting for the workspace"
     )
+    monitoring_type: WorkspaceMonitoringTypeEnum = Field(
+        ..., description="Type of monitoring for the workspace"
+    )
     compute_provider: ComputeProvider = Field(
         ..., description="Cloud provider for compute resources"
     )
@@ -378,3 +387,5 @@ class UpdateWorkspaceConfig(BaseModel):
     azure_tenant_id: Optional[str] = None
     azure_client_id: Optional[str] = None
     azure_client_secret: Optional[str] = None
+    collection_type: Optional[str] = None
+    monitoring_type: Optional[str] = None

@@ -1,7 +1,7 @@
 import json
+from typing import Optional
 from urllib.parse import urlparse
 from uuid import uuid4
-from typing import Optional
 
 import click
 
@@ -89,7 +89,7 @@ def workspaces():
     help=(
         "Choose how you want Gradient to monitor your Databricks clusters. "
         "Ignored for REMOTE collection type."
-    )
+    ),
 )
 def create_workspace_config(
     workspace_id: str,
@@ -236,8 +236,7 @@ def _determine_collection_type(hosting_type) -> WorkspaceCollectionTypeEnum:
 
 
 def _determine_monitoring_type(
-    collection_type: WorkspaceCollectionTypeEnum,
-    monitoring_type: WorkspaceMonitoringTypeEnum
+    collection_type: WorkspaceCollectionTypeEnum, monitoring_type: WorkspaceMonitoringTypeEnum
 ) -> Optional[WorkspaceMonitoringTypeEnum]:
     if collection_type == WorkspaceCollectionTypeEnum.REMOTE:
         return None
@@ -347,12 +346,12 @@ def list_workspace_configs():
 @click.option(
     "--collection-type",
     type=click.Choice(WorkspaceCollectionTypeEnum),
-    help="Choose how you want to provide logs to Gradient."
+    help="Choose how you want to provide logs to Gradient.",
 )
 @click.option(
     "--monitoring-type",
     type=click.Choice(WorkspaceMonitoringTypeEnum),
-    help="Choose how you want Gradient to monitor your Databricks clusters."
+    help="Choose how you want Gradient to monitor your Databricks clusters.",
 )
 def update_workspace_config(
     workspace_id: str,

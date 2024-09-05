@@ -11,7 +11,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from time import sleep
-from typing import Collection, Dict, List, Set, Tuple, Union
+from typing import Collection, Dict, List, Optional, Set, Tuple, Union
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -722,7 +722,9 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
         cluster_response = _get_job_cluster(tasks, job_settings.get("job_clusters", []))
         cluster = cluster_response.result
         if cluster:
-            project_cluster_response = get_project_cluster(cluster, project_id, region_name=region_name)
+            project_cluster_response = get_project_cluster(
+                cluster, project_id, region_name=region_name
+            )
             project_cluster = project_cluster_response.result
             if project_cluster:
                 cluster_key = tasks[0].get("job_cluster_key")
@@ -777,7 +779,9 @@ def get_project_cluster_settings(project_id: str, region_name: str = None) -> Re
     :return: project cluster settings - a subset of a Databricks cluster object
     :rtype: Response[dict]
     """
-    cluster_template_response = projects.get_project_cluster_template(project_id, region_name=region_name)
+    cluster_template_response = projects.get_project_cluster_template(
+        project_id, region_name=region_name
+    )
     cluster_template = cluster_template_response.result
     return Response(result=cluster_template)
 
@@ -1410,7 +1414,7 @@ def _poll_for_eventlog_from_s3(
 
     logger.info(f"Looking for eventlogs at location: {prefix}")
 
-    eventlog_response: Union[Response[bytes] | None] = None
+    eventlog_response: Union[Optional[Response[bytes]]] = None
     run_end_time_seconds = run_end_time_millis / 1000
     poll_num_attempts = 0
     poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
@@ -1464,7 +1468,7 @@ def _poll_for_eventlog_from_dbfs(
     run_end_time_millis: int,
     poll_duration_seconds: int,
 ) -> Response[bytes]:
-    eventlog_response: Union[Response[bytes] | None] = None
+    eventlog_response: Union[Optional[Response[bytes]]] = None
     poll_num_attempts = 0
     poll_max_attempts = 20  # 5 minutes / 15 seconds = 20 attempts
     eventlog_file_size = 0

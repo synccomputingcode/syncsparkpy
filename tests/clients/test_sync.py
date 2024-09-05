@@ -4,7 +4,7 @@ from unittest import TestCase, mock
 from sync.api.projects import (
     get_cluster_definition_and_recommendation,
     get_latest_project_config_recommendation,
-    get_updated_cluster_defintion,
+    get_updated_cluster_definition,
 )
 from sync.models import RecommendationError, Response
 
@@ -160,7 +160,7 @@ class TestSync(TestCase):
             assert result == expected_result
 
     @mock.patch("sync.clients.sync.SyncClient.get_latest_project_recommendation")
-    def test_get_updated_aws_cluster_defintion(self, mock_send):
+    def test_get_updated_aws_cluster_definition(self, mock_send):
         mock_send.return_value = get_aws_rec_from_file()
 
         expected_result = Response(
@@ -217,11 +217,11 @@ class TestSync(TestCase):
         )
 
         with open("tests/test_files/aws_cluster.json") as cluster_in:
-            result = get_updated_cluster_defintion("project_id", cluster_in.read())
+            result = get_updated_cluster_definition("project_id", cluster_in.read())
             assert result == expected_result
 
     @mock.patch("sync.clients.sync.SyncClient.get_latest_project_recommendation")
-    def test_get_updated_azure_cluster_defintion(self, mock_send):
+    def test_get_updated_azure_cluster_definition(self, mock_send):
         mock_send.return_value = get_azure_rec_from_file()
 
         expected_result = Response(
@@ -276,5 +276,5 @@ class TestSync(TestCase):
         )
 
         with open("tests/test_files/azure_cluster.json") as cluster_in:
-            result = get_updated_cluster_defintion("project_id", cluster_in.read())
+            result = get_updated_cluster_definition("project_id", cluster_in.read())
             assert result == expected_result

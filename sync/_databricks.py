@@ -553,7 +553,7 @@ def _record_project_clusters(
 
 
 def apply_project_recommendation(
-    job_id: str, project_id: str, recommendation_id: str
+    job_id: str, project_id: str, recommendation_id: str, workspace_id: str
 ) -> Response[str]:
     """Updates jobs with project recommendation
 
@@ -563,13 +563,16 @@ def apply_project_recommendation(
     :type project_id: str
     :param recommendation_id: Sync project recommendation ID
     :type recommendation_id: str
+    :param workspace_id: The Databricks workspace ID of the job
+    :type workspace_id: str
     :return: ID of applied recommendation
     :rtype: Response[str]
     """
     databricks_client = get_default_client()
 
     job = databricks_client.get_job(job_id)
-    job_clusters = _get_project_job_clusters(job)
+    project_clusters = projects.get_project_clusters(workspace_id, job_id=job_id).result
+    job_clusters = _get_project_job_clusters(job, project_clusters)
 
     project_cluster = job_clusters.get(project_id)
     if not project_cluster:
@@ -1160,8 +1163,34 @@ def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
     return Response(error=DatabricksError(message="Not all tasks use the same cluster"))
 
 
+def _find_cluster_project_id(
+    cluster_path: Tuple[str, str],
+    project_clusters: List[dict],
+    task_cluster: dict
+) -> Optional[str]:
+    cluster_path = "/".join(cluster_path)
+    cluster_project_id = None
+
+    # First try to get the project ID from the project_clusters:
+    for project_cluster in project_clusters:
+        if project_cluster["cluster_path"] == cluster_path:
+            cluster_project_id = project_cluster.get("project_id")
+            break
+
+    if not cluster_project_id:
+        # Backup solution to get the project ID from cluster tags
+        # Should remove later when we remove sync:project_id tag integrations.
+        cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
+
+    if not cluster_project_id:
+        logger.warning("Could not find cluster project ID for cluster path %s", cluster_path)
+
+    return cluster_project_id
+
+
 def _get_project_job_clusters(
     job: dict,
+    project_clusters: List[dict],
     exclude_tasks: Union[Collection[str], None] = None,
 ) -> Dict[str, Tuple[Tuple[str], dict]]:
     """Returns a mapping of project IDs to cluster paths and clusters.
@@ -1179,16 +1208,22 @@ def _get_project_job_clusters(
     for task in job["settings"]["tasks"]:
         if not exclude_tasks or task["task_key"] not in exclude_tasks:
             task_cluster = task.get("new_cluster")
+
             if task_cluster:
                 task_cluster_path = ("tasks", task["task_key"])
-
-            if not task_cluster:
+            else:
                 task_cluster = job_clusters.get(task.get("job_cluster_key"))
                 task_cluster_path = ("job_clusters", task.get("job_cluster_key"))
 
             if task_cluster:
-                cluster_project_id = task_cluster.get("custom_tags", {}).get("sync:project-id")
-                all_project_clusters[cluster_project_id][task_cluster_path] = task_cluster
+                cluster_project_id = _find_cluster_project_id(
+                    task_cluster_path,
+                    project_clusters,
+                    task_cluster
+                )
+
+                if cluster_project_id:
+                    all_project_clusters[cluster_project_id][task_cluster_path] = task_cluster
 
     filtered_project_clusters = {}
     for project_id, clusters in all_project_clusters.items():

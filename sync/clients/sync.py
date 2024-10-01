@@ -1,44 +1,57 @@
 import logging
-from typing import Generator
+from typing import Generator, Optional
 
+import dateutil.parser
 import httpx
 
 from ..config import API_KEY, CONFIG, APIKey
 from . import USER_AGENT, RetryableHTTPClient, encode_json
-
+from .cache import ACCESS_TOKEN_CACHE_CLS_TYPE, FileCachedToken, get_access_token_cache_cache
 logger = logging.getLogger(__name__)
 
 
 class SyncAuth(httpx.Auth):
     requires_response_body = True
 
-    def __init__(self, api_url: str, api_key: APIKey):
+    def __init__(
+        self,
+        api_url: str,
+        api_key: APIKey,
+        access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = FileCachedToken
+    ):
         self.auth_url = f"{api_url}/v1/auth/token"
         self.api_key = api_key
-        self._access_token = None
 
-    def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
-        if not self._access_token:
+        self.cached_token = access_token_cache_cls()
+
+    def auth_flow(
+        self, request: httpx.Request
+    ) -> Generator[httpx.Request, httpx.Response, None]:
+        if not self.cached_token.is_access_token_valid:
             response = yield self.build_auth_request()
             self.update_access_token(response)
 
-        request.headers["Authorization"] = f"Bearer {self._access_token}"
+        request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
         response = yield request
 
         if response.status_code == httpx.codes.UNAUTHORIZED:
             response = yield self.build_auth_request()
             self.update_access_token(response)
 
-            request.headers["Authorization"] = f"Bearer {self._access_token}"
-            response = yield request
+            request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
+            yield request
 
     def build_auth_request(self) -> httpx.Request:
-        return httpx.Request("POST", self.auth_url, json=self.api_key.dict(by_alias=True))
+        return httpx.Request(
+            "POST", self.auth_url, json=self.api_key.dict(by_alias=True)
+        )
 
     def update_access_token(self, response: httpx.Response):
         if response.status_code == httpx.codes.OK:
             auth = response.json()
-            self._access_token = auth["result"]["access_token"]
+            access_token = auth["result"]["access_token"]
+            expires_at_utc = dateutil.parser.isoparse(auth["result"]["expires_at_utc"])
+            self.cached_token.set_cached_token(access_token, expires_at_utc)
         elif response.headers.get("Content-Type", "").startswith("application/json"):
             error = response.json().get("error")
             if error:
@@ -50,12 +63,17 @@ class SyncAuth(httpx.Auth):
 
 
 class SyncClient(RetryableHTTPClient):
-    def __init__(self, api_url: str, api_key: APIKey):
+    def __init__(
+        self,
+        api_url: str,
+        api_key: APIKey,
+        access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = FileCachedToken
+    ):
         super().__init__(
             client=httpx.Client(
                 base_url=api_url,
                 headers={"User-Agent": USER_AGENT},
-                auth=SyncAuth(api_url, api_key),
+                auth=SyncAuth(api_url, api_key, access_token_cache_cls=access_token_cache_cls),
                 timeout=60.0,
             )
         )
@@ -66,11 +84,15 @@ class SyncClient(RetryableHTTPClient):
     def create_project(self, project: dict) -> dict:
         headers, content = encode_json(project)
         return self._send(
-            self._client.build_request("POST", "/v1/projects", headers=headers, content=content)
+            self._client.build_request(
+                "POST", "/v1/projects", headers=headers, content=content
+            )
         )
 
     def reset_project(self, project_id: str) -> dict:
-        return self._send(self._client.build_request("POST", f"/v1/projects/{project_id}/reset"))
+        return self._send(
+            self._client.build_request("POST", f"/v1/projects/{project_id}/reset")
+        )
 
     def update_project(self, project_id: str, project: dict) -> dict:
         headers, content = encode_json(project)
@@ -80,20 +102,34 @@ class SyncClient(RetryableHTTPClient):
             )
         )
 
-    def get_project(self, project_id: str) -> dict:
-        return self._send(self._client.build_request("GET", f"/v1/projects/{project_id}"))
+    def get_project(self, project_id: str, params: dict = None) -> dict:
+        return self._send(
+            self._client.build_request("GET", f"/v1/projects/{project_id}", params=params)
+        )
+
+    def get_project_cluster_template(self, project_id: str, params: dict = None) -> dict:
+        return self._send(
+            self._client.build_request("GET", f"/v1/projects/{project_id}/cluster/template", params=params)
+        )
 
     def get_projects(self, params: dict = None) -> dict:
-        return self._send(self._client.build_request("GET", "/v1/projects", params=params))
+        return self._send(
+            self._client.build_request("GET", "/v1/projects", params=params)
+        )
 
     def delete_project(self, project_id: str) -> dict:
-        return self._send(self._client.build_request("DELETE", f"/v1/projects/{project_id}"))
+        return self._send(
+            self._client.build_request("DELETE", f"/v1/projects/{project_id}")
+        )
 
     def create_project_submission(self, project_id: str, submission: dict) -> dict:
         headers, content = encode_json(submission)
         return self._send(
             self._client.build_request(
-                "POST", f"/v1/projects/{project_id}/submissions", headers=headers, content=content
+                "POST",
+                f"/v1/projects/{project_id}/submissions",
+                headers=headers,
+                content=content,
             )
         )
 
@@ -115,7 +151,9 @@ class SyncClient(RetryableHTTPClient):
             )
         )
 
-    def get_project_recommendation(self, project_id: str, recommendation_id: str) -> dict:
+    def get_project_recommendation(
+        self, project_id: str, recommendation_id: str
+    ) -> dict:
         return self._send(
             self._client.build_request(
                 "GET", f"/v1/projects/{project_id}/recommendations/{recommendation_id}"
@@ -156,23 +194,32 @@ class SyncClient(RetryableHTTPClient):
 
     def get_workspace_config(self, workspace_id: str) -> dict:
         return self._send(
-            self._client.build_request("GET", f"/v1/databricks/workspaces/{workspace_id}")
+            self._client.build_request(
+                "GET", f"/v1/databricks/workspaces/{workspace_id}"
+            )
         )
 
     def get_workspace_configs(self) -> dict:
-        return self._send(self._client.build_request("GET", "/v1/databricks/workspaces"))
+        return self._send(
+            self._client.build_request("GET", "/v1/databricks/workspaces")
+        )
 
     def update_workspace_config(self, workspace_id: str, **updates) -> dict:
         headers, content = encode_json(updates)
         return self._send(
             self._client.build_request(
-                "PUT", f"/v1/databricks/workspaces/{workspace_id}", headers=headers, content=content
+                "PUT",
+                f"/v1/databricks/workspaces/{workspace_id}",
+                headers=headers,
+                content=content,
             )
         )
 
     def delete_workspace_config(self, workspace_id: str) -> dict:
         return self._send(
-            self._client.build_request("DELETE", f"/v1/databricks/workspaces/{workspace_id}")
+            self._client.build_request(
+                "DELETE", f"/v1/databricks/workspaces/{workspace_id}"
+            )
         )
 
     def reset_webhook_creds(self, workspace_id: str) -> dict:
@@ -225,12 +272,17 @@ class SyncClient(RetryableHTTPClient):
 
 
 class ASyncClient(RetryableHTTPClient):
-    def __init__(self, api_url: str, api_key: APIKey):
+    def __init__(
+        self,
+        api_url: str,
+        api_key: APIKey,
+        access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = FileCachedToken
+    ):
         super().__init__(
             client=httpx.AsyncClient(
                 base_url=api_url,
                 headers={"User-Agent": USER_AGENT},
-                auth=SyncAuth(api_url, api_key),
+                auth=SyncAuth(api_url, api_key, access_token_cache_cls=access_token_cache_cls),
                 timeout=60.0,
             )
         )
@@ -238,7 +290,9 @@ class ASyncClient(RetryableHTTPClient):
     async def create_project(self, project: dict) -> dict:
         headers, content = encode_json(project)
         return await self._send(
-            self._client.build_request("POST", "/v1/projects", headers=headers, content=content)
+            self._client.build_request(
+                "POST", "/v1/projects", headers=headers, content=content
+            )
         )
 
     async def update_project(self, project_id: str, project: dict) -> dict:
@@ -250,13 +304,19 @@ class ASyncClient(RetryableHTTPClient):
         )
 
     async def get_project(self, project_id: str) -> dict:
-        return await self._send(self._client.build_request("GET", f"/v1/projects/{project_id}"))
+        return await self._send(
+            self._client.build_request("GET", f"/v1/projects/{project_id}")
+        )
 
     async def get_projects(self, params: dict = None) -> dict:
-        return await self._send(self._client.build_request("GET", "/v1/projects", params=params))
+        return await self._send(
+            self._client.build_request("GET", "/v1/projects", params=params)
+        )
 
     async def delete_project(self, project_id: str) -> dict:
-        return await self._send(self._client.build_request("DELETE", f"/v1/projects/{project_id}"))
+        return await self._send(
+            self._client.build_request("DELETE", f"/v1/projects/{project_id}")
+        )
 
     async def _send(self, request: httpx.Request) -> dict:
         response = await self._send_request_async(request)
@@ -272,21 +332,29 @@ class ASyncClient(RetryableHTTPClient):
         return {"error": {"code": "Sync API Error", "message": "Transaction failure"}}
 
 
-_sync_client: SyncClient = None
+_sync_client: Optional[SyncClient] = None
 
 
 def get_default_client() -> SyncClient:
     global _sync_client
     if not _sync_client:
-        _sync_client = SyncClient(CONFIG.api_url, API_KEY)
+        _sync_client = SyncClient(
+            CONFIG.api_url,
+            API_KEY,
+            access_token_cache_cls=get_access_token_cache_cache()
+        )
     return _sync_client
 
 
-_async_sync_client: ASyncClient = None
+_async_sync_client: Optional[ASyncClient] = None
 
 
 def get_default_async_client() -> ASyncClient:
     global _async_sync_client
     if not _async_sync_client:
-        _async_sync_client = ASyncClient(CONFIG.api_url, API_KEY)
+        _async_sync_client = ASyncClient(
+            CONFIG.api_url,
+            API_KEY,
+            access_token_cache_cls=get_access_token_cache_cache()
+        )
     return _async_sync_client

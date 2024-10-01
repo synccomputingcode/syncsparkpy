@@ -5,7 +5,7 @@ import io
 import json
 import logging
 from time import sleep
-from typing import List, Union
+from typing import List, Optional, Union
 from urllib.parse import urlparse
 
 import httpx
@@ -93,7 +93,7 @@ def create_project(
     )
 
 
-def get_project(project_id: str) -> Response[dict]:
+def get_project(project_id: str, params: dict = None) -> Response[dict]:
     """Retrieves a project
 
     :param project_id: project ID
@@ -101,7 +101,21 @@ def get_project(project_id: str) -> Response[dict]:
     :return: project object
     :rtype: Response[dict]
     """
-    return Response(**get_default_client().get_project(project_id))
+    return Response(**get_default_client().get_project(project_id, params=params))
+
+
+def get_project_cluster_template(project_id: str, region_name: str = None) -> Response[dict]:
+    """Retrieve a project cluster template.
+
+    :param project_id: project ID
+    :type project_id: str
+    :param region_name: region name, defaults to AWS configuration
+    :type region_name: str, optional
+    :return: project object
+    :rtype: Response[dict]
+    """
+    params = {"aws_region": region_name} if region_name else None
+    return Response(**get_default_client().get_project_cluster_template(project_id, params=params))
 
 
 def update_project(
@@ -430,21 +444,34 @@ def get_submissions(project_id: str) -> Response[dict]:
         return Response(result=recent_submissions["items"])
 
 
-def get_latest_project_config_recommendation(
-    project_id: str,
-) -> Response[Union[AWSProjectConfiguration, AzureProjectConfiguration]]:
+def get_latest_project_config_recommendation(project_id: str) -> Optional[Response[dict]]:
     """Get Latest Project Configuration Recommendation.
 
     :param project_id: project ID
     :type project_id: str
     :return: Project Configuration Recommendation object
-    :rtype: AWSProjectConfiguration or AzureProjectConfiguration
+    :rtype: Response object or None
     """
-    latest_recommendation = get_default_client().get_latest_project_recommendation(project_id)
-    if latest_recommendation.get("result") and len(latest_recommendation["result"]) > 0:
-        return Response(
-            result=latest_recommendation["result"][0]["recommendation"]["configuration"]
-        )
+    response = get_default_client().get_latest_project_recommendation(project_id)
+
+    result = response.get("result")
+
+    if not result:
+        # It would be better to return Response(error=...) but to keep this API
+        # consistent with previous versions we return None instead.
+        return None
+
+    recommendation = result[0].get("recommendation")
+
+    if not recommendation:
+        return Response(error=RecommendationError(message="Recommendation not found"))
+
+    configuration = recommendation.get("configuration")
+
+    if not configuration:
+        return Response(error=RecommendationError(message="Recommendation configuration not found"))
+
+    return Response(result=configuration)
 
 
 def get_cluster_definition_and_recommendation(
@@ -473,7 +500,7 @@ def get_cluster_definition_and_recommendation(
     )
 
 
-def get_updated_cluster_defintion(
+def get_updated_cluster_definition(
     project_id: str, cluster_spec_str: str
 ) -> Response[Union[AWSProjectConfiguration, AzureProjectConfiguration]]:
     """Return Cluster Definition merged with Project Configuration Recommendations.
@@ -506,3 +533,7 @@ def get_updated_cluster_defintion(
         return Response(result=recommendation_cluster)
     else:
         return rec_response
+
+
+# Old typo, to keep the API consistent we also define the one with wrong name:
+get_updated_cluster_defintion = get_updated_cluster_definition

@@ -18,6 +18,7 @@ def create_workspace_config(config: CreateWorkspaceConfig) -> Response[dict]:
             plan_type=config.databricks_plan_type,
             cluster_policy_id=config.cluster_policy_id,
             collection_type=config.collection_type,
+            monitoring_type=config.monitoring_type,
             compute_provider=config.compute_provider,
             aws_region=config.aws_region,
             aws_iam_role_arn=config.aws_iam_role_arn,
@@ -57,6 +58,8 @@ def update_workspace_config(config: UpdateWorkspaceConfig) -> Response[dict]:
             "azure_client_id": config.azure_client_id,
             "azure_client_secret": config.azure_client_secret,
             "azure_subscription_id": config.azure_subscription_id,
+            "collection_type": config.collection_type,
+            "monitoring_type": config.monitoring_type,
         }.items()
         if value is not None
     }

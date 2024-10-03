@@ -124,9 +124,9 @@ def get_project_clusters(
 ) -> Response[List[dict]]:
     """Retrieve a project clusters from a job_id.
 
-    :param workspace_id: The Databricks workspace ID of the job or run.
+    :param workspace_id: The Databricks workspace ID of the job.
     :type workspace_id: str
-    :param job_id: The job ID to resolve the Sync project clusters for, will use last_run ID.
+    :param job_id: The job ID to resolve the Sync project clusters for.
     :type job_id: str, optional
     :return: project object
     :rtype: Response[dict]

@@ -571,7 +571,7 @@ def apply_project_recommendation(
     databricks_client = get_default_client()
 
     job = databricks_client.get_job(job_id)
-    project_clusters = projects.get_project_clusters(workspace_id, job_id=job_id).result
+    project_clusters = projects.get_project_clusters(workspace_id, job_id).result
     job_clusters = _get_project_job_clusters(job, project_clusters)
 
     project_cluster = job_clusters.get(project_id)

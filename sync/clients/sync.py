@@ -115,20 +115,15 @@ class SyncClient(RetryableHTTPClient):
     def get_project_clusters(
         self,
         workspace_id: str,
-        job_id: Optional[str] = None,
-        run_id: Optional[str] = None,
+        job_id: str,
     ) -> dict:
-        """Get the project clusters from a job_id (will use last_run ID) or a run_id"""
-        params = {"workspace_id": workspace_id}
-        if job_id:
-            params["job_id"] = job_id
-        if run_id:
-            params["run_id"] = run_id
+        """Get the project clusters from a job_id"""
+        params = {"workspace_id": workspace_id, "job_id": job_id}
 
         return self._send(
             self._client.build_request(
                 "GET",
-                "/v1/projects/databricks/clusters",
+                "/v1/projects/databricks/job-clusters",
                 params=params)
         )
 

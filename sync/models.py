@@ -2,6 +2,8 @@
 Models used throughout this SDK
 """
 
+import copy
+import json
 from dataclasses import dataclass
 from enum import Enum, unique
 from typing import Callable, Dict, Generic, List, Optional, TypeVar, Union
@@ -55,18 +57,21 @@ class AccessReportLine:
 
 class AccessReport(List[AccessReportLine]):
     def __str__(self):
-        return "\n".join(f"{line.name}\n  {line.status}: {line.message}" for line in self)
+        return "\n".join(
+            f"{line.name}\n  {line.status}: {line.message}" for line in self
+        )
 
     def add_boto_method_call(
-        self, method: Callable, error_status: AccessStatusCode = AccessStatusCode.RED, **params
+        self,
+        method: Callable,
+        error_status: AccessStatusCode = AccessStatusCode.RED,
+        **params,
     ):
         line = None
         name = f"{method.__self__.meta._service_model._service_description['metadata']['serviceId']} {''.join(word.capitalize() for word in method.__func__.__name__.split('_'))}"
         try:
             method(**params)
-        except (
-            ClientError
-        ) as error:  # as when the code is 'AccessDeniedException', a bad parameter like a mistyped cluster ID yields a botocore.errorfactory.InvalidRequestException with code 'InvalidRequestException'
+        except ClientError as error:  # as when the code is 'AccessDeniedException', a bad parameter like a mistyped cluster ID yields a botocore.errorfactory.InvalidRequestException with code 'InvalidRequestException'
             if error.response.get("Error", {}).get("Code") != "DryRunOperation":
                 line = AccessReportLine(name, error_status, str(error))
         except Exception as exc:
@@ -74,7 +79,9 @@ class AccessReport(List[AccessReportLine]):
 
         if not line:
             line = AccessReportLine(
-                name, AccessStatusCode.GREEN, f"{method.__func__.__name__} call succeeded"
+                name,
+                AccessStatusCode.GREEN,
+                f"{method.__func__.__name__} call succeeded",
             )
 
         self.append(line)
@@ -140,7 +147,9 @@ class DatabricksError(Error):
 class MissingOrIncompleteEventlogError(Error):
     dbfs_eventlog_file_size: Union[int, None] = None
     code: str = Field("Retryable Databricks Error", const=True)
-    message: str = Field("Event log was missing or incomplete. Please retry.", const=True)
+    message: str = Field(
+        "Event log was missing or incomplete. Please retry.", const=True
+    )
 
 
 class DatabricksAPIError(Error):
@@ -239,48 +248,48 @@ class AwsRegionEnum(str, Enum):
     SA_EAST_1 = "sa-east-1"
 
 
+IAMRoleRequiredPermissions = {
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "SyncEC2Permissions",
+            "Effect": "Allow",
+            "Action": ["ec2:DescribeInstances", "ec2:DescribeVolumes"],
+            "Resource": "*",
+        }
+    ],
+}
+
+IAMRoleTrustPolicy = {
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::533267411813:role/sync-computing-collector"
+            },
+            "Action": "sts:AssumeRole",
+            "Condition": {
+                "StringEquals": {"sts:ExternalId": "PLACEHOLDER_EXTERNAL_ID"}
+            },
+        }
+    ],
+}
+
+
 class AwsHostedIAMInstructions(BaseModel):
     step_1_prompt: str = "Step 1: Copy the JSON and paste in AWS IAM Permissions page:"
-    step_1_value: str = """
-    {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": "VisualEditor0",
-                "Effect": "Allow",
-                "Action": [
-                    "ec2:DescribeInstances",
-                    "ec2:DescribeVolumes"
-                ],
-                "Resource": "*"
-            }
-        ]
-    }"""
-    step_2_prompt: str = (
-        "Step 2: Copy the JSON and paste in AWS IAM Trust relationships page with External ID:"
-    )
+    step_1_value: str = json.dumps(IAMRoleRequiredPermissions)
+    step_2_prompt: str = "Step 2: Copy the JSON and paste in AWS IAM Trust relationships page with External ID:"
     external_id: str
 
     @property
     def step_2_value(self) -> str:
-        return f"""
-    {{
-        "Version": "2012-10-17",
-        "Statement": [
-            {{
-                "Effect": "Allow",
-                "Principal": {{
-                    "AWS": "arn:aws:iam::533267411813:role/sync-computing-collector"
-                }},
-                "Action": "sts:AssumeRole",
-                "Condition": {{
-                    "StringEquals": {{
-                        "sts:ExternalId": "{self.external_id}"
-                    }}
-                }}
-            }}
-        ]
-    }}"""
+        policy = copy.deepcopy(IAMRoleTrustPolicy)
+        policy["Statement"][0]["Condition"]["StringEquals"]["sts:ExternalId"] = (
+            self.external_id
+        )
+        return json.dumps(policy)
 
 
 class ComputeProviderHostedValues(BaseModel):
@@ -294,16 +303,26 @@ class ComputeProviderHostedValues(BaseModel):
 class CreateWorkspaceConfig(BaseModel):
     workspace_id: str = Field(..., description="Unique identifier for the workspace")
     databricks_host: str = Field(..., description="Databricks service host URL")
-    databricks_token: str = Field(..., description="Authentication token for Databricks service")
-    sync_api_key_id: str = Field(..., description="API Key ID for synchronization service")
-    sync_api_key_secret: str = Field(..., description="API Key secret for synchronization service")
-    instance_profile_arn: Optional[str] = Field(None, description="AWS instance profile ARN")
+    databricks_token: str = Field(
+        ..., description="Authentication token for Databricks service"
+    )
+    sync_api_key_id: str = Field(
+        ..., description="API Key ID for synchronization service"
+    )
+    sync_api_key_secret: str = Field(
+        ..., description="API Key secret for synchronization service"
+    )
+    instance_profile_arn: Optional[str] = Field(
+        None, description="AWS instance profile ARN"
+    )
     webhook_id: Optional[str] = Field(None, description="Webhook ID for notifications")
     databricks_plan_type: DatabricksPlanType = Field(
         DatabricksPlanType.STANDARD, description="Plan type for Databricks deployment"
     )
     aws_region: Optional[str] = Field(None, description="AWS region if applicable")
-    cluster_policy_id: Optional[str] = Field(None, description="Cluster policy ID for Databricks")
+    cluster_policy_id: Optional[str] = Field(
+        None, description="Cluster policy ID for Databricks"
+    )
     collection_type: WorkspaceCollectionTypeEnum = Field(
         ..., description="Type of hosting for the workspace"
     )
@@ -313,10 +332,18 @@ class CreateWorkspaceConfig(BaseModel):
     compute_provider: ComputeProvider = Field(
         ..., description="Cloud provider for compute resources"
     )
-    external_id: Optional[str] = Field(None, description="External ID for AWS configurations")
-    aws_iam_role_arn: Optional[str] = Field(None, description="AWS IAM role ARN if needed")
-    azure_tenant_id: Optional[str] = Field(None, description="Azure tenant ID if using Azure")
-    azure_client_id: Optional[str] = Field(None, description="Azure client ID if using Azure")
+    external_id: Optional[str] = Field(
+        None, description="External ID for AWS configurations"
+    )
+    aws_iam_role_arn: Optional[str] = Field(
+        None, description="AWS IAM role ARN if needed"
+    )
+    azure_tenant_id: Optional[str] = Field(
+        None, description="Azure tenant ID if using Azure"
+    )
+    azure_client_id: Optional[str] = Field(
+        None, description="Azure client ID if using Azure"
+    )
     azure_client_secret: Optional[str] = Field(
         None, description="Azure client secret if using Azure"
     )
@@ -347,7 +374,9 @@ class CreateWorkspaceConfig(BaseModel):
         compute_provider = values.get("compute_provider")
         if values.get("collection_type") == WorkspaceCollectionTypeEnum.HOSTED:
             if compute_provider == ComputeProvider.AWS and not aws_iam_role_arn:
-                raise ValueError("AWS IAM Role ARN is required for AWS compute provider")
+                raise ValueError(
+                    "AWS IAM Role ARN is required for AWS compute provider"
+                )
         return aws_iam_role_arn
 
     @validator("compute_provider", pre=False)
@@ -362,7 +391,9 @@ class CreateWorkspaceConfig(BaseModel):
                 "azure_client_secret",
                 "azure_subscription_id",
             ]
-            missing_fields = [field for field in required_fields if not values.get(field)]
+            missing_fields = [
+                field for field in required_fields if not values.get(field)
+            ]
             if missing_fields:
                 raise ValueError(
                     f"Missing required fields for Azure compute provider: "

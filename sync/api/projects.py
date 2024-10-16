@@ -118,6 +118,24 @@ def get_project_cluster_template(project_id: str, region_name: str = None) -> Re
     return Response(**get_default_client().get_project_cluster_template(project_id, params=params))
 
 
+def get_project_clusters(
+    workspace_id: str,
+    job_id: str,
+) -> Response[List[dict]]:
+    """Retrieve a project clusters from a job_id.
+
+    :param workspace_id: The Databricks workspace ID of the job.
+    :type workspace_id: str
+    :param job_id: The job ID to resolve the Sync project clusters for.
+    :type job_id: str, optional
+    :return: project object
+    :rtype: Response[dict]
+    """
+    return Response(
+        **get_default_client().get_project_clusters(workspace_id, job_id)
+    )
+
+
 def update_project(
     project_id: str,
     description: str = None,

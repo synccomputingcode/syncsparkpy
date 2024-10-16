@@ -188,11 +188,13 @@ def get_cluster_report(
 @click.argument("job-id")
 @click.argument("project-id")
 @click.argument("recommendation-id")
+@click.argument("workspace-id")
 @pass_platform
 def apply_recommendation(
     platform: Platform,
     job_id: str,
     project_id: str,
+    workspace_id: str,
     recommendation_id: str = None,
 ):
     """Apply a project recommendation to a job"""
@@ -201,7 +203,9 @@ def apply_recommendation(
     elif platform is Platform.AZURE_DATABRICKS:
         import sync.azuredatabricks as databricks
 
-    response = databricks.apply_project_recommendation(job_id, project_id, recommendation_id)
+    response = databricks.apply_project_recommendation(
+        job_id, project_id, recommendation_id, workspace_id
+    )
     recommendation_id = response.result
     if recommendation_id:
         click.echo(f"Applied recommendation {recommendation_id} to job {job_id}")

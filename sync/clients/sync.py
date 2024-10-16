@@ -112,6 +112,21 @@ class SyncClient(RetryableHTTPClient):
             self._client.build_request("GET", f"/v1/projects/{project_id}/cluster/template", params=params)
         )
 
+    def get_project_clusters(
+        self,
+        workspace_id: str,
+        job_id: str,
+    ) -> dict:
+        """Get the project clusters from a job_id"""
+        params = {"workspace_id": workspace_id, "job_id": job_id}
+
+        return self._send(
+            self._client.build_request(
+                "GET",
+                "/v1/projects/databricks/job-clusters",
+                params=params)
+        )
+
     def get_projects(self, params: dict = None) -> dict:
         return self._send(
             self._client.build_request("GET", "/v1/projects", params=params)

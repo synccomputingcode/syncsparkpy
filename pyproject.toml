@@ -6,51 +6,51 @@
 #  install pathspec >= 0.10.1 on their Databricks clusters. We should only ever upgrade this version once
 #  most/all Databricks Runtime LTS releases support pathspec >= 0.10.1, which may be a while...
 # See here for DBR release notes - https://docs.databricks.com/release-notes/runtime/releases.html
-requires = ["hatchling==1.8.0"]
 build-backend = "hatchling.build"
+requires = ["hatchling==1.8.0"]
 
 [project]
-name = "syncsparkpy"
 authors = [{ "name" = "Sync Computing" }]
-readme = "README.md"
-requires-python = ">=3.7"
 classifiers = [
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
-    "Operating System :: OS Independent",
-    "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python",
 ]
 dependencies = [
-    "boto3>=1.26.0,<2.0.0",
-    "pydantic~=1.10.0",
-    "httpx~=0.23.0",
-    "click~=8.1.0",
-    "tenacity==8.2.2",
+    "azure-cli-core==2.50.0",
     "azure-identity==1.13.0",
     "azure-mgmt-compute==30.1.0",
     "azure-mgmt-resource==23.0.1",
-    "azure-cli-core==2.50.0",
+    "boto3>=1.26.0,<2.0.0",
+    "click~=8.1.0",
+    "httpx~=0.23",
     "platformdirs",
+    "pydantic~=1.10.0",
     "python-dateutil>=2.7,<3",
+    "tenacity==8.2.2",
 ]
-dynamic = ["version", "description"]
+dynamic = ["description", "version"]
+name = "syncsparkpy"
+readme = "README.md"
+requires-python = ">=3.7"
 
 [project.optional-dependencies]
 dev = [
+    "Sphinx==4.3.0",
     "black==22.10.0",
+    "deepdiff==6.3.0",
     "flake8==5.0.4",
     "isort==5.10.1",
-    "pytest==7.2.0",
-    "pytest-env==0.8.1",
     "pytest-asyncio==0.21.0",
-    "Sphinx==4.3.0",
+    "pytest-env==0.8.1",
+    "pytest==7.2.0",
     "respx==0.20.1",
-    "deepdiff==6.3.0",
 ]
 
 [tool.hatch.version]
@@ -67,18 +67,14 @@ line-length = 100
 target-version = ['py37']
 
 [tool.isort]
-profile = "black"
 line_length = 100
+profile = "black"
 
 [tool.pytest.ini_options]
-pythonpath = [
-    "."
-]
-filterwarnings = [
-    "ignore::UserWarning"
-]
 env = [
     "AWS_DEFAULT_REGION=us-east-1",
     "SYNC_API_KEY_ID=fake",
     "SYNC_API_KEY_SECRET=fake",
 ]
+filterwarnings = ["ignore::UserWarning"]
+pythonpath = ["."]

@@ -1,14 +1,19 @@
 import asyncio
 import logging
 import threading
-import time
 from typing import AsyncGenerator, Generator, Optional
 
 import dateutil.parser
 import httpx
+from tenacity import (
+    AsyncRetrying,
+    Retrying,
+    TryAgain,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from ..config import API_KEY, CONFIG, APIKey
-from ..errors import AuthenticationError
 from . import USER_AGENT, RetryableHTTPClient, encode_json
 from .cache import (
     ACCESS_TOKEN_CACHE_CLS_TYPE,
@@ -48,58 +53,58 @@ class SyncAuth(httpx.Auth):
     def sync_auth_flow(
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        retries = 0
-        max_retries = 3
         with self._sync_lock:
             while not self.cached_token.is_access_token_valid:
-                # fetch with retry and exponential backoff
-                response = yield self.build_auth_request()
-                if response.status_code == httpx.codes.OK:
-                    self.update_access_token(response)
-                    break
-                elif response.status_code in self.retryable_status_codes:
-                    logger.error(f"{response.status_code}: Failed to authenticate")
-                    if retries < max_retries:
-                        time.sleep(2**retries)
-                        retries += 1
-                    else:
-                        raise AuthenticationError(
-                            "Failed to authenticate, status code: {response.status_code}"
-                        )
-
-                else:
-                    raise AuthenticationError(
-                        "Failed to authenticate, status code: {response.status_code}"
-                    )
+                try:
+                    for attempt in Retrying(
+                        stop=stop_after_attempt(10),
+                        wait=wait_exponential_jitter(2, 10),
+                        reraise=True,
+                    ):
+                        with attempt:
+                            # fetch with retry and exponential backoff
+                            response = yield self.build_auth_request()
+                            if response.status_code == httpx.codes.OK:
+                                self.update_access_token(response)
+                                break
+                            elif response.status_code in self.retryable_status_codes:
+                                raise TryAgain()
+                            else:
+                                logger.error(
+                                    f"{response.status_code}: Failed to authenticate"
+                                )
+                except TryAgain:
+                    # Hit maximum retries
+                    logger.error("Failed to authenticate, max retries reached")
         request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
         yield request
 
     async def async_auth_flow(
         self, request: httpx.Request
     ) -> AsyncGenerator[httpx.Request, httpx.Response]:
-        retries = 0
-        max_retries = 3
         async with self._async_lock:
             while not self.cached_token.is_access_token_valid:
-                # fetch with retry and exponential backoff
-                response = yield self.build_auth_request()
-                if response.status_code == httpx.codes.OK:
-                    self.update_access_token(response)
-                    break
-                elif response.status_code in self.retryable_status_codes:
-                    logger.error(f"{response.status_code}: Failed to authenticate")
-                    if retries < max_retries:
-                        await asyncio.sleep(2**retries)
-                        retries += 1
-                    else:
-                        raise AuthenticationError(
-                            "Failed to authenticate, status code: {response.status_code}"
-                        )
-
-                else:
-                    raise AuthenticationError(
-                        "Failed to authenticate, status code: {response.status_code}"
-                    )
+                try:
+                    async for attempt in AsyncRetrying(
+                        stop=stop_after_attempt(10),
+                        wait=wait_exponential_jitter(2, 10),
+                        reraise=True,
+                    ):
+                        with attempt:
+                            # fetch with retry and exponential backoff
+                            response = yield self.build_auth_request()
+                            if response.status_code == httpx.codes.OK:
+                                self.update_access_token(response)
+                                break
+                            elif response.status_code in self.retryable_status_codes:
+                                raise TryAgain()
+                            else:
+                                logger.error(
+                                    f"{response.status_code}: Failed to authenticate"
+                                )
+                except TryAgain:
+                    # Hit maximum retries
+                    logger.error("Failed to authenticate, max retries reached")
         request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
         yield request
 

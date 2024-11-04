@@ -2,7 +2,13 @@ import json
 from typing import Set, Tuple, Union
 
 import httpx
-from tenacity import Retrying, TryAgain, stop_after_attempt, wait_exponential_jitter
+from tenacity import (
+    AsyncRetrying,
+    Retrying,
+    TryAgain,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from sync import __version__
 from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
@@ -59,7 +65,7 @@ class RetryableHTTPClient:
 
     async def _send_request_async(self, request: httpx.Request) -> httpx.Response:
         try:
-            for attempt in Retrying(
+            async for attempt in AsyncRetrying(
                 stop=stop_after_attempt(20),
                 wait=wait_exponential_jitter(initial=2, max=10, jitter=2),
                 reraise=True,

@@ -1,45 +1,107 @@
+import asyncio
 import logging
-from typing import Generator, Optional
+import threading
+import time
+from typing import AsyncGenerator, Generator, Optional
 
 import dateutil.parser
 import httpx
 
 from ..config import API_KEY, CONFIG, APIKey
+from ..errors import AuthenticationError
 from . import USER_AGENT, RetryableHTTPClient, encode_json
-from .cache import ACCESS_TOKEN_CACHE_CLS_TYPE, FileCachedToken, get_access_token_cache_cache
+from .cache import (
+    ACCESS_TOKEN_CACHE_CLS_TYPE,
+    FileCachedToken,
+    get_access_token_cache_cache,
+)
+
 logger = logging.getLogger(__name__)
 
 
 class SyncAuth(httpx.Auth):
     requires_response_body = True
+    retryable_status_codes = (
+        httpx.codes.SERVICE_UNAVAILABLE,
+        httpx.codes.TOO_MANY_REQUESTS,
+        httpx.codes.BAD_GATEWAY,
+        httpx.codes.GATEWAY_TIMEOUT,
+    )
 
     def __init__(
         self,
         api_url: str,
         api_key: APIKey,
-        access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = FileCachedToken
+        access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = FileCachedToken,
     ):
         self.auth_url = f"{api_url}/v1/auth/token"
         self.api_key = api_key
 
         self.cached_token = access_token_cache_cls()
+        self._sync_lock = threading.RLock()
+        self._async_lock = asyncio.Lock()
 
-    def auth_flow(
+    def sync_get_token(self):
+        with self._sync_lock:
+            ...
+
+    def sync_auth_flow(
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        if not self.cached_token.is_access_token_valid:
-            response = yield self.build_auth_request()
-            self.update_access_token(response)
+        retries = 0
+        max_retries = 3
+        with self._sync_lock:
+            while not self.cached_token.is_access_token_valid:
+                # fetch with retry and exponential backoff
+                response = yield self.build_auth_request()
+                if response.status_code == httpx.codes.OK:
+                    self.update_access_token(response)
+                    break
+                elif response.status_code in self.retryable_status_codes:
+                    logger.error(f"{response.status_code}: Failed to authenticate")
+                    if retries < max_retries:
+                        time.sleep(2**retries)
+                        retries += 1
+                    else:
+                        raise AuthenticationError(
+                            "Failed to authenticate, status code: {response.status_code}"
+                        )
 
+                else:
+                    raise AuthenticationError(
+                        "Failed to authenticate, status code: {response.status_code}"
+                    )
         request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
-        response = yield request
+        yield request
 
-        if response.status_code == httpx.codes.UNAUTHORIZED:
-            response = yield self.build_auth_request()
-            self.update_access_token(response)
+    async def async_auth_flow(
+        self, request: httpx.Request
+    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
+        retries = 0
+        max_retries = 3
+        async with self._async_lock:
+            while not self.cached_token.is_access_token_valid:
+                # fetch with retry and exponential backoff
+                response = yield self.build_auth_request()
+                if response.status_code == httpx.codes.OK:
+                    self.update_access_token(response)
+                    break
+                elif response.status_code in self.retryable_status_codes:
+                    logger.error(f"{response.status_code}: Failed to authenticate")
+                    if retries < max_retries:
+                        await asyncio.sleep(2**retries)
+                        retries += 1
+                    else:
+                        raise AuthenticationError(
+                            "Failed to authenticate, status code: {response.status_code}"
+                        )
 
-            request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
-            yield request
+                else:
+                    raise AuthenticationError(
+                        "Failed to authenticate, status code: {response.status_code}"
+                    )
+        request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
+        yield request
 
     def build_auth_request(self) -> httpx.Request:
         return httpx.Request(
@@ -67,13 +129,15 @@ class SyncClient(RetryableHTTPClient):
         self,
         api_url: str,
         api_key: APIKey,
-        access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = FileCachedToken
+        access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = FileCachedToken,
     ):
         super().__init__(
             client=httpx.Client(
                 base_url=api_url,
                 headers={"User-Agent": USER_AGENT},
-                auth=SyncAuth(api_url, api_key, access_token_cache_cls=access_token_cache_cls),
+                auth=SyncAuth(
+                    api_url, api_key, access_token_cache_cls=access_token_cache_cls
+                ),
                 timeout=60.0,
             )
         )
@@ -104,12 +168,18 @@ class SyncClient(RetryableHTTPClient):
 
     def get_project(self, project_id: str, params: dict = None) -> dict:
         return self._send(
-            self._client.build_request("GET", f"/v1/projects/{project_id}", params=params)
+            self._client.build_request(
+                "GET", f"/v1/projects/{project_id}", params=params
+            )
         )
 
-    def get_project_cluster_template(self, project_id: str, params: dict = None) -> dict:
+    def get_project_cluster_template(
+        self, project_id: str, params: dict = None
+    ) -> dict:
         return self._send(
-            self._client.build_request("GET", f"/v1/projects/{project_id}/cluster/template", params=params)
+            self._client.build_request(
+                "GET", f"/v1/projects/{project_id}/cluster/template", params=params
+            )
         )
 
     def get_projects(self, params: dict = None) -> dict:
@@ -276,13 +346,15 @@ class ASyncClient(RetryableHTTPClient):
         self,
         api_url: str,
         api_key: APIKey,
-        access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = FileCachedToken
+        access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = FileCachedToken,
     ):
         super().__init__(
             client=httpx.AsyncClient(
                 base_url=api_url,
                 headers={"User-Agent": USER_AGENT},
-                auth=SyncAuth(api_url, api_key, access_token_cache_cls=access_token_cache_cls),
+                auth=SyncAuth(
+                    api_url, api_key, access_token_cache_cls=access_token_cache_cls
+                ),
                 timeout=60.0,
             )
         )
@@ -341,7 +413,7 @@ def get_default_client() -> SyncClient:
         _sync_client = SyncClient(
             CONFIG.api_url,
             API_KEY,
-            access_token_cache_cls=get_access_token_cache_cache()
+            access_token_cache_cls=get_access_token_cache_cache(),
         )
     return _sync_client
 
@@ -355,6 +427,6 @@ def get_default_async_client() -> ASyncClient:
         _async_sync_client = ASyncClient(
             CONFIG.api_url,
             API_KEY,
-            access_token_cache_cls=get_access_token_cache_cache()
+            access_token_cache_cls=get_access_token_cache_cache(),
         )
     return _async_sync_client

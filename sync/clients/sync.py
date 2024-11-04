@@ -110,19 +110,10 @@ class SyncAuth(httpx.Auth):
         )
 
     def update_access_token(self, response: httpx.Response):
-        if response.status_code == httpx.codes.OK:
-            auth = response.json()
-            access_token = auth["result"]["access_token"]
-            expires_at_utc = dateutil.parser.isoparse(auth["result"]["expires_at_utc"])
-            self.cached_token.set_cached_token(access_token, expires_at_utc)
-        elif response.headers.get("Content-Type", "").startswith("application/json"):
-            error = response.json().get("error")
-            if error:
-                logger.error(f"{error['code']}: {error['message']}")
-            else:
-                logger.error(f"{response.status_code}: Failed to authenticate")
-        else:
-            logger.error(f"{response.status_code}: Failed to authenticate")
+        auth = response.json()
+        access_token = auth["result"]["access_token"]
+        expires_at_utc = dateutil.parser.isoparse(auth["result"]["expires_at_utc"])
+        self.cached_token.set_cached_token(access_token, expires_at_utc)
 
 
 class SyncClient(RetryableHTTPClient):

@@ -46,10 +46,6 @@ class SyncAuth(httpx.Auth):
         self._sync_lock = threading.RLock()
         self._async_lock = asyncio.Lock()
 
-    def sync_get_token(self):
-        with self._sync_lock:
-            ...
-
     def sync_auth_flow(
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:

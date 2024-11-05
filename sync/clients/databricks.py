@@ -4,9 +4,9 @@ from typing import Generator, Union
 
 import httpx
 
+from sync.config import DB_CONFIG
 from sync.models import Platform
 
-from ..config import DB_CONFIG
 from . import DATABRICKS_USER_AGENT, RetryableHTTPClient, encode_json
 
 logger = logging.getLogger(__name__)

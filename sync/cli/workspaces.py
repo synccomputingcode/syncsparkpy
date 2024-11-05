@@ -93,12 +93,8 @@ def workspaces():
         "Ignored for REMOTE collection type."
     ),
 )
-@click.option(
-    "--databricks-host", help="Databricks host (prefix with https://)", prompt=True
-)
-@click.option(
-    "--databricks-token", help="Databricks token", prompt=True, hide_input=True
-)
+@click.option("--databricks-host", help="Databricks host (prefix with https://)", prompt=True)
+@click.option("--databricks-token", help="Databricks token", prompt=True, hide_input=True)
 @click.option(
     "--sync-api-key-id",
     help="Sync API key ID",
@@ -147,13 +143,8 @@ def create_workspace_config(
 
     collection_type = _determine_collection_type(hosting_type)
 
-    if (
-        hosting_type == HostingType.SELF_HOSTED
-        and compute_provider == ComputeProvider.AWS
-    ):
-        instance_profile_arn = instance_profile_arn or click.prompt(
-            "AWS Instance profile ARN"
-        )
+    if hosting_type == HostingType.SELF_HOSTED and compute_provider == ComputeProvider.AWS:
+        instance_profile_arn = instance_profile_arn or click.prompt("AWS Instance profile ARN")
 
     if hosting_type == HostingType.SYNC_HOSTED:
         if compute_provider == ComputeProvider.AWS:
@@ -200,17 +191,15 @@ def create_workspace_config(
 
     config = response.result
     if config:
-        click.echo(
-            json.dumps(config, indent=2, cls=DateTimeEncoderNaiveUTCDropMicroseconds)
-        )
+        click.echo(json.dumps(config, indent=2, cls=DateTimeEncoderNaiveUTCDropMicroseconds))
     else:
         click.echo(str(response.error), err=True)
         raise click.Abort("Failed to create workspace configuration")
 
 
 def _prompt_aws_region(
-    aws_region: str | None, compute_provider: ComputeProvider
-) -> str | None:
+    aws_region: Optional[str], compute_provider: ComputeProvider
+) -> Optional[str]:
     if compute_provider == ComputeProvider.AWS:
         aws_region = aws_region or click.prompt(
             "AWS Region (e.g. us-east-1)",
@@ -245,9 +234,7 @@ def _determine_collection_type(hosting_type) -> WorkspaceCollectionTypeEnum:
 def _handle_azure_provider(
     azure_client_id, azure_client_secret, azure_subscription_id, azure_tenant_id
 ):
-    azure_subscription_id = azure_subscription_id or click.prompt(
-        "Azure Subscription ID"
-    )
+    azure_subscription_id = azure_subscription_id or click.prompt("Azure Subscription ID")
     azure_client_id = azure_client_id or click.prompt("Azure Client ID")
     azure_tenant_id = azure_tenant_id or click.prompt("Azure Tenant ID")
     azure_client_secret = azure_client_secret or click.prompt(
@@ -403,15 +390,9 @@ def update_workspace_config(
     if current_config:
         update_configuration = UpdateWorkspaceConfig(
             workspace_id=workspace_id,
-            databricks_host=databricks_host
-            if databricks_host != OPTIONAL_DEFAULT
-            else None,
-            databricks_token=databricks_token
-            if databricks_token != OPTIONAL_DEFAULT
-            else None,
-            sync_api_key_id=sync_api_key_id
-            if sync_api_key_id != OPTIONAL_DEFAULT
-            else None,
+            databricks_host=databricks_host if databricks_host != OPTIONAL_DEFAULT else None,
+            databricks_token=databricks_token if databricks_token != OPTIONAL_DEFAULT else None,
+            sync_api_key_id=sync_api_key_id if sync_api_key_id != OPTIONAL_DEFAULT else None,
             sync_api_key_secret=(
                 sync_api_key_secret if sync_api_key_secret != OPTIONAL_DEFAULT else None
             ),

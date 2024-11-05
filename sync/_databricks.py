@@ -275,7 +275,7 @@ def get_cluster_report(
     run_id: str,
     plan_type: str,
     compute_type: str,
-    project_id: str = None,
+    project_id: Optional[str] = None,
     allow_incomplete: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
 ) -> Response[DatabricksClusterReport]:
@@ -398,7 +398,7 @@ def handle_successful_job_run(
     if submission_response.error:
         return submission_response
 
-    for project_id, submission_id in submission_response.result.items():
+    for project_id, _submission_id in submission_response.result.items():
         project_response = projects.get_project(project_id)
 
         if project_response.error:
@@ -696,7 +696,9 @@ def get_recommendation_cluster(
     return recommendation_response
 
 
-def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Response[dict]:
+def get_project_job(
+    job_id: str, project_id: str, region_name: Optional[str] = None
+) -> Response[dict]:
     """Apply project configuration to a job.
 
     The job can only have tasks that run on the same job cluster. That cluster is updated with tags
@@ -743,7 +745,9 @@ def get_project_job(job_id: str, project_id: str, region_name: str = None) -> Re
     return Response(error=DatabricksError(message="No task found in job"))
 
 
-def get_project_cluster(cluster: dict, project_id: str, region_name: str = None) -> Response[dict]:
+def get_project_cluster(
+    cluster: dict, project_id: str, region_name: Optional[str] = None
+) -> Response[dict]:
     """Apply project configuration to a cluster.
 
     The cluster is updated with tags and a log configuration to facilitate project continuity.
@@ -766,7 +770,9 @@ def get_project_cluster(cluster: dict, project_id: str, region_name: str = None)
     return project_settings_response
 
 
-def get_project_cluster_settings(project_id: str, region_name: str = None) -> Response[dict]:
+def get_project_cluster_settings(
+    project_id: str, region_name: Optional[str] = None
+) -> Response[dict]:
     """Gets cluster configuration for a project.
 
     This configuration is intended to be used to update the cluster of a Databricks job so that
@@ -858,7 +864,11 @@ def create_run(run: dict) -> Response[str]:
 
 
 def run_and_record_project_job(
-    job_id: str, project_id: str, plan_type: str, compute_type: str, region_name: str = None
+    job_id: str,
+    project_id: str,
+    plan_type: str,
+    compute_type: str,
+    region_name: Optional[str] = None,
 ) -> Response[str]:
     """Runs the specified job and adds the result to the project.
 
@@ -885,7 +895,7 @@ def run_and_record_project_job(
 
 
 def run_and_record_job(
-    job_id: str, plan_type: str, compute_type: str, project_id: str = None
+    job_id: str, plan_type: str, compute_type: str, project_id: Optional[str] = None
 ) -> Response[str]:
     """Runs the specified job and creates a prediction based on the result.
 
@@ -912,7 +922,7 @@ def run_and_record_job(
 
 
 def run_and_record_job_object(
-    job: dict, plan_type: str, compute_type: str, project_id: str = None
+    job: dict, plan_type: str, compute_type: str, project_id: Optional[str] = None
 ) -> Response[str]:
     """Creates a one-off Databricks run based on the provided job object.
 
@@ -955,7 +965,7 @@ def run_and_record_job_object(
 
 
 def create_and_record_run(
-    run: dict, plan_type: str, compute_type: str, project_id: str = None
+    run: dict, plan_type: str, compute_type: str, project_id: Optional[str] = None
 ) -> Response[str]:
     """Applies the Databricks run configuration and creates a prediction based on the result.
 
@@ -981,7 +991,7 @@ def create_and_record_run(
 
 
 def wait_for_and_record_run(
-    run_id: str, plan_type: str, compute_type: str, project_id: str = None
+    run_id: str, plan_type: str, compute_type: str, project_id: Optional[str] = None
 ) -> Response[str]:
     """Waits for a run to complete before creating a prediction.
 
@@ -1202,8 +1212,8 @@ def _get_project_job_clusters(
 
 def _get_project_cluster_tasks(
     run: dict,
-    project_id: str = None,
-    cluster_path: str = None,
+    project_id: Optional[str] = None,
+    cluster_path: Optional[str] = None,
     exclude_tasks: Union[Collection[str], None] = None,
 ) -> Dict[str, Tuple[str, List[dict]]]:
     """Returns a mapping of project IDs to cluster-ID-tasks pairs"""
@@ -1216,7 +1226,7 @@ def _get_project_cluster_tasks(
         elif cluster_path:
             # A cluster can only be tagged with 1 project so this dict will only have 1 item at most
             filtered_project_cluster_tasks = {
-                project_id: cluster_tasks
+                project_id: cluster_tasks  # noqa B035
                 for _, cluster_tasks in project_cluster_tasks.items()
                 if cluster_path in cluster_tasks
             }
@@ -1366,8 +1376,7 @@ def _dbfs_directory_has_all_rollover_logs(contents: dict, run_end_time_millis: f
         # We want to make sure that the final_rollover_log has had data written to it AFTER the run has actually
         # completed. We use this as a signal that Databricks has flushed all event log data to DBFS, and that we
         # can proceed with the upload + prediction.
-        final_rollover_log
-        and final_rollover_log["modification_time"] >= run_end_time_millis
+        final_rollover_log and final_rollover_log["modification_time"] >= run_end_time_millis
     )
 
 
@@ -1381,7 +1390,6 @@ def _dbfs_any_file_has_zero_size(dbfs_contents: Dict) -> bool:
 def _check_total_file_size_changed(
     last_total_file_size: int, dbfs_contents: Dict
 ) -> Tuple[bool, int]:
-
     new_total_file_size = sum([file.get("file_size", 0) for file in dbfs_contents.get("files", {})])
     if new_total_file_size == last_total_file_size:
         return False, new_total_file_size
@@ -1583,7 +1591,7 @@ def _fetch_eventlog(
     run_end_time_millis: int,
     dbfs_eventlog_file_size: Union[int, None],
 ) -> Response[bytes]:
-    (log_url, filesystem, bucket, base_cluster_filepath_prefix) = _cluster_log_destination(
+    (_log_url, filesystem, bucket, base_cluster_filepath_prefix) = _cluster_log_destination(
         cluster_description
     )
     if not filesystem:
@@ -1617,7 +1625,7 @@ def _get_eventlog(
     run_spark_context_id: str,
     run_end_time_millis: int,
 ) -> Response[bytes]:
-    (log_url, filesystem, bucket, base_cluster_filepath_prefix) = _cluster_log_destination(
+    (_log_url, filesystem, bucket, base_cluster_filepath_prefix) = _cluster_log_destination(
         cluster_description
     )
     if not filesystem:

@@ -1,5 +1,6 @@
-import sys
 import os
+import sys
+
 import sync
 
 # Configuration file for the Sphinx documentation builder.
@@ -9,13 +10,11 @@ import sync
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-rst_epilog = """
-.. |version| replace:: {project_version}
-""".format(
-    project_version=sync.__version__,
-)
+rst_epilog = f"""
+.. |version| replace:: {sync.__version__}
+"""
 
 project = "Sync Library"
 copyright = "2022, Sync Computing"

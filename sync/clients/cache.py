@@ -1,8 +1,8 @@
+import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple, Union, Callable, Type
 from pathlib import Path
-import json
+from typing import Callable, Optional, Tuple, Type, Union
 
 from platformdirs import user_cache_dir
 
@@ -32,7 +32,7 @@ class CachedToken:
 
         if self._access_token_expires_at_utc:
             return datetime.now(tz=timezone.utc) < (
-                    self._access_token_expires_at_utc - self.token_refresh_before_expiry
+                self._access_token_expires_at_utc - self.token_refresh_before_expiry
             )
 
         return False
@@ -83,14 +83,14 @@ class FileCachedToken(CachedToken):
                 )
             )
         except Exception as e:
-            logger.warning(
-                f"Failed to write cached access token @ {self._cache_file}", exc_info=e
-            )
+            logger.warning(f"Failed to write cached access token @ {self._cache_file}", exc_info=e)
 
 
 # Putting this here instead of config.py because circular imports and typing.
 ACCESS_TOKEN_CACHE_CLS_TYPE = Union[Type[CachedToken], Callable[[], CachedToken]]
-_access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = FileCachedToken  # Default to local file caching.
+_access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = (
+    FileCachedToken  # Default to local file caching.
+)
 
 
 def set_access_token_cache_cls(access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE) -> None:

@@ -3,6 +3,7 @@ Basic Sync CLI
 """
 
 import logging
+from typing import Optional
 
 import click
 
@@ -38,11 +39,11 @@ main.add_command(workspaces.workspaces)
 @click.option("--databricks-token")
 @click.option("--databricks-region")
 def configure(
-    api_key_id: str = None,
-    api_key_secret: str = None,
-    databricks_host: str = None,
-    databricks_token: str = None,
-    databricks_region: str = None,
+    api_key_id: Optional[str] = None,
+    api_key_secret: Optional[str] = None,
+    databricks_host: Optional[str] = None,
+    databricks_token: Optional[str] = None,
+    databricks_region: Optional[str] = None,
 ):
     """Configure Sync Library"""
     api_key_id = api_key_id or click.prompt(

@@ -1,5 +1,5 @@
 import json
-from typing import Set, Tuple, Union
+from typing import ClassVar, Set, Tuple, Union
 
 import httpx
 from tenacity import (
@@ -33,7 +33,7 @@ class RetryableHTTPClient:
     Smaller wrapper around httpx.Client/AsyncClient to contain retrying logic that httpx does not offer natively
     """
 
-    _DEFAULT_RETRYABLE_STATUS_CODES: Set[httpx.codes] = {
+    _DEFAULT_RETRYABLE_STATUS_CODES: ClassVar[Set[httpx.codes]] = {
         httpx.codes.REQUEST_TIMEOUT,
         httpx.codes.TOO_EARLY,
         httpx.codes.TOO_MANY_REQUESTS,

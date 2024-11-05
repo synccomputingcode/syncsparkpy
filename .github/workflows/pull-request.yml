@@ -2,11 +2,10 @@ name: Lint n' Test
 
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   build:
-
     runs-on: ubuntu-22.04
 
     steps:
@@ -24,6 +23,9 @@ jobs:
 
       - name: Lint
         run: make lint
+
+      - name: Format
+        run: make format
 
       - name: Test
         run: make test

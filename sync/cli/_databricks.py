@@ -1,5 +1,5 @@
 import json
-from typing import Tuple
+from typing import Optional, Tuple
 
 import click
 
@@ -20,7 +20,7 @@ OPTIONAL_DEFAULT = "none"
 @click.command
 @click.option("--log-url")
 @pass_platform
-def access_report(platform: Platform, log_url: str = None):
+def access_report(platform: Platform, log_url: Optional[str] = None):
     """Get access report"""
     if platform is Platform.AWS_DATABRICKS:
         import sync.awsdatabricks as databricks
@@ -56,7 +56,7 @@ def create_submission(
     compute: DatabricksComputeType,
     project: dict,
     allow_incomplete: bool = False,
-    exclude_task: Tuple[str, ...] = None,
+    exclude_task: Optional[Tuple[str, ...]] = None,
 ):
     """Create a submission for a job run"""
     if platform is Platform.AWS_DATABRICKS:
@@ -157,9 +157,9 @@ def get_cluster_report(
     run_id: str,
     plan: DatabricksPlanType,
     compute: DatabricksComputeType,
-    project: dict = None,
+    project: Optional[dict] = None,
     allow_incomplete: bool = False,
-    exclude_task: Tuple[str, ...] = None,
+    exclude_task: Optional[Tuple[str, ...]] = None,
 ):
     """Get a cluster report"""
     if platform is Platform.AWS_DATABRICKS:
@@ -193,7 +193,7 @@ def apply_recommendation(
     platform: Platform,
     job_id: str,
     project_id: str,
-    recommendation_id: str = None,
+    recommendation_id: Optional[str] = None,
 ):
     """Apply a project recommendation to a job"""
     if platform is Platform.AWS_DATABRICKS:

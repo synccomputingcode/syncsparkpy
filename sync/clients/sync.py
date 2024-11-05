@@ -13,7 +13,8 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from ..config import API_KEY, CONFIG, APIKey
+from sync.config import API_KEY, CONFIG, APIKey
+
 from . import USER_AGENT, RetryableHTTPClient, encode_json
 from .cache import (
     ACCESS_TOKEN_CACHE_CLS_TYPE,
@@ -66,9 +67,7 @@ class SyncAuth(httpx.Auth):
                             elif response.status_code in self.retryable_status_codes:
                                 raise TryAgain()
                             else:
-                                logger.error(
-                                    f"{response.status_code}: Failed to authenticate"
-                                )
+                                logger.error(f"{response.status_code}: Failed to authenticate")
                 except TryAgain:
                     # Hit maximum retries
                     logger.error("Failed to authenticate, max retries reached")
@@ -95,9 +94,7 @@ class SyncAuth(httpx.Auth):
                             elif response.status_code in self.retryable_status_codes:
                                 raise TryAgain()
                             else:
-                                logger.error(
-                                    f"{response.status_code}: Failed to authenticate"
-                                )
+                                logger.error(f"{response.status_code}: Failed to authenticate")
                 except TryAgain:
                     # Hit maximum retries
                     logger.error("Failed to authenticate, max retries reached")
@@ -105,9 +102,7 @@ class SyncAuth(httpx.Auth):
         yield request
 
     def build_auth_request(self) -> httpx.Request:
-        return httpx.Request(
-            "POST", self.auth_url, json=self.api_key.dict(by_alias=True)
-        )
+        return httpx.Request("POST", self.auth_url, json=self.api_key.dict(by_alias=True))
 
     def update_access_token(self, response: httpx.Response):
         auth = response.json()
@@ -127,9 +122,7 @@ class SyncClient(RetryableHTTPClient):
             client=httpx.Client(
                 base_url=api_url,
                 headers={"User-Agent": USER_AGENT},
-                auth=SyncAuth(
-                    api_url, api_key, access_token_cache_cls=access_token_cache_cls
-                ),
+                auth=SyncAuth(api_url, api_key, access_token_cache_cls=access_token_cache_cls),
                 timeout=60.0,
             )
         )
@@ -140,15 +133,11 @@ class SyncClient(RetryableHTTPClient):
     def create_project(self, project: dict) -> dict:
         headers, content = encode_json(project)
         return self._send(
-            self._client.build_request(
-                "POST", "/v1/projects", headers=headers, content=content
-            )
+            self._client.build_request("POST", "/v1/projects", headers=headers, content=content)
         )
 
     def reset_project(self, project_id: str) -> dict:
-        return self._send(
-            self._client.build_request("POST", f"/v1/projects/{project_id}/reset")
-        )
+        return self._send(self._client.build_request("POST", f"/v1/projects/{project_id}/reset"))
 
     def update_project(self, project_id: str, project: dict) -> dict:
         headers, content = encode_json(project)
@@ -158,31 +147,23 @@ class SyncClient(RetryableHTTPClient):
             )
         )
 
-    def get_project(self, project_id: str, params: dict = None) -> dict:
+    def get_project(self, project_id: str, params: Optional[dict] = None) -> dict:
         return self._send(
-            self._client.build_request(
-                "GET", f"/v1/projects/{project_id}", params=params
-            )
+            self._client.build_request("GET", f"/v1/projects/{project_id}", params=params)
         )
 
-    def get_project_cluster_template(
-        self, project_id: str, params: dict = None
-    ) -> dict:
+    def get_project_cluster_template(self, project_id: str, params: Optional[dict] = None) -> dict:
         return self._send(
             self._client.build_request(
                 "GET", f"/v1/projects/{project_id}/cluster/template", params=params
             )
         )
 
-    def get_projects(self, params: dict = None) -> dict:
-        return self._send(
-            self._client.build_request("GET", "/v1/projects", params=params)
-        )
+    def get_projects(self, params: Optional[dict] = None) -> dict:
+        return self._send(self._client.build_request("GET", "/v1/projects", params=params))
 
     def delete_project(self, project_id: str) -> dict:
-        return self._send(
-            self._client.build_request("DELETE", f"/v1/projects/{project_id}")
-        )
+        return self._send(self._client.build_request("DELETE", f"/v1/projects/{project_id}"))
 
     def create_project_submission(self, project_id: str, submission: dict) -> dict:
         headers, content = encode_json(submission)
@@ -206,16 +187,14 @@ class SyncClient(RetryableHTTPClient):
             )
         )
 
-    def get_project_recommendations(self, project_id: str, params: dict = None) -> dict:
+    def get_project_recommendations(self, project_id: str, params: Optional[dict] = None) -> dict:
         return self._send(
             self._client.build_request(
                 "GET", f"/v1/projects/{project_id}/recommendations", params=params
             )
         )
 
-    def get_project_recommendation(
-        self, project_id: str, recommendation_id: str
-    ) -> dict:
+    def get_project_recommendation(self, project_id: str, recommendation_id: str) -> dict:
         return self._send(
             self._client.build_request(
                 "GET", f"/v1/projects/{project_id}/recommendations/{recommendation_id}"
@@ -229,7 +208,7 @@ class SyncClient(RetryableHTTPClient):
             )
         )
 
-    def get_project_submissions(self, project_id: str, params: dict = None) -> dict:
+    def get_project_submissions(self, project_id: str, params: Optional[dict] = None) -> dict:
         return self._send(
             self._client.build_request(
                 "GET", f"/v1/projects/{project_id}/paged/submissions", params=params
@@ -256,15 +235,11 @@ class SyncClient(RetryableHTTPClient):
 
     def get_workspace_config(self, workspace_id: str) -> dict:
         return self._send(
-            self._client.build_request(
-                "GET", f"/v1/databricks/workspaces/{workspace_id}"
-            )
+            self._client.build_request("GET", f"/v1/databricks/workspaces/{workspace_id}")
         )
 
     def get_workspace_configs(self) -> dict:
-        return self._send(
-            self._client.build_request("GET", "/v1/databricks/workspaces")
-        )
+        return self._send(self._client.build_request("GET", "/v1/databricks/workspaces"))
 
     def update_workspace_config(self, workspace_id: str, **updates) -> dict:
         headers, content = encode_json(updates)
@@ -279,9 +254,7 @@ class SyncClient(RetryableHTTPClient):
 
     def delete_workspace_config(self, workspace_id: str) -> dict:
         return self._send(
-            self._client.build_request(
-                "DELETE", f"/v1/databricks/workspaces/{workspace_id}"
-            )
+            self._client.build_request("DELETE", f"/v1/databricks/workspaces/{workspace_id}")
         )
 
     def reset_webhook_creds(self, workspace_id: str) -> dict:
@@ -344,9 +317,7 @@ class ASyncClient(RetryableHTTPClient):
             client=httpx.AsyncClient(
                 base_url=api_url,
                 headers={"User-Agent": USER_AGENT},
-                auth=SyncAuth(
-                    api_url, api_key, access_token_cache_cls=access_token_cache_cls
-                ),
+                auth=SyncAuth(api_url, api_key, access_token_cache_cls=access_token_cache_cls),
                 timeout=60.0,
             )
         )
@@ -354,9 +325,7 @@ class ASyncClient(RetryableHTTPClient):
     async def create_project(self, project: dict) -> dict:
         headers, content = encode_json(project)
         return await self._send(
-            self._client.build_request(
-                "POST", "/v1/projects", headers=headers, content=content
-            )
+            self._client.build_request("POST", "/v1/projects", headers=headers, content=content)
         )
 
     async def update_project(self, project_id: str, project: dict) -> dict:
@@ -368,19 +337,13 @@ class ASyncClient(RetryableHTTPClient):
         )
 
     async def get_project(self, project_id: str) -> dict:
-        return await self._send(
-            self._client.build_request("GET", f"/v1/projects/{project_id}")
-        )
+        return await self._send(self._client.build_request("GET", f"/v1/projects/{project_id}"))
 
-    async def get_projects(self, params: dict = None) -> dict:
-        return await self._send(
-            self._client.build_request("GET", "/v1/projects", params=params)
-        )
+    async def get_projects(self, params: Optional[dict] = None) -> dict:
+        return await self._send(self._client.build_request("GET", "/v1/projects", params=params))
 
     async def delete_project(self, project_id: str) -> dict:
-        return await self._send(
-            self._client.build_request("DELETE", f"/v1/projects/{project_id}")
-        )
+        return await self._send(self._client.build_request("DELETE", f"/v1/projects/{project_id}"))
 
     async def _send(self, request: httpx.Request) -> dict:
         response = await self._send_request_async(request)

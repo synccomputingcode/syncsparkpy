@@ -1,4 +1,5 @@
 import base64
+from typing import Optional
 
 from sync.clients.databricks import DatabricksClient
 
@@ -11,7 +12,7 @@ def format_dbfs_filepath(base_path: str):
 def read_dbfs_file(
     filepath: str,
     dbx_client: DatabricksClient,
-    filesize: int = None,
+    filesize: Optional[int] = None,
 ) -> bytes:
     """Given a DBFS filepath, returns that file's content in its entirety"""
     offset = 0

@@ -7,14 +7,11 @@ test:
 
 .PHONY: lint
 lint:
-	flake8 --filename ./$(FILES)
+	ruff check .
 
 .PHONY: format
 format:
-ifneq ("$(FILES)","")
-	black $(FILES)
-	isort $(FILES)
-endif
+	ruff format .
 
 .PHONY: tidy
 tidy: format lint

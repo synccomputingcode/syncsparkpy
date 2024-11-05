@@ -28,7 +28,7 @@ def validate_uuid(value: str) -> str:
         UUID(value)
         return value
     except ValueError:
-        raise InvalidUUIDError(f"Invalid UUID: {value}")
+        raise InvalidUUIDError(f"Invalid UUID: {value}") from None
 
 
 def resolve_project_id(value: str) -> str:
@@ -44,8 +44,8 @@ def resolve_project_id(value: str) -> str:
             return project_response.result.get("id")
         except Exception as e:
             raise ProjectResolutionError(
-                f"An error occurred while resolving the project ID: {str(e)}"
-            )
+                f"An error occurred while resolving the project ID: {e!s}"
+            ) from e
 
 
 def get_latest_submission_config(project_id: str, success_only: bool = False) -> dict:

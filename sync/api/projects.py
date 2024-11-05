@@ -1,5 +1,4 @@
-"""Project functions
-"""
+"""Project functions"""
 
 import io
 import json
@@ -39,14 +38,14 @@ def get_products() -> Response[List[str]]:
 def create_project(
     name: str,
     product_code: str,
-    description: str = None,
-    job_id: str = None,
-    cluster_path: str = None,
-    workspace_id: str = None,
-    cluster_log_url: str = None,
+    description: Optional[str] = None,
+    job_id: Optional[str] = None,
+    cluster_path: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    cluster_log_url: Optional[str] = None,
     auto_apply_recs: bool = False,
-    prediction_params: dict = None,
-    app_id: str = None,
+    prediction_params: Optional[dict] = None,
+    app_id: Optional[str] = None,
     optimize_instance_size: bool = False,
 ) -> Response[dict]:
     """Creates a Sync project for tracking and optimizing Apache Spark applications
@@ -93,7 +92,7 @@ def create_project(
     )
 
 
-def get_project(project_id: str, params: dict = None) -> Response[dict]:
+def get_project(project_id: str, params: Optional[dict] = None) -> Response[dict]:
     """Retrieves a project
 
     :param project_id: project ID
@@ -104,7 +103,9 @@ def get_project(project_id: str, params: dict = None) -> Response[dict]:
     return Response(**get_default_client().get_project(project_id, params=params))
 
 
-def get_project_cluster_template(project_id: str, region_name: str = None) -> Response[dict]:
+def get_project_cluster_template(
+    project_id: str, region_name: Optional[str] = None
+) -> Response[dict]:
     """Retrieve a project cluster template.
 
     :param project_id: project ID
@@ -120,15 +121,15 @@ def get_project_cluster_template(project_id: str, region_name: str = None) -> Re
 
 def update_project(
     project_id: str,
-    description: str = None,
-    cluster_path: str = None,
-    workspace_id: str = None,
-    cluster_log_url: str = None,
-    app_id: str = None,
-    auto_apply_recs: bool = None,
-    prediction_params: dict = None,
-    job_id: str = None,
-    optimize_instance_size: bool = None,
+    description: Optional[str] = None,
+    cluster_path: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    cluster_log_url: Optional[str] = None,
+    app_id: Optional[str] = None,
+    auto_apply_recs: Optional[bool] = None,
+    prediction_params: Optional[dict] = None,
+    job_id: Optional[str] = None,
+    optimize_instance_size: Optional[bool] = None,
 ) -> Response[dict]:
     """Updates a project's mutable properties
 
@@ -202,7 +203,7 @@ def get_project_by_app_id(app_id: str) -> Response[dict]:
     return Response(error=ProjectError(message=f"No project found for '{app_id}'"))
 
 
-def get_projects(app_id: str = None) -> Response[List[dict]]:
+def get_projects(app_id: Optional[str] = None) -> Response[List[dict]]:
     """Returns all projects authorized by the API key
 
     :param app_id: app ID to filter by, defaults to None

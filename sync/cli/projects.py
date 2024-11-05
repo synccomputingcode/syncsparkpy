@@ -1,4 +1,5 @@
 import json
+from typing import Optional
 
 import click
 
@@ -71,12 +72,12 @@ def create(
     name: str,
     product_code: str,
     auto_apply_recs: bool,
-    description: str = None,
-    job_id: str = None,
-    cluster_path: str = None,
-    workspace_id: str = None,
-    location: str = None,
-    app_id: str = None,
+    description: Optional[str] = None,
+    job_id: Optional[str] = None,
+    cluster_path: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    location: Optional[str] = None,
+    app_id: Optional[str] = None,
 ):
     """Create a project for a Spark application that runs on the platform identified by PRODUCT_CODE.
     Run `sync-cli products` to see a list of available product codes.
@@ -115,14 +116,14 @@ def create(
 @click.option("--auto-apply-recs", type=bool, help="Automatically apply project recommendations")
 def update(
     project_id: str,
-    description: str = None,
-    location: str = None,
-    app_id: str = None,
-    cluster_path: str = None,
-    workspace_id: str = None,
-    auto_apply_recs: bool = None,
-    job_id: str = None,
-    optimize_instance_size: bool = None,
+    description: Optional[str] = None,
+    location: Optional[str] = None,
+    app_id: Optional[str] = None,
+    cluster_path: Optional[str] = None,
+    workspace_id: Optional[str] = None,
+    auto_apply_recs: Optional[bool] = None,
+    job_id: Optional[str] = None,
+    optimize_instance_size: Optional[bool] = None,
 ):
     """Update a project"""
     response = update_project(

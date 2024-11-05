@@ -43,14 +43,12 @@ requires-python = ">=3.7"
 [project.optional-dependencies]
 dev = [
     "Sphinx==4.3.0",
-    "black==22.10.0",
     "deepdiff==6.3.0",
-    "flake8==5.0.4",
-    "isort==5.10.1",
     "pytest-asyncio==0.21.0",
     "pytest-env==0.8.1",
     "pytest==7.2.0",
     "respx==0.20.1",
+    "ruff==0.7.2",
 ]
 
 [tool.hatch.version]
@@ -62,14 +60,6 @@ sync-cli = "sync.__main__:main"
 [project.urls]
 Home = "https://github.com/synccomputingcode/syncsparkpy"
 
-[tool.black]
-line-length = 100
-target-version = ['py37']
-
-[tool.isort]
-line_length = 100
-profile = "black"
-
 [tool.pytest.ini_options]
 env = [
     "AWS_DEFAULT_REGION=us-east-1",
@@ -78,3 +68,35 @@ env = [
 ]
 filterwarnings = ["ignore::UserWarning"]
 pythonpath = ["."]
+
+
+[tool.ruff]
+exclude = ["artifacts/*"]
+line-length = 100
+target-version = "py37"
+[tool.ruff.lint]
+ignore = ["E501"]
+preview = true
+select = ["ASYNC", "B", "C9", "E", "F", "I", "PLE", "RUF", "TID", "UP", "W"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    # Whitelisted default arguments
+    "Security",
+    "Tracker",
+    "app.api.deps.Tracker",
+    "fastapi.Depends",
+    "fastapi.Header",
+    "fastapi.Query",
+    "fastapi.Security",
+]
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+
+[tool.pyright]
+pythonPlatform = "All"
+pythonVersion = "3.7"
+reportUnnecessaryTypeIgnoreComment = "error"
+typeCheckingMode = "standard"
+useLibraryCodeForTypes = false

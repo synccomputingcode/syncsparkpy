@@ -60,40 +60,40 @@ from sync.utils.dbfs import format_dbfs_filepath, write_dbfs_file
 from sync.utils.json import DefaultDateTimeEncoder
 
 __all__ = [
-    "get_access_report",
-    "run_and_record_job",
-    "monitor_cluster",
-    "monitor_once",
+    "apply_project_recommendation",
+    "create_and_record_run",
+    "create_and_wait_for_run",
     "create_cluster",
-    "get_cluster",
+    "create_run",
     "create_submission_for_run",
     "create_submission_with_cluster_info",
-    "get_cluster_report",
+    "get_access_report",
     "get_all_cluster_events",
-    "handle_successful_job_run",
-    "record_run",
+    "get_cluster",
+    "get_cluster_report",
     "get_project_cluster",
-    "get_project_job",
-    "get_recommendation_job",
     "get_project_cluster",
     "get_project_cluster_settings",
-    "run_job_object",
-    "create_run",
-    "run_and_record_project_job",
+    "get_project_job",
+    "get_recommendation_job",
+    "handle_successful_job_run",
+    "monitor_cluster",
+    "monitor_once",
+    "record_run",
+    "run_and_record_job",
     "run_and_record_job_object",
-    "create_and_record_run",
+    "run_and_record_project_job",
+    "run_job_object",
+    "terminate_cluster",
     "wait_for_and_record_run",
-    "create_and_wait_for_run",
     "wait_for_final_run_status",
     "wait_for_run_and_cluster",
-    "terminate_cluster",
-    "apply_project_recommendation",
 ]
 
 logger = logging.getLogger(__name__)
 
 
-def get_access_report(log_url: str = None) -> AccessReport:
+def get_access_report(log_url: Optional[str] = None) -> AccessReport:
     """Reports access to Databricks, AWS and Sync required for integrating jobs with Sync.
     Access is partially determined by the configuration of this library and boto3.
 
@@ -266,7 +266,7 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
     cluster_log_dest = _cluster_log_destination(cluster)
 
     if cluster_log_dest:
-        (_, filesystem, bucket, base_prefix) = cluster_log_dest
+        (_, filesystem, _bucket, base_prefix) = cluster_log_dest
 
         cluster_id = cluster["cluster_id"]
         spark_context_id = cluster["spark_context_id"]
@@ -285,9 +285,7 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
         )
 
         if not cluster_instances:
-            no_instances_message = (
-                f"Unable to find cluster information from Sync's cluster monitor for cluster `{cluster_id}`. "
-            )
+            no_instances_message = f"Unable to find cluster information from Sync's cluster monitor for cluster `{cluster_id}`. "
             return Response(error=DatabricksError(message=no_instances_message))
 
     return Response(result=cluster_instances)
@@ -296,7 +294,7 @@ def _get_cluster_instances(cluster: dict) -> Response[dict]:
 def monitor_cluster(
     cluster_id: str,
     polling_period: int = 20,
-    cluster_report_destination_override: dict = None,
+    cluster_report_destination_override: Optional[dict] = None,
     kill_on_termination: bool = False,
 ) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
@@ -336,7 +334,7 @@ def _monitor_cluster(
     kill_on_termination: bool = False,
     write_function=None,
 ) -> None:
-    (log_url, filesystem, bucket, base_prefix) = cluster_log_destination
+    (_log_url, filesystem, _bucket, base_prefix) = cluster_log_destination
     # If the event log destination is just a *bucket* without any sub-path, then we don't want to include
     #  a leading `/` in our Prefix (which will make it so that we never actually find the event log), so
     #  we make sure to re-strip our final Prefix
@@ -393,7 +391,9 @@ def _monitor_cluster(
         sleep(polling_period)
 
 
-def monitor_once(cluster_id: str, in_progress_cluster={}):
+def monitor_once(cluster_id: str, in_progress_cluster=None):
+    if in_progress_cluster is None:
+        in_progress_cluster = {}
     all_vms_by_id = in_progress_cluster.get("all_vms_by_id") or {}
     active_timelines_by_id = in_progress_cluster.get("active_timelines_by_id") or {}
     retired_timelines = in_progress_cluster.get("retired_timelines") or []

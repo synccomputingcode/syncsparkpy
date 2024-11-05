@@ -57,40 +57,40 @@ from sync.utils.dbfs import format_dbfs_filepath, write_dbfs_file
 from sync.utils.json import DefaultDateTimeEncoder
 
 __all__ = [
-    "get_access_report",
-    "run_and_record_job",
+    "apply_project_recommendation",
+    "create_and_record_run",
+    "create_and_wait_for_run",
+    "create_cluster",
+    "create_run",
     "create_submission_for_run",
     "create_submission_with_cluster_info",
-    "get_cluster_report",
+    "get_access_report",
     "get_all_cluster_events",
-    "monitor_cluster",
-    "monitor_once",
-    "create_cluster",
     "get_cluster",
-    "handle_successful_job_run",
-    "record_run",
-    "get_project_job",
+    "get_cluster_report",
     "get_project_cluster",
     "get_project_cluster_settings",
+    "get_project_job",
     "get_recommendation_job",
-    "run_job_object",
-    "create_run",
-    "run_and_record_project_job",
+    "handle_successful_job_run",
+    "monitor_cluster",
+    "monitor_once",
+    "record_run",
+    "run_and_record_job",
     "run_and_record_job_object",
-    "create_and_record_run",
+    "run_and_record_project_job",
+    "run_job_object",
+    "save_cluster_report",
+    "terminate_cluster",
     "wait_for_and_record_run",
-    "create_and_wait_for_run",
     "wait_for_final_run_status",
     "wait_for_run_and_cluster",
-    "terminate_cluster",
-    "apply_project_recommendation",
-    "save_cluster_report",
 ]
 
 logger = logging.getLogger(__name__)
 
 
-def get_access_report(log_url: str = None) -> AccessReport:
+def get_access_report(log_url: Optional[str] = None) -> AccessReport:
     """Reports access to Databricks, AWS and Sync required for integrating jobs with Sync.
     Access is partially determined by the configuration of this library and boto3.
 
@@ -408,7 +408,7 @@ def save_cluster_report(
 def monitor_cluster(
     cluster_id: str,
     polling_period: int = 20,
-    cluster_report_destination_override: dict = None,
+    cluster_report_destination_override: Optional[dict] = None,
     kill_on_termination: bool = False,
 ) -> None:
     cluster = get_default_client().get_cluster(cluster_id)
@@ -492,7 +492,9 @@ def _monitor_cluster(
         sleep(polling_period)
 
 
-def monitor_once(cluster_id: str, in_progress_cluster={}):
+def monitor_once(cluster_id: str, in_progress_cluster=None):
+    if in_progress_cluster is None:
+        in_progress_cluster = {}
     all_inst_by_id = in_progress_cluster.get("all_inst_by_id") or {}
     active_timelines_by_id = in_progress_cluster.get("active_timelines_by_id") or {}
     retired_timelines = in_progress_cluster.get("retired_timelines") or []

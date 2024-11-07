@@ -26,7 +26,9 @@ logger = logging.getLogger(__name__)
 
 
 class SyncAuth(httpx.Auth):
+    requires_request_body = True
     requires_response_body = True
+
     retryable_status_codes = (
         httpx.codes.SERVICE_UNAVAILABLE,
         httpx.codes.TOO_MANY_REQUESTS,
@@ -71,6 +73,7 @@ class SyncAuth(httpx.Auth):
                 except TryAgain:
                     # Hit maximum retries
                     logger.error("Failed to authenticate, max retries reached")
+                    break
         request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
         yield request
 
@@ -98,6 +101,7 @@ class SyncAuth(httpx.Auth):
                 except TryAgain:
                     # Hit maximum retries
                     logger.error("Failed to authenticate, max retries reached")
+                    break
         request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
         yield request
 

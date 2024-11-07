@@ -71,6 +71,7 @@ class SyncAuth(httpx.Auth):
                 except TryAgain:
                     # Hit maximum retries
                     logger.error("Failed to authenticate, max retries reached")
+                    break
         request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
         yield request
 
@@ -98,6 +99,7 @@ class SyncAuth(httpx.Auth):
                 except TryAgain:
                     # Hit maximum retries
                     logger.error("Failed to authenticate, max retries reached")
+                    break
         request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
         yield request
 

@@ -7,8 +7,9 @@ import dateutil.parser
 import httpx
 from tenacity import (
     AsyncRetrying,
-    Retrying,
     TryAgain,
+    retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential_jitter,
 )
@@ -49,31 +50,24 @@ class SyncAuth(httpx.Auth):
         self._sync_lock = threading.RLock()
         self._async_lock = asyncio.Lock()
 
-    def sync_auth_flow(
-        self, request: httpx.Request
-    ) -> Generator[httpx.Request, httpx.Response, None]:
+    @retry(
+        stop=stop_after_attempt(10),
+        wait=wait_exponential_jitter(2, 10),
+        reraise=False,
+        retry=retry_if_exception_type(TryAgain),
+    )
+    def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
         with self._sync_lock:
-            while not self.cached_token.is_access_token_valid:
-                try:
-                    for attempt in Retrying(
-                        stop=stop_after_attempt(10),
-                        wait=wait_exponential_jitter(2, 10),
-                        reraise=True,
-                    ):
-                        with attempt:
-                            # fetch with retry and exponential backoff
-                            response = yield self.build_auth_request()
-                            if response.status_code == httpx.codes.OK:
-                                self.update_access_token(response)
-                                break
-                            elif response.status_code in self.retryable_status_codes:
-                                raise TryAgain()
-                            else:
-                                logger.error(f"{response.status_code}: Failed to authenticate")
-                except TryAgain:
-                    # Hit maximum retries
-                    logger.error("Failed to authenticate, max retries reached")
-                    break
+            # fetch with retry and exponential backoff
+            response = yield self.build_auth_request()
+            if response.status_code == httpx.codes.OK:
+                self.update_access_token(response)
+            elif response.status_code in self.retryable_status_codes:
+                raise TryAgain()
+            else:
+                logger.error(f"{response.status_code}: Failed to authenticate")
+        if not self.cached_token.is_access_token_valid:
+            raise TryAgain()
         request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
         yield request
 

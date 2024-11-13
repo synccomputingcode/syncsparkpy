@@ -101,7 +101,6 @@ class SyncAuth(httpx.Auth):
         yield request
 
     def build_auth_request(self) -> httpx.Request:
-        print(self.api_key.dict(by_alias=True))
         return httpx.Request("POST", self.auth_url, json=self.api_key.dict(by_alias=True))
 
     def update_access_token(self, response: httpx.Response):

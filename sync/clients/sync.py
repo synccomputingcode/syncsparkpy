@@ -58,16 +58,17 @@ class SyncAuth(httpx.Auth):
     )
     def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
         with self._sync_lock:
-            # fetch with retry and exponential backoff
-            response = yield self.build_auth_request()
-            if response.status_code == httpx.codes.OK:
-                self.update_access_token(response)
-            elif response.status_code in self.retryable_status_codes:
+            if not self.cached_token.is_access_token_valid:
+                # fetch with retry and exponential backoff
+                response = yield self.build_auth_request()
+                if response.status_code == httpx.codes.OK:
+                    self.update_access_token(response)
+                elif response.status_code in self.retryable_status_codes:
+                    raise TryAgain()
+                else:
+                    logger.error(f"{response.status_code}: Failed to authenticate")
+            if not self.cached_token.is_access_token_valid:
                 raise TryAgain()
-            else:
-                logger.error(f"{response.status_code}: Failed to authenticate")
-        if not self.cached_token.is_access_token_valid:
-            raise TryAgain()
         request.headers["Authorization"] = f"Bearer {self.cached_token.access_token}"
         yield request
 
@@ -100,6 +101,7 @@ class SyncAuth(httpx.Auth):
         yield request
 
     def build_auth_request(self) -> httpx.Request:
+        print(self.api_key.dict(by_alias=True))
         return httpx.Request("POST", self.auth_url, json=self.api_key.dict(by_alias=True))
 
     def update_access_token(self, response: httpx.Response):

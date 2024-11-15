@@ -1,4 +1,3 @@
-
 from sync.clients.sync import get_default_client
 from sync.models import CreateWorkspaceConfig, Response, UpdateWorkspaceConfig
 

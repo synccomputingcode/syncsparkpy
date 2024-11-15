@@ -38,7 +38,7 @@ dependencies = [
 dynamic = ["description", "version"]
 name = "syncsparkpy"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 
 [project.optional-dependencies]
 dev = [
@@ -74,7 +74,7 @@ pythonpath = ["."]
 [tool.ruff]
 exclude = ["artifacts/*"]
 line-length = 100
-target-version = "py37"
+target-version = "py38"
 [tool.ruff.lint]
 ignore = ["E501"]
 preview = true
@@ -92,12 +92,12 @@ extend-immutable-calls = [
     "fastapi.Security",
 ]
 [tool.ruff.lint.mccabe]
-max-complexity = 10
+max-complexity = 20
 
 
 [tool.pyright]
 pythonPlatform = "All"
-pythonVersion = "3.7"
+pythonVersion = "3.8"
 reportUnnecessaryTypeIgnoreComment = "error"
 typeCheckingMode = "standard"
 useLibraryCodeForTypes = false

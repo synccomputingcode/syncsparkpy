@@ -21,11 +21,8 @@ jobs:
       - name: Install dependencies
         run: pip install .[dev]
 
-      - name: Lint
-        run: make lint
-
-      - name: Format
-        run: make format
+      - name: Checks
+        run: make check
 
       - name: Test
         run: make test

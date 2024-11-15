@@ -1,4 +1,5 @@
 import json
+import sys
 from typing import ClassVar, Set, Tuple, Union
 
 import httpx
@@ -13,7 +14,10 @@ from tenacity import (
 from sync import __version__
 from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
-USER_AGENT = f"Sync Library/{__version__} (syncsparkpy)"
+# inclue python version
+USER_AGENT = (
+    f"Sync Library/{__version__} (syncsparkpy) Python/{'.'.join(map(str, sys.version_info[:3]))}"
+)
 DATABRICKS_USER_AGENT = "sync-gradient"
 
 

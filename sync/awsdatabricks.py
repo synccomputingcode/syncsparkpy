@@ -1,8 +1,9 @@
 import json
 import logging
+from collections.abc import Generator
 from pathlib import Path
 from time import sleep
-from typing import Dict, Generator, List, Optional, Tuple
+from typing import Optional
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -187,7 +188,7 @@ def get_access_report(log_url: Optional[str] = None) -> AccessReport:
 
 def _get_cluster_report(
     cluster_id: str,
-    cluster_tasks: List[dict],
+    cluster_tasks: list[dict],
     plan_type: str,
     compute_type: str,
     allow_incomplete: bool,
@@ -242,7 +243,7 @@ def _create_cluster_report(
     cluster: dict,
     cluster_info: dict,
     cluster_activity_events: dict,
-    tasks: List[dict],
+    tasks: list[dict],
     plan_type: DatabricksPlanType,
     compute_type: DatabricksComputeType,
 ) -> AWSDatabricksClusterReport:
@@ -268,7 +269,7 @@ sync._databricks._create_cluster_report = _create_cluster_report
 setattr(sync._databricks, "__claim", __name__)
 
 
-def _load_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict]]:
+def _load_aws_cluster_info(cluster: dict) -> tuple[Response[dict], Response[dict]]:
     cluster_info = None
     cluster_id = None
     cluster_log_dest = _cluster_log_destination(cluster)
@@ -311,7 +312,7 @@ def _load_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict
     return cluster_info, cluster_id
 
 
-def _get_aws_cluster_info(cluster: dict) -> Tuple[Response[dict], Response[dict], Response[dict]]:
+def _get_aws_cluster_info(cluster: dict) -> tuple[Response[dict], Response[dict], Response[dict]]:
     aws_region_name = DB_CONFIG.aws_region_name
 
     cluster_info, cluster_id = _load_aws_cluster_info(cluster)
@@ -351,9 +352,9 @@ def _get_aws_cluster_info_from_s3(bucket: str, file_key: str, cluster_id):
 
 def save_cluster_report(
     cluster_id: str,
-    instance_timelines: List[dict],
-    cluster_log_destination: Optional[Tuple[str, ...]] = None,
-    cluster_report_destination_override: Optional[Dict[str, str]] = None,
+    instance_timelines: list[dict],
+    cluster_log_destination: Optional[tuple[str, ...]] = None,
+    cluster_report_destination_override: Optional[dict[str, str]] = None,
     write_function=None,
 ) -> bool:
     cluster = get_default_client().get_cluster(cluster_id)
@@ -570,7 +571,7 @@ def _define_write_file(file_key, filesystem, bucket, write_function):
     return write_file
 
 
-def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> List[dict]:
+def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> list[dict]:
     filters = [
         {"Name": "tag:Vendor", "Values": ["Databricks"]},
         {"Name": "tag:ClusterId", "Values": [cluster_id]},
@@ -594,8 +595,8 @@ def _get_ec2_instances(cluster_id: str, ec2_client: "botocore.client.ec2") -> Li
 
 
 def _get_ebs_volumes_for_instances(
-    instances: List[dict], ec2_client: "botocore.client.ec2"
-) -> List[dict]:
+    instances: list[dict], ec2_client: "botocore.client.ec2"
+) -> list[dict]:
     """Get all ebs volumes associated with a list of instance reservations"""
 
     def get_chunk(instance_ids: list[str], chunk_size: int) -> Generator[list[str], None, None]:

@@ -1,6 +1,6 @@
 import datetime
 from json import JSONEncoder
-from typing import Any, Dict, TypeVar
+from typing import Any, TypeVar
 
 
 class DefaultDateTimeEncoder(JSONEncoder):
@@ -41,8 +41,8 @@ KeyType = TypeVar("KeyType")
 
 
 def deep_update(
-    mapping: Dict[KeyType, Any], *updating_mappings: Dict[KeyType, Any]
-) -> Dict[KeyType, Any]:
+    mapping: dict[KeyType, Any], *updating_mappings: dict[KeyType, Any]
+) -> dict[KeyType, Any]:
     updated_mapping = mapping.copy()
     for updating_mapping in updating_mappings:
         for k, v in updating_mapping.items():

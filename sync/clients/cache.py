@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Optional, Tuple, Type, Union
+from typing import Callable, Optional, Union
 
 from platformdirs import user_cache_dir
 
@@ -45,7 +45,7 @@ class CachedToken:
     def _set_cached_token(self) -> None:
         raise NotImplementedError
 
-    def _get_cached_token(self) -> Optional[Tuple[str, datetime]]:
+    def _get_cached_token(self) -> Optional[tuple[str, datetime]]:
         raise NotImplementedError
 
 
@@ -55,7 +55,7 @@ class FileCachedToken(CachedToken):
 
         super().__init__()
 
-    def _get_cached_token(self) -> Optional[Tuple[str, datetime]]:
+    def _get_cached_token(self) -> Optional[tuple[str, datetime]]:
         # Cache is optional, we can fail to read it and not worry
         if self._cache_file.exists():
             try:
@@ -87,7 +87,7 @@ class FileCachedToken(CachedToken):
 
 
 # Putting this here instead of config.py because circular imports and typing.
-ACCESS_TOKEN_CACHE_CLS_TYPE = Union[Type[CachedToken], Callable[[], CachedToken]]
+ACCESS_TOKEN_CACHE_CLS_TYPE = Union[type[CachedToken], Callable[[], CachedToken]]
 _access_token_cache_cls: ACCESS_TOKEN_CACHE_CLS_TYPE = (
     FileCachedToken  # Default to local file caching.
 )

@@ -1,6 +1,7 @@
 import logging
 import os
-from typing import Generator, Union
+from collections.abc import Generator
+from typing import Union
 
 import httpx
 

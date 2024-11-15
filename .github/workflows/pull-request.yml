@@ -13,19 +13,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python 3.7.x
+      - name: Set up Python 3.9.x
         uses: actions/setup-python@v4
         with:
-          python-version: "3.7.16"
+          python-version: "3.9.20"
 
       - name: Install dependencies
         run: pip install .[dev]
 
-      - name: Lint
-        run: make lint
-
-      - name: Format
-        run: make format
+      - name: Checks
+        run: make check
 
       - name: Test
         run: make test

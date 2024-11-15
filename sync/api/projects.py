@@ -130,6 +130,7 @@ def update_project(
     prediction_params: Optional[dict] = None,
     job_id: Optional[str] = None,
     optimize_instance_size: Optional[bool] = None,
+    hardware_override: Optional[dict] = None,
 ) -> Response[dict]:
     """Updates a project's mutable properties
 
@@ -153,6 +154,8 @@ def update_project(
     :type job_id: str, optional
     :param optimize_instance_size: flag to turn on/off instance size recommendations, defaults to None
     :type optimize_instance_size: bool, optional
+    :param hardware_override: dictionary of hardware_override, defaults to None
+    :type hardware_override: dict, optional
     :return: updated project
     :rtype: Response[dict]
     """
@@ -175,6 +178,8 @@ def update_project(
         project_update["workspace_id"] = workspace_id
     if optimize_instance_size:
         project_update["optimize_instance_size"] = optimize_instance_size
+    if hardware_override:
+        project_update["hardware_override"] = hardware_override
 
     return Response(
         **get_default_client().update_project(

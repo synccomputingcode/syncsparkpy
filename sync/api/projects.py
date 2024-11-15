@@ -534,7 +534,3 @@ def get_updated_cluster_definition(
         return Response(result=recommendation_cluster)
     else:
         return rec_response
-
-
-# Old typo, to keep the API consistent we also define the one with wrong name:
-get_updated_cluster_defintion = get_updated_cluster_definition

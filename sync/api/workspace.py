@@ -1,4 +1,3 @@
-from typing import List
 
 from sync.clients.sync import get_default_client
 from sync.models import CreateWorkspaceConfig, Response, UpdateWorkspaceConfig
@@ -36,7 +35,7 @@ def get_workspace_config(workspace_id: str) -> Response[dict]:
     return Response(**get_default_client().get_workspace_config(workspace_id))
 
 
-def get_workspace_configs() -> Response[List[dict]]:
+def get_workspace_configs() -> Response[list[dict]]:
     return Response(**get_default_client().get_workspace_configs())
 
 

@@ -4,7 +4,7 @@ import io
 import json
 import logging
 from time import sleep
-from typing import List, Optional, Union
+from typing import Optional, Union
 from urllib.parse import urlparse
 
 import httpx
@@ -26,7 +26,7 @@ from . import generate_presigned_url
 logger = logging.getLogger(__name__)
 
 
-def get_products() -> Response[List[str]]:
+def get_products() -> Response[list[str]]:
     """Get supported platforms
     :return: list of platform names
     :rtype: Response[list[str]]
@@ -203,7 +203,7 @@ def get_project_by_app_id(app_id: str) -> Response[dict]:
     return Response(error=ProjectError(message=f"No project found for '{app_id}'"))
 
 
-def get_projects(app_id: Optional[str] = None) -> Response[List[dict]]:
+def get_projects(app_id: Optional[str] = None) -> Response[list[dict]]:
     """Returns all projects authorized by the API key
 
     :param app_id: app ID to filter by, defaults to None

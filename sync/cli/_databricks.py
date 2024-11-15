@@ -1,5 +1,5 @@
 import json
-from typing import Optional, Tuple
+from typing import Optional
 
 import click
 
@@ -56,7 +56,7 @@ def create_submission(
     compute: DatabricksComputeType,
     project: dict,
     allow_incomplete: bool = False,
-    exclude_task: Optional[Tuple[str, ...]] = None,
+    exclude_task: Optional[tuple[str, ...]] = None,
 ):
     """Create a submission for a job run"""
     if platform is Platform.AWS_DATABRICKS:
@@ -159,7 +159,7 @@ def get_cluster_report(
     compute: DatabricksComputeType,
     project: Optional[dict] = None,
     allow_incomplete: bool = False,
-    exclude_task: Optional[Tuple[str, ...]] = None,
+    exclude_task: Optional[tuple[str, ...]] = None,
 ):
     """Get a cluster report"""
     if platform is Platform.AWS_DATABRICKS:

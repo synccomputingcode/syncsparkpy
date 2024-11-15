@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 from time import sleep
-from typing import Dict, List, Optional, Type, TypeVar, Union
+from typing import Optional, TypeVar, Union
 from urllib.parse import urlparse
 
 from azure.common.credentials import get_cli_profile
@@ -195,7 +195,7 @@ def get_access_report(log_url: Optional[str] = None) -> AccessReport:
 
 def _get_cluster_report(
     cluster_id: str,
-    cluster_tasks: List[dict],
+    cluster_tasks: list[dict],
     plan_type: str,
     compute_type: str,
     allow_incomplete: bool,
@@ -233,7 +233,7 @@ def _create_cluster_report(
     cluster: dict,
     cluster_info: dict,
     cluster_activity_events: dict,
-    tasks: List[dict],
+    tasks: list[dict],
     plan_type: DatabricksPlanType,
     compute_type: DatabricksComputeType,
 ) -> AzureDatabricksClusterReport:
@@ -492,7 +492,7 @@ def set_azure_client_credentials(
     _azure_credential = azure_credential
 
 
-def _get_azure_client(azure_client_class: Type[AzureClient]) -> AzureClient:
+def _get_azure_client(azure_client_class: type[AzureClient]) -> AzureClient:
     global _azure_subscription_id
     if not _azure_subscription_id:
         _azure_subscription_id = _get_azure_subscription_id()
@@ -516,7 +516,7 @@ def _get_azure_subscription_id():
 
 def _get_running_vms_by_id(
     compute: AzureClient, resource_group_name: Optional[str], cluster_id: str
-) -> Dict[str, dict]:
+) -> dict[str, dict]:
     if resource_group_name:
         vms = compute.virtual_machines.list(resource_group_name=resource_group_name)
     else:

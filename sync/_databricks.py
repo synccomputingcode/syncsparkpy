@@ -8,10 +8,11 @@ import logging
 import time
 import zipfile
 from collections import defaultdict
+from collections.abc import Collection
 from datetime import datetime, timezone
 from pathlib import Path
 from time import sleep
-from typing import Collection, Dict, List, Optional, Set, Tuple, Union
+from typing import Optional, Union
 from urllib.parse import urlparse
 
 import boto3 as boto
@@ -70,9 +71,9 @@ def get_cluster(cluster_id: str) -> Response[dict]:
 def create_submission_with_cluster_info(
     run_id: str,
     project_id: str,
-    cluster: Dict,
-    cluster_info: Dict,
-    cluster_activity_events: Dict,
+    cluster: dict,
+    cluster_info: dict,
+    cluster_activity_events: dict,
     plan_type: DatabricksPlanType,
     compute_type: DatabricksComputeType,
     skip_eventlog: bool = False,
@@ -185,7 +186,7 @@ def create_submission_for_run(
 
 def _create_submission(
     cluster_id: str,
-    tasks: List[dict],
+    tasks: list[dict],
     plan_type: str,
     compute_type: str,
     project_id: str,
@@ -215,12 +216,12 @@ def _create_submission(
 
 def _get_run_information(
     cluster_id: str,
-    tasks: List[dict],
+    tasks: list[dict],
     plan_type: str,
     compute_type: str,
     allow_failed_tasks: bool = False,
     allow_incomplete_cluster_report: bool = False,
-) -> Response[Tuple[DatabricksClusterReport, bytes]]:
+) -> Response[tuple[DatabricksClusterReport, bytes]]:
     if not allow_failed_tasks and any(
         task["state"].get("result_state") != "SUCCESS" for task in tasks
     ):
@@ -243,7 +244,7 @@ def _get_run_information(
     return cluster_report_response
 
 
-def _get_event_log_from_cluster(cluster: Dict, tasks: List[Dict]) -> Response[bytes]:
+def _get_event_log_from_cluster(cluster: dict, tasks: list[dict]) -> Response[bytes]:
     spark_context_id = _get_run_spark_context_id(tasks)
     end_time = max(task["end_time"] for task in tasks)
     eventlog_response = _get_eventlog(cluster, spark_context_id.result, end_time)
@@ -257,7 +258,7 @@ def _get_event_log_from_cluster(cluster: Dict, tasks: List[Dict]) -> Response[by
 
 
 def _maybe_get_event_log_from_cluster(
-    cluster: Dict, tasks: List[Dict], dbfs_eventlog_file_size: Union[int, None]
+    cluster: dict, tasks: list[dict], dbfs_eventlog_file_size: Union[int, None]
 ) -> Response[bytes]:
     spark_context_id = _get_run_spark_context_id(tasks)
     end_time = max(task["end_time"] for task in tasks)
@@ -330,7 +331,7 @@ def get_cluster_report(
 
 def _get_cluster_report(
     cluster_id: str,
-    cluster_tasks: List[dict],
+    cluster_tasks: list[dict],
     plan_type: str,
     compute_type: str,
     allow_incomplete: bool,
@@ -342,7 +343,7 @@ def _create_cluster_report(
     cluster: dict,
     cluster_info: dict,
     cluster_activity_events: dict,
-    tasks: List[dict],
+    tasks: list[dict],
     plan_type: DatabricksPlanType,
     compute_type: DatabricksComputeType,
 ) -> DatabricksClusterReport:
@@ -366,7 +367,7 @@ def handle_successful_job_run(
     project_id: Union[str, None] = None,
     allow_incomplete_cluster_report: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
-) -> Response[Dict[str, str]]:
+) -> Response[dict[str, str]]:
     """Create's Sync project submissions for each eligible cluster in the run (see :py:func:`~record_run`)
 
     If project ID is provided only submit run data for the cluster tagged with it, or the only cluster if there is such.
@@ -455,7 +456,7 @@ def record_run(
     project_id: Union[str, None] = None,
     allow_incomplete_cluster_report: bool = False,
     exclude_tasks: Union[Collection[str], None] = None,
-) -> Response[Dict[str, str]]:
+) -> Response[dict[str, str]]:
     """Create's Sync project submissions for each eligible cluster in the run.
 
     If project ID is provided only submit run data for the cluster tagged with it, or the only cluster if there is such.
@@ -508,11 +509,11 @@ def record_run(
 
 
 def _record_project_clusters(
-    project_cluster_tasks: Dict[str, Tuple[str, List[dict]]],
+    project_cluster_tasks: dict[str, tuple[str, list[dict]]],
     plan_type: str,
     compute_type: str,
     allow_incomplete_cluster_report: bool,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Creates project submissions/predictions and returns a map of project IDs to the new submissions/predictions IDs"""
     result_ids = {}
     for cluster_project_id, (cluster_id, tasks) in project_cluster_tasks.items():
@@ -792,7 +793,7 @@ def get_project_cluster_settings(
     return Response(result=cluster_template)
 
 
-def run_job_object(job: dict) -> Response[Tuple[str, str]]:
+def run_job_object(job: dict) -> Response[tuple[str, str]]:
     """Create a Databricks one-off run based on the job configuration.
 
     :param job: Databricks job object
@@ -1134,7 +1135,7 @@ def _wait_for_cluster_termination(
 
 def _cluster_log_destination(
     cluster: dict,
-) -> Union[Tuple[str, str, str, str], Tuple[None, None, None, None]]:
+) -> Union[tuple[str, str, str, str], tuple[None, None, None, None]]:
     cluster_log_conf = cluster.get("cluster_log_conf", {})
     s3_log_url = cluster_log_conf.get("s3", {}).get("destination")
     dbfs_log_url = cluster_log_conf.get("dbfs", {}).get("destination")
@@ -1156,7 +1157,7 @@ def _cluster_log_destination(
     return None, None, None, None
 
 
-def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
+def _get_job_cluster(tasks: list[dict], job_clusters: list) -> Response[dict]:
     if len(tasks) == 1:
         return _get_task_cluster(tasks[0], job_clusters)
 
@@ -1173,7 +1174,7 @@ def _get_job_cluster(tasks: List[dict], job_clusters: list) -> Response[dict]:
 def _get_project_job_clusters(
     job: dict,
     exclude_tasks: Union[Collection[str], None] = None,
-) -> Dict[str, Tuple[Tuple[str], dict]]:
+) -> dict[str, tuple[tuple[str], dict]]:
     """Returns a mapping of project IDs to cluster paths and clusters.
 
     Cluster paths are tuples that can be used to locate clusters in a job object, e.g.
@@ -1215,7 +1216,7 @@ def _get_project_cluster_tasks(
     project_id: Optional[str] = None,
     cluster_path: Optional[str] = None,
     exclude_tasks: Union[Collection[str], None] = None,
-) -> Dict[str, Tuple[str, List[dict]]]:
+) -> dict[str, tuple[str, list[dict]]]:
     """Returns a mapping of project IDs to cluster-ID-tasks pairs"""
     project_cluster_tasks = _get_cluster_tasks(run, exclude_tasks)
 
@@ -1265,7 +1266,7 @@ def _get_project_cluster_tasks(
 def _get_cluster_tasks(
     run: dict,
     exclude_tasks: Union[Collection[str], None] = None,
-) -> Dict[str, Dict[str, Tuple[str, List[dict]]]]:
+) -> dict[str, dict[str, tuple[str, list[dict]]]]:
     """Returns a mapping of project IDs to cluster paths to cluster IDs and tasks"""
     job_clusters = {c["job_cluster_key"]: c["new_cluster"] for c in run.get("job_clusters", [])}
 
@@ -1311,7 +1312,7 @@ def _get_cluster_tasks(
     return result_cluster_project_tasks
 
 
-def _get_run_spark_context_id(tasks: List[dict]) -> Response[str]:
+def _get_run_spark_context_id(tasks: list[dict]) -> Response[str]:
     context_ids = {
         task["cluster_instance"]["spark_context_id"] for task in tasks if "cluster_instance" in task
     }
@@ -1341,7 +1342,7 @@ def _get_task_cluster(task: dict, clusters: list) -> Response[dict]:
     return Response(result=cluster)
 
 
-def _s3_contents_have_all_rollover_logs(contents: List[dict], run_end_time_seconds: float):
+def _s3_contents_have_all_rollover_logs(contents: list[dict], run_end_time_seconds: float):
     final_rollover_log = contents and next(
         (
             content
@@ -1380,7 +1381,7 @@ def _dbfs_directory_has_all_rollover_logs(contents: dict, run_end_time_millis: f
     )
 
 
-def _dbfs_any_file_has_zero_size(dbfs_contents: Dict) -> bool:
+def _dbfs_any_file_has_zero_size(dbfs_contents: dict) -> bool:
     any_zeros = any(file["file_size"] == 0 for file in dbfs_contents["files"])
     if any_zeros:
         logger.info("One or more dbfs event log files has a file size of zero")
@@ -1388,8 +1389,8 @@ def _dbfs_any_file_has_zero_size(dbfs_contents: Dict) -> bool:
 
 
 def _check_total_file_size_changed(
-    last_total_file_size: int, dbfs_contents: Dict
-) -> Tuple[bool, int]:
+    last_total_file_size: int, dbfs_contents: dict
+) -> tuple[bool, int]:
     new_total_file_size = sum([file.get("file_size", 0) for file in dbfs_contents.get("files", {})])
     if new_total_file_size == last_total_file_size:
         return False, new_total_file_size
@@ -1687,9 +1688,9 @@ def get_all_cluster_events(cluster_id: str):
 
 
 def _update_monitored_timelines(
-    running_instance_ids: Set[str],
-    active_timelines_by_id: Dict[str, dict],
-) -> Tuple[Dict[str, dict], List[dict]]:
+    running_instance_ids: set[str],
+    active_timelines_by_id: dict[str, dict],
+) -> tuple[dict[str, dict], list[dict]]:
     """
     Shared monitoring method for both Azure and Databricks to reduce complexity.
     Compares the current running instances (keyed by id) to the running

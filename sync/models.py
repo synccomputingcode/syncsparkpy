@@ -6,7 +6,7 @@ import copy
 import json
 from dataclasses import dataclass
 from enum import Enum, unique
-from typing import Callable, Dict, Generic, List, Optional, TypeVar, Union
+from typing import Callable, Generic, Optional, TypeVar, Union
 
 from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field, root_validator, validator
@@ -55,7 +55,7 @@ class AccessReportLine:
     message: Union[str, None]
 
 
-class AccessReport(List[AccessReportLine]):
+class AccessReport(list[AccessReportLine]):
     def __str__(self):
         return "\n".join(f"{line.name}\n  {line.status}: {line.message}" for line in self)
 
@@ -125,13 +125,13 @@ class DatabricksClusterReport(BaseModel):
     compute_type: DatabricksComputeType
     cluster: dict
     cluster_events: dict
-    tasks: List[dict]
-    instances: Union[List[dict], None]
-    instance_timelines: Union[List[dict], None]
+    tasks: list[dict]
+    instances: Union[list[dict], None]
+    instance_timelines: Union[list[dict], None]
 
 
 class AWSDatabricksClusterReport(DatabricksClusterReport):
-    volumes: Union[List[dict], None]
+    volumes: Union[list[dict], None]
 
 
 class AzureDatabricksClusterReport(DatabricksClusterReport):
@@ -188,28 +188,28 @@ class DBFSClusterLogConfiguration(BaseModel):
 class AWSProjectConfiguration(BaseModel):
     node_type_id: str
     driver_node_type: str
-    custom_tags: Dict
+    custom_tags: dict
     cluster_log_conf: Union[S3ClusterLogConfiguration, DBFSClusterLogConfiguration]
     cluster_name: str
     num_workers: int
     spark_version: str
     runtime_engine: str
-    autoscale: Dict
-    spark_conf: Dict
-    aws_attributes: Dict
-    spark_env_vars: Dict
+    autoscale: dict
+    spark_conf: dict
+    aws_attributes: dict
+    spark_env_vars: dict
 
 
 class AzureProjectConfiguration(BaseModel):
     node_type_id: str
     driver_node_type: str
     cluster_log_conf: DBFSClusterLogConfiguration
-    custom_tags: Dict
+    custom_tags: dict
     num_workers: int
-    spark_conf: Dict
+    spark_conf: dict
     spark_version: str
     runtime_engine: str
-    azure_attributes: Dict
+    azure_attributes: dict
 
 
 class AwsRegionEnum(str, Enum):

@@ -1,7 +1,8 @@
 import asyncio
 import logging
 import threading
-from typing import AsyncGenerator, Generator, Optional
+from collections.abc import AsyncGenerator, Generator
+from typing import Optional
 
 import dateutil.parser
 import httpx

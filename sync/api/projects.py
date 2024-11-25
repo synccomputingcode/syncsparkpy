@@ -183,6 +183,7 @@ def update_project(
         )
     )
 
+
 def project_hardware_override_aws(project_id: str, hardware_override: dict) -> Response[dict]:
     """Overrides the hardware configuration for a project
 
@@ -199,6 +200,7 @@ def project_hardware_override_aws(project_id: str, hardware_override: dict) -> R
             hardware_override,
         )
     )
+
 
 def get_project_by_app_id(app_id: str) -> Response[dict]:
     """Retrieves a project by app ID

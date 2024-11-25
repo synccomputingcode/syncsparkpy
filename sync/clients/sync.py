@@ -142,7 +142,10 @@ class SyncClient(RetryableHTTPClient):
         headers, content = encode_json(hardware_override)
         return self._send(
             self._client.build_request(
-                "POST", f"/v1/projects/{project_id}/hardware-override-aws", headers=headers, content=content
+                "POST",
+                f"/v1/projects/{project_id}/hardware-override-aws",
+                headers=headers,
+                content=content,
             )
         )
 

@@ -130,7 +130,6 @@ def update_project(
     prediction_params: Optional[dict] = None,
     job_id: Optional[str] = None,
     optimize_instance_size: Optional[bool] = None,
-    hardware_override: Optional[dict] = None,
 ) -> Response[dict]:
     """Updates a project's mutable properties
 
@@ -154,8 +153,6 @@ def update_project(
     :type job_id: str, optional
     :param optimize_instance_size: flag to turn on/off instance size recommendations, defaults to None
     :type optimize_instance_size: bool, optional
-    :param hardware_override: dictionary of hardware_override, defaults to None
-    :type hardware_override: dict, optional
     :return: updated project
     :rtype: Response[dict]
     """
@@ -178,8 +175,6 @@ def update_project(
         project_update["workspace_id"] = workspace_id
     if optimize_instance_size:
         project_update["optimize_instance_size"] = optimize_instance_size
-    if hardware_override:
-        project_update["hardware_override"] = hardware_override
 
     return Response(
         **get_default_client().update_project(
@@ -188,6 +183,22 @@ def update_project(
         )
     )
 
+def project_hardware_override_aws(project_id: str, hardware_override: dict) -> Response[dict]:
+    """Overrides the hardware configuration for a project
+
+    :param project_id: project ID
+    :type project_id: str
+    :param hardware_override: hardware override configuration
+    :type hardware_override: dict
+    :return: updated project
+    :rtype: Response[dict]
+    """
+    return Response(
+        **get_default_client().project_hardware_override_aws(
+            project_id,
+            hardware_override,
+        )
+    )
 
 def get_project_by_app_id(app_id: str) -> Response[dict]:
     """Retrieves a project by app ID

@@ -138,6 +138,14 @@ class SyncClient(RetryableHTTPClient):
     def reset_project(self, project_id: str) -> dict:
         return self._send(self._client.build_request("POST", f"/v1/projects/{project_id}/reset"))
 
+    def project_hardware_override_aws(self, project_id: str, hardware_override: dict):
+        headers, content = encode_json(hardware_override)
+        return self._send(
+            self._client.build_request(
+                "POST", f"/v1/projects/{project_id}/hardware-override-aws", headers=headers, content=content
+            )
+        )
+
     def update_project(self, project_id: str, project: dict) -> dict:
         headers, content = encode_json(project)
         return self._send(

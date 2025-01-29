@@ -1,5 +1,6 @@
 import json
-from typing import ClassVar, Set, Tuple, Union
+import sys
+from typing import ClassVar, Union
 
 import httpx
 from tenacity import (
@@ -13,11 +14,14 @@ from tenacity import (
 from sync import __version__
 from sync.utils.json import DateTimeEncoderNaiveUTCDropMicroseconds
 
-USER_AGENT = f"Sync Library/{__version__} (syncsparkpy)"
+# inclue python version
+USER_AGENT = (
+    f"Sync Library/{__version__} (syncsparkpy) Python/{'.'.join(map(str, sys.version_info[:3]))}"
+)
 DATABRICKS_USER_AGENT = "sync-gradient"
 
 
-def encode_json(obj: dict) -> Tuple[dict, str]:
+def encode_json(obj: dict) -> tuple[dict, str]:
     # "%Y-%m-%dT%H:%M:%SZ"
 
     json_obj = json.dumps(obj, cls=DateTimeEncoderNaiveUTCDropMicroseconds)
@@ -33,7 +37,7 @@ class RetryableHTTPClient:
     Smaller wrapper around httpx.Client/AsyncClient to contain retrying logic that httpx does not offer natively
     """
 
-    _DEFAULT_RETRYABLE_STATUS_CODES: ClassVar[Set[httpx.codes]] = {
+    _DEFAULT_RETRYABLE_STATUS_CODES: ClassVar[set[httpx.codes]] = {
         httpx.codes.REQUEST_TIMEOUT,
         httpx.codes.TOO_EARLY,
         httpx.codes.TOO_MANY_REQUESTS,

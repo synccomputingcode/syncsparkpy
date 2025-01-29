@@ -184,6 +184,24 @@ def update_project(
     )
 
 
+def project_hardware_override_aws(project_id: str, hardware_override: dict) -> Response[dict]:
+    """Overrides the hardware configuration for a project
+
+    :param project_id: project ID
+    :type project_id: str
+    :param hardware_override: hardware override configuration
+    :type hardware_override: dict
+    :return: updated project
+    :rtype: Response[dict]
+    """
+    return Response(
+        **get_default_client().project_hardware_override_aws(
+            project_id,
+            hardware_override,
+        )
+    )
+
+
 def get_project_by_app_id(app_id: str) -> Response[dict]:
     """Retrieves a project by app ID
 

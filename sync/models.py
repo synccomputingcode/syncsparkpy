@@ -250,7 +250,11 @@ IAMRoleRequiredPermissions = {
         {
             "Sid": "SyncEC2Permissions",
             "Effect": "Allow",
-            "Action": ["ec2:DescribeInstances", "ec2:DescribeVolumes"],
+            "Action": [
+                "ec2:DescribeInstances",
+                "ec2:DescribeVolumes",
+                "ec2:DescribeAvailabilityZones",
+            ],
             "Resource": "*",
         }
     ],

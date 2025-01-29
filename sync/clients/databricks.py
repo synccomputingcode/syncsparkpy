@@ -4,6 +4,7 @@ from collections.abc import Generator
 from typing import Union
 
 import httpx
+from packaging.version import Version
 
 from sync.config import DB_CONFIG
 from sync.models import Platform
@@ -25,12 +26,17 @@ class DatabricksAuth(httpx.Auth):
 
 class DatabricksClient(RetryableHTTPClient):
     def __init__(self, base_url: str, access_token: str):
+        kwargs = {}
+        if Version(httpx.__version__) < Version("0.26.0"):
+            kwargs["proxies"] = os.getenv("FIXIE_URL")
+        else:
+            kwargs["proxy"] = os.getenv("FIXIE_URL")
         super().__init__(
             client=httpx.Client(
                 base_url=base_url,
                 headers={"User-Agent": DATABRICKS_USER_AGENT},
                 auth=DatabricksAuth(access_token),
-                proxies=os.getenv("FIXIE_URL"),
+                **kwargs,
             )
         )
 

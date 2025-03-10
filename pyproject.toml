@@ -7,7 +7,7 @@
 #  most/all Databricks Runtime LTS releases support pathspec >= 0.10.1, which may be a while...
 # See here for DBR release notes - https://docs.databricks.com/release-notes/runtime/releases.html
 build-backend = "hatchling.build"
-requires = ["hatchling==1.8.0"]
+requires = ["hatchling~=1.8.0"]
 
 [project]
 authors = [{ "name" = "Sync Computing" }]
@@ -23,17 +23,17 @@ classifiers = [
     "Programming Language :: Python",
 ]
 dependencies = [
-    "azure-cli-core==2.50.0",
-    "azure-identity==1.13.0",
-    "azure-mgmt-compute==30.1.0",
-    "azure-mgmt-resource==23.0.1",
+    "azure-cli-core~=2.50",
+    "azure-identity~=1.13",
+    "azure-mgmt-compute~=30.1",
+    "azure-mgmt-resource~=23.0",
     "boto3>=1.26.0,<2.0.0",
     "click~=8.1.0",
     "httpx~=0.23",
     "platformdirs",
     "pydantic~=1.10.0",
     "python-dateutil>=2.7,<3",
-    "tenacity==8.2.2",
+    "tenacity~=8.2",
 ]
 dynamic = ["description", "version"]
 name = "syncsparkpy"

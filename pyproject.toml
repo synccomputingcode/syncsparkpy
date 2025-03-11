@@ -73,9 +73,9 @@ pythonpath = ["."]
 [tool.ruff]
 exclude = ["artifacts/*"]
 line-length = 100
-target-version = "py37"
+target-version = "py38"
 [tool.ruff.lint]
-ignore = ["E501"]
+ignore = ["B903", "E501"]
 preview = true
 select = ["ASYNC", "B", "C9", "E", "F", "I", "PLE", "RUF", "TID", "UP", "W"]
 
@@ -96,7 +96,7 @@ max-complexity = 10
 
 [tool.pyright]
 pythonPlatform = "All"
-pythonVersion = "3.7"
+pythonVersion = "3.8"
 reportUnnecessaryTypeIgnoreComment = "error"
 typeCheckingMode = "standard"
 useLibraryCodeForTypes = false

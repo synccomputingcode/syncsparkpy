@@ -30,25 +30,25 @@ dependencies = [
     "boto3>=1.26.0,<2.0.0",
     "click~=8.1.0",
     "httpx~=0.23",
-    "platformdirs",
+    "platformdirs~=4.0",
     "pydantic~=1.10.0",
     "python-dateutil>=2.7,<3",
-    "tenacity~=8.2",
+    "tenacity~=9.0",
 ]
 dynamic = ["description", "version"]
 name = "syncsparkpy"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.8,<3.13"
 
 [project.optional-dependencies]
 dev = [
-    "Sphinx==4.3.0",
-    "deepdiff==6.3.0",
-    "pytest-asyncio==0.21.0",
-    "pytest-env==0.8.1",
-    "pytest==7.2.0",
-    "respx==0.20.1",
-    "ruff==0.7.2",
+    "deepdiff~=6.3",
+    "pytest-asyncio~=0.21",
+    "pytest-env~=0.8",
+    "pytest~=7.2",
+    "respx~=0.20",
+    "ruff~=0.7",
+    "sphinx~=5.3",
 ]
 
 [tool.hatch.version]

@@ -47,6 +47,7 @@ class RetryableHTTPClient:
         self._client: Union[httpx.Client, httpx.AsyncClient] = client
 
     def _send_request(self, request: httpx.Request) -> httpx.Response:
+        response = None
         try:
             for attempt in Retrying(
                 stop=stop_after_attempt(20),

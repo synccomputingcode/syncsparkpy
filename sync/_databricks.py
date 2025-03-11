@@ -684,11 +684,9 @@ def get_recommendation_cluster(
         #  Recommendations to set these appropriately. Since we may recommend a Static cluster (i.e. a cluster
         #  with `num_workers`) for a cluster that was originally autoscaled, we want to make sure to remove this
         #  prior configuration
-        if "num_workers" in cluster:
-            del cluster["num_workers"]
+        cluster.pop("num_workers", None)
 
-        if "autoscale" in cluster:
-            del cluster["autoscale"]
+        cluster.pop("autoscale", None)
 
         recommendation_cluster = deep_update(cluster, recommendation["configuration"])
 

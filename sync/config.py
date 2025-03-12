@@ -8,7 +8,8 @@ from typing import Any, Callable, Dict
 from urllib.parse import urlparse
 
 import boto3 as boto
-from pydantic import BaseSettings, Extra, Field, validator
+from pydantic import Extra, Field, validator
+from pydantic_settings import BaseSettings
 
 CREDENTIALS_FILE = "credentials"
 CONFIG_FILE = "config"
@@ -33,7 +34,11 @@ class APIKey(BaseSettings):
     class Config:
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return (init_settings, env_settings, json_config_settings_source(CREDENTIALS_FILE))
+            return (
+                init_settings,
+                env_settings,
+                json_config_settings_source(CREDENTIALS_FILE),
+            )
 
 
 class Configuration(BaseSettings):
@@ -44,13 +49,19 @@ class Configuration(BaseSettings):
 
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
-            return (init_settings, env_settings, json_config_settings_source(CONFIG_FILE))
+            return (
+                init_settings,
+                env_settings,
+                json_config_settings_source(CONFIG_FILE),
+            )
 
 
 class DatabricksConf(BaseSettings):
     host: str = Field(..., env="DATABRICKS_HOST")
     token: str = Field(..., env="DATABRICKS_TOKEN")
-    aws_region_name: str = Field(boto.client("s3").meta.region_name, env="DATABRICKS_AWS_REGION")
+    aws_region_name: str = Field(
+        boto.client("s3").meta.region_name, env="DATABRICKS_AWS_REGION"
+    )
 
     @validator("host")
     def validate_host(cls, host):
